@@ -13,6 +13,15 @@
       "csp": null
     }
   },
+  "plugins": {
+    "deep-link": {
+      "desktop": [
+        {
+          "schemes": ["whatsapp"]
+        }
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["deb", "appimage", "app", "dmg", "nsis", "msi"],

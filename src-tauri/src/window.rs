@@ -61,8 +61,19 @@ pub fn open_account_window(
         // reaches WhatsApp Web), so relying on in-page HTML5 drop simply does not work
         // there. The handler is what hands us the dropped paths via `WindowEvent::DragDrop`.
         // Belt-and-braces: cancel any `file://` navigation so a stray drop can never
-        // navigate the window away and tear down the live WhatsApp session.
-        .on_navigation(|url| url.scheme() != "file")
+        // navigate the window away and tear down the live WhatsApp session. The
+        // same guard covers `whatsapp://` deep links: the webview can't load that
+        // scheme (it would bounce to the OS handler and re-launch us — see
+        // `open_whatsapp_link`), so intercept it here and open the chat instead.
+        .on_navigation(|url| {
+            if url.scheme() == "file" {
+                return false;
+            }
+            if url.scheme().eq_ignore_ascii_case("whatsapp") {
+                return false;
+            }
+            true
+        })
         // Downloads: with NO handler registered, wry never wires up the platform's
         // download machinery at all — on Linux nobody answers WebKit's
         // `decide-destination` and the engine cancels every download, so WhatsApp's
@@ -1017,6 +1028,97 @@ pub fn show_active(app: &AppHandle) {
 /// targets the active account.
 pub fn show_main(app: &AppHandle) {
     show_active(app);
+}
+
+/// Handle a `whatsapp://` deep link (issue #23).
+///
+/// `xdg-open whatsapp://send?...` (or the OS handler on Windows/macOS) launches
+/// `whatrust <url>`; when the app is already running, single-instance forwards
+/// the argv here. The URL is translated to the equivalent `https://wa.me/<digits>`
+/// HTTPS URL — the exact page WhatsApp Web itself opens for wa.me click-to-chat —
+/// and navigated in the active account window. Navigating to wa.me performs a
+/// full page load inside the logged-in session, which reliably opens the target
+/// chat; a `text` parameter is carried over as the pre-filled draft.
+///
+/// Lock discipline: when the app is locked this shows the lock screen instead of
+/// any account window, same as every other "reveal" path (tray, shortcut,
+/// single-instance, macOS Reopen).
+pub fn open_whatsapp_link(app: &AppHandle, raw_url: &str) {
+    use crate::deeplink::DeepLink;
+
+    crate::dlog::log("deeplink: received whatsapp:// URL");
+    if !crate::lock::is_unlocked(app) {
+        crate::lock::show_lock_window(app);
+        return;
+    }
+
+    let Some(link) = crate::deeplink::parse(raw_url) else {
+        show_main(app);
+        return;
+    };
+    let (phone, text) = match &link {
+        DeepLink::Send { phone, text } => (phone.clone(), text.clone()),
+        // Recognised as WhatsApp but no send intent: just bring the app forward.
+        DeepLink::Other => {
+            show_main(app);
+            return;
+        }
+    };
+
+    // Resolve the target window: the active account, else the first open one.
+    let label = app
+        .try_state::<crate::accounts::ActiveAccount>()
+        .map(|a| a.lock().unwrap().clone())
+        .filter(|l| app.get_webview_window(l).is_some())
+        .or_else(|| {
+            app.webview_windows()
+                .keys()
+                .find(|l| l.starts_with("wa-"))
+                .cloned()
+        });
+    let Some(label) = label else {
+        // No account window at all (e.g. all closed): just show the app.
+        show_main(app);
+        return;
+    };
+
+    // Build the wa.me URL. Without a phone this is a no-chat share link: open
+    // the app root (the web UI's own share flow can't be driven reliably from
+    // a navigation).
+    let wa_me = match phone {
+        Some(p) => {
+            let mut url = format!("https://wa.me/{p}");
+            if let Some(text) = &text {
+                url.push_str("?text=");
+                url.push_str(&urlencoding_lite(text));
+            }
+            url
+        }
+        None => "https://web.whatsapp.com/".to_string(),
+    };
+
+    if let Some(w) = app.get_webview_window(&label) {
+        crate::dlog::log("deeplink: navigating active window to wa.me chat");
+        show_account(app, &label);
+        if let Err(e) = w.navigate(wa_me.parse().expect("wa.me url is valid")) {
+            crate::dlog::log(&format!("deeplink: navigate failed: {e}"));
+        }
+    }
+}
+
+/// Minimal percent-encoding for a `?text=` query value. Encodes everything
+/// outside the RFC 3986 unreserved set; matches what wa.me links carry.
+fn urlencoding_lite(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }
 
 /// What a toggle should do given the active window's visibility.

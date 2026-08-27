@@ -3,6 +3,7 @@ mod applock;
 mod aumid;
 mod biometric;
 mod commands;
+mod deeplink;
 mod dlog;
 mod lock;
 mod notify;
@@ -37,6 +38,13 @@ pub fn run() {
     {
         let mut single_instance = tauri_plugin_single_instance::Builder::<tauri::Wry>::new()
             .callback(|app, args, _cwd| {
+                // A second launch carrying a `whatsapp://` URL (deep link, issue
+                // #23): route it to the active account window — the OS passes the
+                // URL as an argv entry whether we were running or not.
+                if let Some(url) = args.iter().find(|a| deeplink::is_whatsapp_url(a)) {
+                    window::open_whatsapp_link(app, url);
+                    return;
+                }
                 // `whatrust --toggle` (bind it to an OS keyboard shortcut — the reliable
                 // global-hotkey path on Wayland, where in-process X11 grabs don't fire)
                 // toggles the active window. Otherwise a 2nd launch raises it, except an
