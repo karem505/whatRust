@@ -28,6 +28,10 @@ pub fn notify(window: tauri::Window, app: tauri::AppHandle, title: String, body:
     // service-worker showNotification path), not the OS toast layer. No message
     // content is logged (PII) — only that an event occurred.
     crate::dlog::log("commands::notify invoked");
+    // Tell the Rust-side unread fallback (set_unread path) that the page's own
+    // notification fired, so it stays quiet for SHIM_GRACE and we never double
+    // toast the same message through both paths.
+    crate::notify::record_shim_notify(window.label());
     // While locked, suppress notifications entirely so message previews don't leak
     // to the OS notification center / lock screen. The tray unread badge still updates
     // via set_unread (a count only, no content).
@@ -78,12 +82,28 @@ pub fn set_unread(window: tauri::Window, app: tauri::AppHandle, title: String) {
     // Update the per-account count and compute the aggregate, then drop all
     // UnreadMap guards BEFORE calling tray::rebuild_menu (which re-locks the map)
     // to avoid a deadlock.
-    let total = {
+    let (total, previous) = {
         let state = app.state::<UnreadMap>();
         let mut map = state.lock().unwrap();
+        let previous = map.get(id).copied().unwrap_or(0);
         map.insert(id.to_string(), count);
-        accounts::aggregate_unread(&map)
+        (accounts::aggregate_unread(&map), previous)
     };
+
+    // Rust-side notification fallback (issue #3). Issue diagnostics proved the
+    // page never calls our Notification/showNotification shims on some installs
+    // (Windows 11: log shows session start + AUMID ok, but no `commands::notify`),
+    // so the JS-driven path silently produces no toast there. The unread count in
+    // the <title> is a reliable, engine-independent signal that new messages
+    // arrived, so drive a toast from here when the count RISES. Content is never
+    // known at this layer (only a count), so the body stays generic — no PII.
+    // Skipped when: count didn't increase, the page already notified through the
+    // shim (`notify` command ran within the same window), the app is locked
+    // (previews must not leak), notifications are disabled, or the window is
+    // focused (user is looking at the chat already).
+    if count > previous {
+        crate::notify::maybe_unread_toast(&app, window.label(), count);
+    }
 
     crate::tray::update_badge(&app, total);
     crate::tray::rebuild_menu(&app);
