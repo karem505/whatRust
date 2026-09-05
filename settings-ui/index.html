@@ -12,11 +12,17 @@
 
     <h2>Accounts</h2>
     <div id="accounts-list"></div>
+    <label class="field">
+      <span>Default account on startup</span>
+      <select id="startup_account" aria-describedby="startup-note"></select>
+    </label>
+    <p id="startup-note" class="field-note">This account opens first. Other accounts stay connected in the background.</p>
     <div class="add-row">
       <input type="text" id="new_account_name" placeholder="New account name" />
       <button id="add_account">+ Add account</button>
     </div>
     <p id="macos-note" class="macos-note" hidden>Multiple accounts require macOS 14 or newer.</p>
+    <p id="accounts-note" class="note" role="status" aria-live="polite"></p>
 
     <hr class="divider" />
 

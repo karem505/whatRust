@@ -27,7 +27,6 @@ use tauri::AppHandle;
 pub fn register(app: &AppHandle) {
     #[cfg(windows)]
     {
-        use tauri::Manager;
         let config = app.config();
         let aumid = &config.identifier;
         let display = config.product_name.as_deref().unwrap_or("whatRust");

@@ -1,0 +1,22 @@
+# Custom commands need their own ACL entries; notification:default only grants
+# plugin:notification commands. Defining this manifest also opts LOCAL windows
+# into ACL checks, so preserve their separate settings and unlock permissions.
+[[permission]]
+identifier = "allow-whatsapp-bridge"
+description = "Forward notifications, unread titles and diagnostics from WhatsApp account windows."
+commands.allow = ["notify", "set_unread", "dlog"]
+
+[[permission]]
+identifier = "allow-settings-commands"
+description = "Manage settings and accounts from the bundled settings window."
+commands.allow = [
+  "get_settings", "set_settings", "open_settings", "list_accounts",
+  "add_account", "remove_account", "rename_account", "open_account", "set_default_account",
+  "get_lock_status", "set_app_lock_password", "change_app_lock_password",
+  "disable_app_lock", "set_app_lock_options", "set_biometric_enabled", "lock_app"
+]
+
+[[permission]]
+identifier = "allow-lock-commands"
+description = "Read lock status and unlock or reset from the bundled lock screen."
+commands.allow = ["get_lock_status", "unlock_password", "unlock_biometric", "reset_app_lock"]

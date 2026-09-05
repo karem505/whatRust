@@ -3,5 +3,5 @@
   "identifier": "settings-local",
   "description": "Local IPC for the settings window.",
   "windows": ["settings"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "allow-settings-commands"]
 }

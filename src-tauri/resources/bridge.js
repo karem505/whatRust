@@ -5,7 +5,12 @@
   function invoke(cmd, args) {
     var t = window.__TAURI__;
     if (t && t.core && typeof t.core.invoke === "function") {
-      return t.core.invoke(cmd, args).catch(function () {});
+      return t.core.invoke(cmd, args).catch(function () {
+        // Do not log args or error payloads: they can contain message content.
+        // In particular, an ACL rejection must not silently disable both
+        // notifications and the unread tray indicator.
+        console.error("whatRust bridge: IPC failed for " + cmd);
+      });
     }
     return Promise.resolve();
   }

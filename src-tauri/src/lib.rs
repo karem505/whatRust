@@ -35,27 +35,34 @@ pub fn run() {
     // single-instance MUST be registered first.
     #[cfg(desktop)]
     {
-        let mut single_instance = tauri_plugin_single_instance::Builder::<tauri::Wry>::new()
-            .callback(|app, args, _cwd| {
+        let single_instance = tauri_plugin_single_instance::Builder::<tauri::Wry>::new().callback(
+            |app, args, _cwd| {
                 // `whatrust --toggle` (bind it to an OS keyboard shortcut — the reliable
                 // global-hotkey path on Wayland, where in-process X11 grabs don't fire)
                 // toggles the active window. Otherwise a 2nd launch raises it, except an
                 // autostart relaunch carrying --minimized (stay hidden in the tray).
                 // Both toggle_active and show_main defer to the lock screen when locked,
                 // so neither can bypass the app lock.
-                if args.iter().any(|a| a == "--toggle") {
+                if args.iter().any(|a| a == "--settings") {
+                    window::open_settings_window(app);
+                } else if args.iter().any(|a| a == "--toggle") {
                     window::toggle_active(app);
                 } else if !args.iter().any(|a| a == "--minimized") {
                     window::show_main(app);
                 }
-            });
+            },
+        );
 
         // Flatpak only permits a sandbox to own D-Bus names under its exported
         // application ID. Native packages keep using the stable Tauri identifier.
         #[cfg(target_os = "linux")]
-        if let Some(id) = settings::flatpak_id() {
-            single_instance = single_instance.dbus_id(id);
-        }
+        let single_instance = {
+            let mut single_instance = single_instance;
+            if let Some(id) = settings::flatpak_id() {
+                single_instance = single_instance.dbus_id(id);
+            }
+            single_instance
+        };
 
         builder = builder.plugin(single_instance.build());
     }
@@ -107,6 +114,7 @@ pub fn run() {
             commands::remove_account,
             commands::rename_account,
             commands::open_account,
+            commands::set_default_account,
             commands::get_lock_status,
             commands::set_app_lock_password,
             commands::change_app_lock_password,
@@ -137,6 +145,7 @@ pub fn run() {
 
             // Load accounts (seeds a single `default` on first run / corrupt file).
             let mut f = accounts::load(handle);
+            dlog::log("startup: account configuration loaded");
 
             // Backfill a persisted store_uuid for any non-default account missing one
             // (older state predating multi-account). Save only if something changed.
@@ -157,18 +166,42 @@ pub fn run() {
             handle.manage(lock::LockState::new(!lock_on_launch));
             let open_hidden = start_hidden || lock_on_launch;
 
-            // Open every account window so each one receives messages/notifications.
-            for a in &f.accounts {
-                window::open_account_window(handle, a, open_hidden)?;
+            let startup_label =
+                accounts::startup_account(&f).map(|account| accounts::window_label(&account.id));
+            if let Some(label) = &startup_label {
+                *handle.state::<accounts::ActiveAccount>().lock().unwrap() = label.clone();
             }
 
+            // Build windows while Tauri is still on its UI thread. On Windows a
+            // WebView2 controller is created lazily for a hidden window, so the
+            // preferred account must be the one made visible here. This keeps
+            // every other account connected in the background and guarantees the
+            // selected startup account is the first usable window.
+            for account in &f.accounts {
+                let is_startup = startup_label
+                    .as_deref()
+                    .is_some_and(|label| label == accounts::window_label(&account.id));
+                window::open_account_window(handle, account, open_hidden || !is_startup)?;
+            }
+            dlog::log("startup: account windows built");
             tray::setup(handle)?;
-            tray::rebuild_menu(handle);
-            let _ = settings::apply(handle, &s);
-
-            if lock_on_launch && !start_hidden {
-                lock::show_lock_window(handle);
-            }
+            // Let setup return before accessing tray/window APIs again. This
+            // avoids waiting on the Windows UI loop while it is being created.
+            let startup_handle = handle.clone();
+            let open_settings = !start_hidden && args.iter().any(|a| a == "--settings");
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                let ui_handle = startup_handle.clone();
+                let _ = startup_handle.run_on_main_thread(move || {
+                    tray::rebuild_menu(&ui_handle);
+                    let _ = settings::apply(&ui_handle, &s);
+                    if lock_on_launch && !start_hidden {
+                        lock::show_lock_window(&ui_handle);
+                    } else if open_settings {
+                        window::open_settings_window(&ui_handle);
+                    }
+                });
+            });
 
             // Idle auto-lock watcher. Always running; no-op unless the lock is active
             // with idle_secs > 0 and the app is currently unlocked.

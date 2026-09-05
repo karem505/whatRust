@@ -115,6 +115,7 @@ pub fn open_account_window(
 
     let builder = apply_isolation(builder, account, app);
     let win = builder.build()?;
+    crate::dlog::log("account window: WebView created");
 
     // Close-to-tray (reads the live setting so the toggle takes effect without a restart).
     let app_handle = app.clone();
@@ -973,6 +974,10 @@ fn enable_media_windows(webview: tauri::webview::PlatformWebview) {
 
 /// Show + unminimize + focus an account window by its `wa-<id>` label.
 pub fn show_account(app: &AppHandle, label: &str) {
+    if !crate::lock::is_unlocked(app) {
+        crate::lock::show_lock_window(app);
+        return;
+    }
     if let Some(w) = app.get_webview_window(label) {
         let _ = w.show();
         let _ = w.unminimize();
@@ -1063,16 +1068,41 @@ pub fn toggle_active(app: &AppHandle) {
 
 /// Opens (or focuses) the local settings window.
 pub fn open_settings_window(app: &AppHandle) {
+    // Tray/menu callbacks can also deadlock WebView2 when they construct a
+    // window synchronously. Serialize creation on a blocking worker instead.
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        static CREATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = CREATE.lock().unwrap_or_else(|e| e.into_inner());
+        open_settings_window_inner(&app);
+    });
+}
+
+fn open_settings_window_inner(app: &AppHandle) {
+    if !crate::lock::is_unlocked(app) {
+        crate::lock::show_lock_window(app);
+        return;
+    }
     if let Some(w) = app.get_webview_window("settings") {
         let _ = w.show();
         let _ = w.set_focus();
         return;
     }
-    let _ = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("index.html".into()))
+    match WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("index.html".into()))
         .title("whatRust — Settings")
         .inner_size(440.0, 680.0)
-        .resizable(false)
-        .build();
+        .min_inner_size(440.0, 520.0)
+        .resizable(true)
+        .visible(false)
+        .build()
+    {
+        Ok(w) if crate::lock::is_unlocked(app) => {
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+        Ok(_) => crate::lock::show_lock_window(app),
+        Err(e) => crate::dlog::log(&format!("settings window creation failed: {e}")),
+    }
 }
 
 #[cfg(test)]

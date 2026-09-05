@@ -3,5 +3,5 @@
   "identifier": "lock-local",
   "description": "IPC for the app-lock screen. core:default for invoke; no remote, no account/notification permissions. Per-command authorization is enforced in Rust (is_lock_window).",
   "windows": ["lock"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "allow-lock-commands"]
 }
