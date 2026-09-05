@@ -1,7 +1,15 @@
 :root {
   color-scheme: light dark;
   --green: #25d366;
+  --option-bg: #fff;
+  --option-fg: #171717;
 }
+@media (prefers-color-scheme: dark) {
+  :root { --option-bg: #202020; --option-fg: #f5f5f5; }
+}
+/* WebView2's native popup can use a light surface even when select inherits
+   white text. Specify BOTH colors so every option stays readable without hover. */
+.field select option { background-color: var(--option-bg); color: var(--option-fg); }
 * { box-sizing: border-box; }
 body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -44,10 +52,10 @@ h2 { font-size: 14px; margin: 0 0 10px; font-weight: 600; }
 .divider { border: 0; border-top: 1px solid #8883; margin: 18px 0; }
 #accounts-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
 .account-row {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
   padding: 8px 10px; border: 1px solid #8884; border-radius: 8px;
 }
-.account-row .acct-name { flex: 1 1 auto; font-size: 13px; }
+.account-row .acct-name { flex: 1 1 100%; min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
 .account-row .acct-unread {
   min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
   background: var(--green); color: #042f1a; font-size: 11px; font-weight: 700;

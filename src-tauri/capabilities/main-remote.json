@@ -6,5 +6,5 @@
   "remote": {
     "urls": ["https://web.whatsapp.com/*"]
   },
-  "permissions": ["notification:default"]
+  "permissions": ["allow-whatsapp-bridge"]
 }

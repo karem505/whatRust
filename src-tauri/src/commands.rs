@@ -134,6 +134,7 @@ pub struct AccountView {
     pub order: u32,
     pub unread: u32,
     pub open: bool,
+    pub is_default: bool,
 }
 
 fn account_views(app: &tauri::AppHandle) -> Vec<AccountView> {
@@ -151,6 +152,7 @@ fn account_views(app: &tauri::AppHandle) -> Vec<AccountView> {
             open: app
                 .get_webview_window(&accounts::window_label(&a.id))
                 .is_some(),
+            is_default: accounts::startup_account(&f).is_some_and(|selected| selected.id == a.id),
         })
         .collect();
     views.sort_by_key(|v| v.order);
@@ -170,7 +172,7 @@ pub fn list_accounts(
 }
 
 #[tauri::command]
-pub fn add_account(
+pub async fn add_account(
     window: tauri::Window,
     app: tauri::AppHandle,
     name: String,
@@ -187,11 +189,24 @@ pub fn add_account(
         return Err("account name cannot be empty".into());
     }
 
+    // WebView2 construction must not run inside a synchronous IPC callback.
+    // Do not move this command back onto the UI thread (wry issue #583).
+    let _mutation = accounts::MUTATION
+        .lock()
+        .map_err(|_| "account operation failed")?;
     let mut f = accounts::load(&app);
     let acct = accounts::add(&mut f, name);
     accounts::save(&app, &f).map_err(|e| e.to_string())?;
 
-    crate::window::open_account_window(&app, &acct, false).map_err(|e| e.to_string())?;
+    if let Err(error) = crate::window::open_account_window(&app, &acct, true) {
+        // Keep the allocated sequence, but do not leave a phantom account after
+        // a failed window build. A retry must allocate a fresh profile id.
+        f.accounts.retain(|a| a.id != acct.id);
+        accounts::save(&app, &f)
+            .map_err(|rollback| format!("{error}; could not roll back account: {rollback}"))?;
+        return Err(error.to_string());
+    }
+    crate::window::show_account(&app, &accounts::window_label(&acct.id));
     crate::tray::rebuild_menu(&app);
 
     Ok(AccountView {
@@ -200,11 +215,12 @@ pub fn add_account(
         order: acct.order,
         unread: 0,
         open: true,
+        is_default: false,
     })
 }
 
 #[tauri::command]
-pub fn remove_account(
+pub async fn remove_account(
     window: tauri::Window,
     app: tauri::AppHandle,
     id: String,
@@ -214,6 +230,9 @@ pub fn remove_account(
     }
     lock::require_unlocked(&app)?;
 
+    let _mutation = accounts::MUTATION
+        .lock()
+        .map_err(|_| "account operation failed")?;
     let mut f = accounts::load(&app);
     let removed = accounts::remove(&mut f, &id)?;
     accounts::save(&app, &f).map_err(|e| e.to_string())?;
@@ -242,7 +261,7 @@ pub fn remove_account(
 }
 
 #[tauri::command]
-pub fn rename_account(
+pub async fn rename_account(
     window: tauri::Window,
     app: tauri::AppHandle,
     id: String,
@@ -257,6 +276,9 @@ pub fn rename_account(
         return Err("account name cannot be empty".into());
     }
 
+    let _mutation = accounts::MUTATION
+        .lock()
+        .map_err(|_| "account operation failed")?;
     let mut f = accounts::load(&app);
     accounts::rename(&mut f, &id, name)?;
     accounts::save(&app, &f).map_err(|e| e.to_string())?;
@@ -269,7 +291,7 @@ pub fn rename_account(
 }
 
 #[tauri::command]
-pub fn open_account(
+pub async fn open_account(
     window: tauri::Window,
     app: tauri::AppHandle,
     id: String,
@@ -278,6 +300,9 @@ pub fn open_account(
         return Err("forbidden".into());
     }
     lock::require_unlocked(&app)?;
+    let _mutation = accounts::MUTATION
+        .lock()
+        .map_err(|_| "account operation failed")?;
     let f = accounts::load(&app);
     let Some(acct) = f.accounts.iter().find(|a| a.id == id) else {
         return Err(format!("unknown account: {id}"));
@@ -287,7 +312,7 @@ pub fn open_account(
         .get_webview_window(&accounts::window_label(&acct.id))
         .is_none()
     {
-        crate::window::open_account_window(&app, acct, false).map_err(|e| e.to_string())?;
+        crate::window::open_account_window(&app, acct, true).map_err(|e| e.to_string())?;
     }
     crate::window::show_account(&app, &accounts::window_label(&acct.id));
     // Track as the active account.
@@ -295,6 +320,24 @@ pub fn open_account(
         *active.lock().unwrap() = accounts::window_label(&acct.id);
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn set_default_account(
+    window: tauri::Window,
+    app: tauri::AppHandle,
+    id: String,
+) -> Result<(), String> {
+    if is_remote(&window) {
+        return Err("forbidden".into());
+    }
+    lock::require_unlocked(&app)?;
+    let _mutation = accounts::MUTATION
+        .lock()
+        .map_err(|_| "account operation failed")?;
+    let mut f = accounts::load(&app);
+    accounts::set_startup_account(&mut f, &id)?;
+    accounts::save(&app, &f).map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------------------

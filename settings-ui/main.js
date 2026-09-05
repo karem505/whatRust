@@ -46,11 +46,35 @@ async function save() {
 }
 
 // --- Accounts ---
+let accountsBusy = false;
+
+async function accountAction(action) {
+  if (accountsBusy) return;
+  accountsBusy = true;
+  document.querySelectorAll('#accounts-list button, .add-row input, .add-row button, #startup_account')
+    .forEach(el => { el.disabled = true; });
+  const note = document.getElementById('accounts-note');
+  note.textContent = 'Working…';
+  try {
+    await action();
+    note.textContent = '';
+  } catch (error) {
+    note.textContent = String(error);
+  } finally {
+    accountsBusy = false;
+    document.getElementById('new_account_name').disabled = false;
+    document.getElementById('add_account').disabled = false;
+    document.getElementById('startup_account').disabled = false;
+    await loadAccounts();
+  }
+}
 
 function renderAccounts(accounts) {
   const list = document.getElementById("accounts-list");
   list.textContent = "";
   const canRemove = accounts.length > 1;
+  const startup = document.getElementById('startup_account');
+  startup.textContent = '';
 
   for (const a of accounts) {
     const row = document.createElement("div");
@@ -60,6 +84,11 @@ function renderAccounts(accounts) {
     name.className = "acct-name";
     name.textContent = a.name;
     row.appendChild(name);
+    const option = document.createElement('option');
+    option.value = a.id;
+    option.textContent = a.name;
+    option.selected = a.is_default;
+    startup.appendChild(option);
 
     if (a.unread > 0) {
       const badge = document.createElement("span");
@@ -72,7 +101,7 @@ function renderAccounts(accounts) {
     openBtn.className = "secondary";
     openBtn.textContent = "Open";
     openBtn.addEventListener("click", async () => {
-      await invoke("open_account", { id: a.id });
+      await accountAction(() => invoke("open_account", { id: a.id }));
     });
     row.appendChild(openBtn);
 
@@ -87,12 +116,7 @@ function renderAccounts(accounts) {
         requiredMessage: "An account needs a name.",
       });
       if (next === null || next === a.name) return;
-      try {
-        await invoke("rename_account", { id: a.id, name: next });
-      } catch (e) {
-        await Dlg.alert(String(e), { title: "Could not rename" });
-      }
-      await loadAccounts();
+      await accountAction(() => invoke("rename_account", { id: a.id, name: next }));
     });
     row.appendChild(renameBtn);
 
@@ -107,12 +131,7 @@ function renderAccounts(accounts) {
         danger: true,
       });
       if (!ok) return;
-      try {
-        await invoke("remove_account", { id: a.id });
-      } catch (e) {
-        await Dlg.alert(String(e), { title: "Could not remove" });
-      }
-      await loadAccounts();
+      await accountAction(() => invoke("remove_account", { id: a.id }));
     });
     row.appendChild(removeBtn);
 
@@ -125,32 +144,18 @@ async function loadAccounts() {
     const accounts = await invoke("list_accounts");
     renderAccounts(accounts);
   } catch (e) {
-    // ignore — listing failed
+    document.getElementById('accounts-note').textContent = 'Could not load accounts: ' + String(e);
   }
 }
 
 async function addAccount() {
   const input = document.getElementById("new_account_name");
   const name = input.value.trim();
-  if (!name) return;
-  try {
+  if (!name || accountsBusy) return;
+  await accountAction(async () => {
     await invoke("add_account", { name });
     input.value = "";
-    await loadAccounts();
-  } catch (e) {
-    const msg = String(e);
-    // Only the macOS < 14 case is permanent — disable Add and surface the note.
-    // Other failures (disk write, window build) are transient: report and let the user retry.
-    if (msg.includes("macOS 14")) {
-      const note = document.getElementById("macos-note");
-      note.textContent = msg;
-      note.hidden = false;
-      document.getElementById("add_account").disabled = true;
-      document.getElementById("new_account_name").disabled = true;
-    } else {
-      await Dlg.alert(msg, { title: "Could not add account" });
-    }
-  }
+  });
 }
 
 window.addEventListener("DOMContentLoaded", () => {
@@ -160,6 +165,10 @@ window.addEventListener("DOMContentLoaded", () => {
   wireLock();
   document.getElementById("save").addEventListener("click", save);
   document.getElementById("add_account").addEventListener("click", addAccount);
+  document.getElementById('startup_account').addEventListener('change', event => {
+    const id = event.target.value;
+    accountAction(() => invoke('set_default_account', { id }));
+  });
   document.getElementById("new_account_name").addEventListener("keydown", (e) => {
     if (e.key === "Enter") addAccount();
   });

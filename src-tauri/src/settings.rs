@@ -157,11 +157,20 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
         if !flatpak_autostart_handled {
             use tauri_plugin_autostart::ManagerExt;
             let autostart = app.autolaunch();
-            let result = if s.autostart {
-                autostart.enable()
-            } else {
-                autostart.disable()
-            };
+            let result =
+                if s.autostart {
+                    autostart.enable()
+                } else {
+                    // Windows reports NotFound when deleting an absent Run value.
+                    // Saving "off" when already off is a successful no-op.
+                    autostart.is_enabled().and_then(|enabled| {
+                        if enabled {
+                            autostart.disable()
+                        } else {
+                            Ok(())
+                        }
+                    })
+                };
             if let Err(e) = result {
                 warnings.push(format!("autostart could not be updated: {e}"));
             }
