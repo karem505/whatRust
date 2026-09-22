@@ -57,12 +57,25 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
                 return;
             }
             if let Some(acct_id) = id.strip_prefix("acct:") {
+                // Menu-bar-only mode prevents the main window from showing up.
+                #[cfg(target_os = "macos")]
+                if crate::settings::load(app).menubar_only {
+                    crate::window::menubar_reveal(app, None);
+                    return;
+                }
                 crate::window::show_account(app, &accounts::window_label(acct_id));
                 return;
             }
             match id {
                 "accounts" | "settings" => crate::window::open_settings_window(app),
                 "reload" => {
+                    #[cfg(target_os = "macos")]
+                    if crate::settings::load(app).menubar_only {
+                        if let Some(w) = app.get_webview_window(crate::window::MENUBAR_LABEL) {
+                            let _ = w.eval("window.location.reload()");
+                        }
+                        return;
+                    }
                     if let Some(active) = app.try_state::<crate::accounts::ActiveAccount>() {
                         let label = active.lock().unwrap().clone();
                         if let Some(w) = app.get_webview_window(&label) {
@@ -81,8 +94,14 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
                 ..
-            } = event
+            } = &event
             {
+                // macOS, setting enabled: the tray icon toggles the menu bar popup
+                #[cfg(target_os = "macos")]
+                if crate::settings::load(tray.app_handle()).menubar_popup {
+                    crate::window::menubar_toggle_tray(tray.app_handle(), event.clone());
+                    return;
+                }
                 crate::window::show_active(tray.app_handle());
             }
         })

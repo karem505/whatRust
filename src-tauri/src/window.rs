@@ -989,6 +989,12 @@ pub fn show_active(app: &AppHandle) {
         crate::lock::show_lock_window(app);
         return;
     }
+    // Menu-bar-only mode: the popup is the app.
+    #[cfg(target_os = "macos")]
+    if crate::settings::load(app).menubar_only {
+        menubar_reveal(app, None);
+        return;
+    }
     if let Some(active) = app.try_state::<ActiveAccount>() {
         let label = active.lock().unwrap().clone();
         if app.get_webview_window(&label).is_some() {
@@ -1042,6 +1048,12 @@ pub fn toggle_decision(active_visible: Option<bool>) -> ToggleAct {
 /// while locked. The "hide" path only triggers when an account window is visible,
 /// which cannot happen while locked.
 pub fn toggle_active(app: &AppHandle) {
+    // Menu-bar-only mode: toggle the popup instead of an account window.
+    #[cfg(target_os = "macos")]
+    if crate::settings::load(app).menubar_only {
+        menubar_toggle(app, None);
+        return;
+    }
     let label = app
         .try_state::<ActiveAccount>()
         .map(|a| a.lock().unwrap().clone());
@@ -1059,6 +1071,248 @@ pub fn toggle_active(app: &AppHandle) {
         }
         ToggleAct::Show => show_active(app),
     }
+}
+
+/// Window label of the menu bar popup. Starts with `wa-` so it inherits the
+/// `main-remote` capability (remote IPC scoped to web.whatsapp.com) and is
+/// covered by the lock screen's `should_hide`, exactly like an account window.
+pub const MENUBAR_LABEL: &str = "wa-menubar";
+
+#[cfg(target_os = "macos")]
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Panel size (logical points). Landscape mode so the default web view is readable.
+#[cfg(target_os = "macos")]
+const MENUBAR_SIZE: (f64, f64) = (760.0, 560.0);
+/// When the popup auto-disappears on focus loss, a tray click within this window
+/// is treated as "the user is closing it" rather than "open it again". Otherwise
+/// the focus loss caused by clicking the tray icon would re-open the popup the
+/// instant the user tries to dismiss it.
+#[cfg(target_os = "macos")]
+const MENUBAR_REOPEN_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// Timestamp of the last focus-loss auto-disappear (drives the grace period).
+#[cfg(target_os = "macos")]
+static MENUBAR_LAST_AUTO_HIDE: std::sync::Mutex<Option<std::time::Instant>> =
+    std::sync::Mutex::new(None);
+/// Whether the popup is currently STEALTHED: kept on screen (so WebKit does not
+/// suspend the page and WhatsApp's socket stays alive) but transparent and
+/// click-through. `is_visible()` alone cannot tell the two states apart.
+#[cfg(target_os = "macos")]
+static MENUBAR_STEALTHED: AtomicBool = AtomicBool::new(true);
+
+/// Set the NSWindow's alpha. 0.0 keeps the window ORDERED IN (AppKit still
+/// considers the view visible) while making it invisible.
+#[cfg(target_os = "macos")]
+fn set_menubar_alpha(win: &WebviewWindow, alpha: f64) {
+    let _ = win.with_webview(move |wv| unsafe {
+        let ns_win = wv.ns_window() as *mut objc2::runtime::AnyObject;
+        if !ns_win.is_null() {
+            let _: () = objc2::msg_send![ns_win, setAlphaValue: alpha];
+        }
+    });
+}
+
+/// Create the menu bar popup window (hidden, to start).
+#[cfg(target_os = "macos")]
+fn open_menubar_popup(app: &AppHandle) -> tauri::Result<WebviewWindow> {
+    if let Some(w) = app.get_webview_window(MENUBAR_LABEL) {
+        return Ok(w);
+    }
+
+    let url = "https://web.whatsapp.com/".parse().expect("valid url");
+    let icon = tauri::image::Image::from_bytes(APP_ICON)?;
+
+    // The popup mirrors the FIRST account so its session matches what the tray
+    // badge shows (and what the user sees when the popup setting is off). A
+    // hand-edited accounts.json could be empty; fall back to the default store.
+    let acct = crate::accounts::load(app)
+        .accounts
+        .first()
+        .cloned()
+        .unwrap_or(Account {
+            id: "default".into(),
+            name: "WhatsApp".into(),
+            order: 0,
+            store_uuid: None,
+        });
+
+    let (w, h) = MENUBAR_SIZE;
+
+    let builder = WebviewWindowBuilder::new(app, MENUBAR_LABEL, WebviewUrl::External(url))
+        .title("whatRust — Menu Bar")
+        .inner_size(w, h)
+        .resizable(false)
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .visible(false)
+        .icon(icon)?
+        .user_agent(CHROME_UA)
+        .initialization_script(BRIDGE_JS)
+        // Same navigation policy as account windows (see `open_account_window`).
+        .on_navigation(|url| url.scheme() != "file");
+
+    let win = apply_isolation(builder, &acct, app).build()?;
+
+    MENUBAR_STEALTHED.store(true, Ordering::Relaxed);
+
+    apply_zoom(&win, crate::settings::load(app).zoom);
+    register_drop_handler(&win);
+    enable_webview_media(&win);
+
+    // Clicking elsewhere dismisses the panel (via STEALTH, not hide()), so the
+    // page (and WhatsApp's connection) stays alive.
+    let app_handle = app.clone();
+    win.on_window_event(move |event| {
+        if let tauri::WindowEvent::Focused(false) = event {
+            if !crate::lock::is_unlocked(&app_handle) {
+                return; // lock_now owns visibility while locked
+            }
+            if let Ok(mut t) = MENUBAR_LAST_AUTO_HIDE.lock() {
+                *t = Some(std::time::Instant::now());
+            }
+            menubar_stealth(&app_handle);
+        }
+    });
+
+    Ok(win)
+}
+
+/// Make the popup invisible but KEEP IT ALIVE: ordered in, alpha 0, click-through.
+#[cfg(target_os = "macos")]
+pub fn menubar_stealth(app: &AppHandle) {
+    let Some(win) = app.get_webview_window(MENUBAR_LABEL) else {
+        return;
+    };
+    let _ = win.show();
+    let _ = win.set_ignore_cursor_events(true);
+    set_menubar_alpha(&win, 0.0);
+    MENUBAR_STEALTHED.store(true, Ordering::Relaxed);
+}
+
+/// Reveal the popup. `icon_rect`: tray icon rect (physical points) to anchor
+/// under; without one, the window keeps its last position (a hidden popup with
+/// no anchor parks at the top-right of its monitor).
+#[cfg(target_os = "macos")]
+pub fn menubar_reveal(app: &AppHandle, icon_rect: Option<(f64, f64, f64, f64)>) {
+    let Ok(win) = open_menubar_popup(app) else {
+        return;
+    };
+
+    if icon_rect.is_none() && !win.is_visible().unwrap_or(false) {
+        // Truly hidden (post-lock): with no anchor to return to, park at the
+        // top-right of the monitor rather than an arbitrary default spot.
+        let scale = win.scale_factor().unwrap_or(1.0);
+        let mon = win
+            .current_monitor()
+            .ok()
+            .flatten()
+            .or_else(|| win.primary_monitor().ok().flatten());
+        if let Some(mon) = mon {
+            let x = (mon.size().width as f64 - MENUBAR_SIZE.0 * scale - 16.0).max(0.0);
+            let _ = win.set_position(tauri::PhysicalPosition::new(x as i32, 36));
+        }
+    }
+
+    if let Some((icon_x, icon_y, icon_w, icon_h)) = icon_rect {
+        let scale = win.scale_factor().unwrap_or(1.0);
+        let panel_w = MENUBAR_SIZE.0 * scale; // physical px; the window is fixed-size
+        let mut x = icon_x + (icon_w - panel_w) / 2.0;
+        let y = icon_y + icon_h;
+        // Clamp horizontally into the current monitor: a panel centered under a
+        // tray icon near a screen edge would otherwise hang off-screen.
+        if let Some(mon) = win.current_monitor().ok().flatten() {
+            let mon_w = mon.size().width as f64;
+            x = x.clamp(
+                8.0 * scale,
+                (mon_w - panel_w - 8.0 * scale).max(8.0 * scale),
+            );
+        }
+        let _ = win.set_position(tauri::PhysicalPosition::new(
+            x.max(0.0) as i32,
+            y.max(0.0) as i32,
+        ));
+    }
+
+    let _ = win.set_ignore_cursor_events(false);
+    set_menubar_alpha(&win, 1.0);
+    let _ = win.show();
+    let _ = win.set_focus();
+    MENUBAR_STEALTHED.store(false, Ordering::Relaxed);
+}
+
+/// Whether the popup exists and is currently presented (not stealthed, not hidden).
+#[cfg(target_os = "macos")]
+fn menubar_presented(app: &AppHandle) -> bool {
+    app.get_webview_window(MENUBAR_LABEL).is_some_and(|w| {
+        w.is_visible().unwrap_or(false) && !MENUBAR_STEALTHED.load(Ordering::Relaxed)
+    })
+}
+
+/// Create the popup at startup in menu-bar-only mode and keep it connected from launch.
+///
+/// No-op when the popup already exists, as it is already connected.
+#[cfg(target_os = "macos")]
+pub fn menubar_ensure_started(app: &AppHandle) {
+    if app.get_webview_window(MENUBAR_LABEL).is_none() {
+        let _ = open_menubar_popup(app);
+        menubar_stealth(app); // orders the new window in at alpha 0
+    }
+}
+
+/// Restore the popup after an unlock: back to however it was before locking.
+#[cfg(target_os = "macos")]
+pub fn menubar_restore_after_unlock(app: &AppHandle) {
+    if MENUBAR_STEALTHED.load(Ordering::Relaxed) {
+        menubar_stealth(app); // lock_now hid the window; order it back in at alpha 0
+    } else {
+        menubar_reveal(app, None);
+    }
+}
+
+/// Tray left-click: toggle the menu bar popup (macOS, setting enabled).
+///
+/// The tray event's icon `rect` anchors the popup just below the icon.
+#[cfg(target_os = "macos")]
+pub fn menubar_toggle_tray(app: &AppHandle, event: tauri::tray::TrayIconEvent) {
+    // The event's rect is a logical-or-physical enum; the popup's scale factor
+    // resolves it into physical points. Other tray events cannot anchor it.
+    let tauri::tray::TrayIconEvent::Click { rect, .. } = &event else {
+        return;
+    };
+    let scale = app
+        .get_webview_window(MENUBAR_LABEL)
+        .and_then(|w| w.scale_factor().ok())
+        .unwrap_or(1.0);
+    let pos = rect.position.to_physical::<f64>(scale);
+    let size = rect.size.to_physical::<f64>(scale);
+    menubar_toggle(app, Some((pos.x, pos.y, size.width, size.height)));
+}
+
+/// Toggle the popup: presented -> stealth; otherwise reveal.
+///
+/// Shared by the tray-click and the shortcut / `--toggle` paths; never reveals chats while locked.
+#[cfg(target_os = "macos")]
+fn menubar_toggle(app: &AppHandle, icon_rect: Option<(f64, f64, f64, f64)>) {
+    if !crate::lock::is_unlocked(app) {
+        crate::lock::show_lock_window(app);
+        return;
+    }
+    if menubar_presented(app) {
+        menubar_stealth(app);
+        return;
+    }
+    // A tray click within the grace period after a focus-loss disappear closes pane
+    let recent_auto_hide = MENUBAR_LAST_AUTO_HIDE
+        .lock()
+        .ok()
+        .and_then(|t| *t)
+        .is_some_and(|t| t.elapsed() < MENUBAR_REOPEN_GRACE);
+    if icon_rect.is_some() && recent_auto_hide {
+        return;
+    }
+    menubar_reveal(app, icon_rect);
 }
 
 /// Opens (or focuses) the local settings window.
