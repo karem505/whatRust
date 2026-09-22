@@ -1,5 +1,5 @@
 const invoke = window.__TAURI__.core.invoke;
-const BOOLS = ["close_to_tray", "start_minimized", "autostart", "notifications", "hotkey_enabled"];
+const BOOLS = ["close_to_tray", "start_minimized", "autostart", "notifications", "menubar_popup", "menubar_only", "hotkey_enabled"];
 const ZOOM_DEFAULT = 1;
 
 // settings.json holds a zoom factor, not a preset name, so a stored value need
@@ -154,6 +154,10 @@ async function addAccount() {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
+  // Menu bar features are macOS-only; hide the toggles elsewhere.
+  if (!/Macintosh|Mac OS X/.test(navigator.userAgent)) {
+    document.querySelectorAll(".mac-only").forEach((el) => (el.hidden = true));
+  }
   load();
   loadAccounts();
   loadLock();
