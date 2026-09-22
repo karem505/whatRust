@@ -71,7 +71,17 @@ pub fn dlog(msg: String) {
 #[tauri::command]
 pub fn set_unread(window: tauri::Window, app: tauri::AppHandle, title: String) {
     let count = crate::unread::parse_unread(&title);
-    let Some(id) = accounts::id_from_label(window.label()) else {
+    // The menu bar popup shares an account's session but carries its own label
+    // (`wa-menubar`); its unread count belongs to the account it mirrors, so it
+    // is attributed to the active account.
+    let label = if window.label() == crate::window::MENUBAR_LABEL {
+        app.try_state::<ActiveAccount>()
+            .map(|a| a.lock().unwrap().clone())
+            .unwrap_or_default()
+    } else {
+        window.label().to_string()
+    };
+    let Some(id) = accounts::id_from_label(&label) else {
         return;
     };
 

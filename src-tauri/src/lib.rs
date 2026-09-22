@@ -73,6 +73,9 @@ pub fn run() {
                         tauri_plugin_window_state::StateFlags::all()
                             & !tauri_plugin_window_state::StateFlags::VISIBLE,
                     )
+                    // The menu bar popup sizes/positions itself from the tray icon
+                    // rect on every open; persisted geometry would fight that.
+                    .skip_initial_state(crate::window::MENUBAR_LABEL)
                     .build(),
             )
             .plugin(
@@ -119,6 +122,14 @@ pub fn run() {
             commands::reset_app_lock,
         ])
         .setup(|app| {
+            // Menu-bar-only on macOS: load settings early (the rest of setup needs them
+            // below) so the Dock icon can be dropped before the app starts presenting.
+            let s = settings::load(app.handle());
+            #[cfg(target_os = "macos")]
+            if s.menubar_only {
+                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            }
+
             let handle = app.handle();
 
             // Start a fresh diagnostic log for this launch (issue #3): the only
@@ -131,7 +142,6 @@ pub fn run() {
             // before any account window can fire a notification. See aumid.rs.
             aumid::register(handle);
 
-            let s = settings::load(handle);
             let args: Vec<String> = std::env::args().collect();
             let start_hidden = s.start_minimized || args.iter().any(|a| a == "--minimized");
 
@@ -157,9 +167,30 @@ pub fn run() {
             handle.manage(lock::LockState::new(!lock_on_launch));
             let open_hidden = start_hidden || lock_on_launch;
 
-            // Open every account window so each one receives messages/notifications.
-            for a in &f.accounts {
-                window::open_account_window(handle, a, open_hidden)?;
+            // Open every account window so each one receives messages/notifications —
+            // except macOS menu-bar-only mode, where the popup IS the app and is
+            // created (stealthed but connected) instead.
+            let menubar_only = cfg!(target_os = "macos") && s.menubar_only;
+            if menubar_only {
+                #[cfg(target_os = "macos")]
+                window::menubar_ensure_started(handle);
+            } else {
+                for a in &f.accounts {
+                    window::open_account_window(handle, a, open_hidden)?;
+                }
+            }
+
+            // App Nap kills background webviews' JS, which releases WhatsApp's socket.
+            // Background the activity process so it never disconnects
+            #[cfg(target_os = "macos")]
+            {
+                use objc2_foundation::{NSActivityOptions, NSProcessInfo, NSString};
+                let reason = NSString::from_str("whatRust keeps its WhatsApp session connected");
+                let activity = NSProcessInfo::processInfo().beginActivityWithOptions_reason(
+                    NSActivityOptions::UserInitiatedAllowingIdleSystemSleep,
+                    &reason,
+                );
+                std::mem::forget(activity); // hold for the process lifetime
             }
 
             tray::setup(handle)?;
