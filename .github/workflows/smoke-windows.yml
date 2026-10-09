@@ -1,0 +1,113 @@
+name: smoke-windows
+
+# Installs a published release on a fresh Windows runner and checks it end to end:
+# install, whatsapp:// registration, launch, WhatsApp Web loading, a chat-page link
+# reaching the default browser (#30), a whatsapp:// link reaching the running app
+# (#23), and the notification hook (#3). Screenshots are printed to the log as
+# base64 JPEG and uploaded as an artifact. WhatsApp itself can't be logged in
+# here (that needs a phone), so this exercises everything up to the QR page.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release to test, e.g. v0.6.5 (empty = latest)"
+        required: false
+        default: ""
+  push:
+    paths:
+      - .github/workflows/smoke-windows.yml
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Download and install the release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $rel = if ($env:VERSION) { "tags/$env:VERSION" } else { 'latest' }
+          $r = Invoke-RestMethod "https://api.github.com/repos/${{ github.repository }}/releases/$rel"
+          "Testing $($r.tag_name)"
+          $asset = $r.assets | Where-Object { $_.name -like '*_x64-setup.exe' } | Select-Object -First 1
+          Invoke-WebRequest $asset.browser_download_url -OutFile setup.exe
+          Start-Process .\setup.exe -ArgumentList '/S' -Wait
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\whatRust", "$env:ProgramFiles\whatRust" -Filter whatRust.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { throw 'whatRust.exe not found after install' }
+          "Installed: $($exe.FullName)"
+          "EXE=$($exe.FullName)" | Out-File -Append $env:GITHUB_ENV
+
+      - name: whatsapp:// is registered
+        shell: pwsh
+        run: |
+          foreach ($root in 'HKCU:\Software\Classes\whatsapp', 'HKLM:\Software\Classes\whatsapp') {
+            if (Test-Path $root) {
+              "$root -> " + (Get-ItemProperty "$root\shell\open\command").'(default)'
+            }
+          }
+
+      - name: Launch, click a link, open a whatsapp:// link
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.Drawing, System.Windows.Forms
+          Add-Type @'
+          using System; using System.Runtime.InteropServices;
+          public static class U {
+            [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
+            [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+            [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+            [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+            [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e);
+          }
+          '@
+          function Shot($name) {
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $small = New-Object System.Drawing.Bitmap $bmp, 960, ([int](960 * $b.Height / $b.Width))
+            New-Item -ItemType Directory -Force shots | Out-Null
+            $codec = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object MimeType -eq 'image/jpeg'
+            $p = New-Object System.Drawing.Imaging.EncoderParameters 1
+            $p.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter ([System.Drawing.Imaging.Encoder]::Quality), 55L
+            $small.Save("shots\$name.jpg", $codec, $p)
+            "::group::screenshot $name (base64 jpeg)"
+            [Convert]::ToBase64String([IO.File]::ReadAllBytes("shots\$name.jpg"))
+            '::endgroup::'
+          }
+          $app = Start-Process $env:EXE -PassThru
+          Start-Sleep 60
+          $app.Refresh()
+          "window title: $($app.MainWindowTitle)"
+          Shot 'launch'
+          # "Need help?" on WhatsApp's QR page, in page coordinates (100% scale).
+          $r = New-Object U+RECT
+          [U]::GetWindowRect($app.MainWindowHandle, [ref]$r) | Out-Null
+          "window rect: $($r.L),$($r.T) - $($r.R),$($r.B)"
+          [U]::SetForegroundWindow($app.MainWindowHandle) | Out-Null
+          $before = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*faq.whatsapp.com*' }).Count
+          $content = $r.B - $r.T - 800   # title bar + borders above the 800px page
+          [U]::SetCursorPos($r.L + 8 + 203, $r.T + $content + 366) | Out-Null
+          [U]::mouse_event(2, 0, 0, 0, 0); [U]::mouse_event(4, 0, 0, 0, 0)
+          Start-Sleep 10
+          $browsers = Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*faq.whatsapp.com*' }
+          "browser processes opened on faq.whatsapp.com: $(@($browsers).Count - $before)"
+          $browsers | Select-Object -First 2 | ForEach-Object { "  $($_.Name)" }
+          Shot 'after-link'
+          Get-Process msedge, chrome -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Start-Process 'whatsapp://send?phone=15551234567&text=smoke%20test'
+          Start-Sleep 25
+          Shot 'after-deeplink'
+          "whatRust processes: $(@(Get-Process whatRust -ErrorAction SilentlyContinue).Count) (single instance expected: 1)"
+
+      - name: App log
+        if: always()
+        shell: pwsh
+        run: Get-Content "$env:LOCALAPPDATA\whatRust\logs\whatrust.log"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-windows-screenshots
+          path: shots/

@@ -127,6 +127,36 @@ fn the_whatsapp_page_cannot_reach_settings_or_lock_commands() {
 }
 
 #[test]
+fn the_notification_plugins_permission_query_is_answered() {
+    // The plugin's init script asks this on every page load; refusing it left an
+    // unhandled promise rejection in WhatsApp's page (found testing v0.6.5). The
+    // mock app doesn't register the plugin, so getting past the ACL shows up as
+    // "plugin notification not found" rather than "not allowed".
+    let app = app();
+    let window = WebviewWindowBuilder::new(
+        &app,
+        "wa-default",
+        WebviewUrl::External(PAGE.parse().unwrap()),
+    )
+    .build()
+    .unwrap();
+    let request = InvokeRequest {
+        cmd: "plugin:notification|is_permission_granted".into(),
+        callback: CallbackFn(0),
+        error: CallbackFn(1),
+        url: PAGE.parse().unwrap(),
+        body: InvokeBody::default(),
+        headers: Default::default(),
+        invoke_key: INVOKE_KEY.to_string(),
+    };
+    let err = get_ipc_response(&window, request).unwrap_err().to_string();
+    assert!(
+        !err.contains("not allowed"),
+        "the ACL must let it through: {err}"
+    );
+}
+
+#[test]
 fn bridge_commands_are_refused_from_any_other_site() {
     let app = app();
     assert!(!allowed(
