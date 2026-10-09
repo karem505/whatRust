@@ -36,7 +36,41 @@
     seenPath[path] = true;
     invoke("dlog", { msg: "notif path: " + path });
   }
-  function nativeNotify(title, body) {
+  // The sender's picture, from the notification's `icon` (a blob:, data: or
+  // https: URL). Loaded, cropped to a square, scaled to ICON_PX and re-encoded
+  // as PNG, so Rust gets one small format every toast can show (Windows toasts
+  // can't show WebP). Resolves to base64 PNG, or null if it can't be had within
+  // ICON_WAIT_MS; the toast then goes out without it. The outcome is logged
+  // once per URL scheme, never the picture or its URL.
+  var ICON_PX = 96;
+  var ICON_WAIT_MS = 1500;
+  function iconPng(url) {
+    var load = Promise.resolve().then(function () {
+      if (typeof window.fetch !== "function" || typeof window.createImageBitmap !== "function") return null;
+      return window.fetch(url, { credentials: "omit" })
+        .then(function (r) { return r && r.ok ? r.blob() : null; })
+        .then(function (blob) { return blob ? window.createImageBitmap(blob) : null; })
+        .then(function (bmp) {
+          if (!bmp || !bmp.width || !bmp.height) return null;
+          var canvas = document.createElement("canvas");
+          canvas.width = ICON_PX;
+          canvas.height = ICON_PX;
+          var side = Math.min(bmp.width, bmp.height);
+          canvas.getContext("2d").drawImage(
+            bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, ICON_PX, ICON_PX
+          );
+          if (typeof bmp.close === "function") bmp.close();
+          var data = String(canvas.toDataURL("image/png"));
+          var at = data.indexOf("base64,");
+          return data.indexOf("data:image/png") === 0 && at > 0 ? data.slice(at + 7) : null;
+        });
+    }).catch(function () { return null; });
+    var timeout = new Promise(function (resolve) {
+      setTimeout(function () { resolve(null); }, ICON_WAIT_MS);
+    });
+    return Promise.race([load, timeout]);
+  }
+  function nativeNotify(title, body, icon) {
     title = String(title || "WhatsApp");
     body = String(body || "");
     var now = Date.now();
@@ -46,7 +80,15 @@
     var key = title + " " + body;
     if (recentNotif[key] && now - recentNotif[key] <= DEDUP_MS) return false;
     recentNotif[key] = now;
-    invoke("notify", { title: title, body: body });
+    var scheme = typeof icon === "string" && (/^(blob|data|https):/.exec(icon) || [])[1];
+    if (!scheme) {
+      invoke("notify", { title: title, body: body });
+      return true;
+    }
+    iconPng(icon).then(function (png) {
+      notePath("icon " + scheme + (png ? " ok" : " unavailable"));
+      invoke("notify", png ? { title: title, body: body, icon: png } : { title: title, body: body });
+    });
     return true;
   }
 
@@ -181,7 +223,7 @@
       this.onerror = null;
       this.onshow = null;
       notePath("page Notification()");
-      nativeNotify(title, options.body);
+      nativeNotify(title, options.body, options.icon);
     }
     ShimNotification.prototype.close = function () {
       if (typeof this.onclose === "function") this.onclose();
@@ -241,7 +283,7 @@
         notePath("page registration.showNotification()");
         // Route through nativeNotify so the service-worker path shares the same de-dup
         // window as window.Notification (an alert that fires on both paths shows once).
-        nativeNotify(title, options.body);
+        nativeNotify(title, options.body, options.icon);
         // Real API resolves Promise<undefined>; match it so callers awaiting it don't break.
         return Promise.resolve();
       };
