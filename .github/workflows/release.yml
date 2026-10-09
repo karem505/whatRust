@@ -33,6 +33,19 @@ jobs:
         with:
           workspaces: "./src-tauri -> target"
 
+      # Release notes live in the repo (docs/release-notes/<tag>.md) and become
+      # the release body, so a release never goes out with an empty page.
+      - name: Release notes
+        id: notes
+        shell: bash
+        run: |
+          f="docs/release-notes/${GITHUB_REF_NAME}.md"
+          {
+            echo "body<<WHATRUST_NOTES_EOF"
+            if [ "$GITHUB_REF_TYPE" = tag ] && [ -f "$f" ]; then cat "$f"; fi
+            echo "WHATRUST_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -42,6 +55,7 @@ jobs:
           # named after the branch).
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           releaseName: ${{ github.ref_type == 'tag' && format('whatRust {0}', github.ref_name) || '' }}
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: ${{ github.ref_type == 'tag' }}
           prerelease: false
 

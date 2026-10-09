@@ -62,6 +62,12 @@
   </screenshots>
 
   <releases>
+    <release type="stable" version="0.6.4" date="2026-10-09">
+      <url type="details">https://github.com/karem505/whatRust/releases/tag/v0.6.4</url>
+      <description>
+        <p>Fixes notifications and the unread badge, opens links from chats, handles whatsapp:// links, and adds download feedback with a refreshed settings layout.</p>
+      </description>
+    </release>
     <release type="stable" version="0.6.3" date="2026-08-21">
       <url type="details">https://github.com/karem505/whatRust/releases/tag/v0.6.3</url>
       <description>
