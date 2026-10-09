@@ -160,7 +160,11 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
             let result = if s.autostart {
                 autostart.enable()
             } else {
-                autostart.disable()
+                // Windows reports NotFound when removing a Run entry that isn't
+                // there, so turning off what is already off would warn.
+                autostart
+                    .is_enabled()
+                    .and_then(|on| if on { autostart.disable() } else { Ok(()) })
             };
             if let Err(e) = result {
                 warnings.push(format!("autostart could not be updated: {e}"));

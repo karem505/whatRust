@@ -134,8 +134,12 @@ pub fn set_settings(
     Ok(crate::settings::apply(&app, &settings))
 }
 
+// Commands that build a window are `async`. Tauri runs a synchronous command
+// inside WebView2's IPC callback, and creating another WebView2 there deadlocks
+// on Windows (wry#583); an async command runs on the async runtime instead.
+// Keep every window-creating command async.
 #[tauri::command]
-pub fn open_settings(window: tauri::Window, app: tauri::AppHandle) -> Result<(), String> {
+pub async fn open_settings(window: tauri::Window, app: tauri::AppHandle) -> Result<(), String> {
     if is_remote(&window) {
         return Err("forbidden".into());
     }
@@ -191,7 +195,7 @@ pub fn list_accounts(
 }
 
 #[tauri::command]
-pub fn add_account(
+pub async fn add_account(
     window: tauri::Window,
     app: tauri::AppHandle,
     name: String,
@@ -208,11 +212,19 @@ pub fn add_account(
         return Err("account name cannot be empty".into());
     }
 
+    let _guard = accounts::lock_mutations();
     let mut f = accounts::load(&app);
     let acct = accounts::add(&mut f, name);
     accounts::save(&app, &f).map_err(|e| e.to_string())?;
 
-    crate::window::open_account_window(&app, &acct, false).map_err(|e| e.to_string())?;
+    if let Err(e) = crate::window::open_account_window(&app, &acct, false) {
+        // Don't leave an account behind that never got a window. The sequence
+        // number stays consumed, so a retry gets a fresh profile id.
+        f.accounts.retain(|a| a.id != acct.id);
+        accounts::save(&app, &f)
+            .map_err(|rollback| format!("{e}; and could not roll back the account: {rollback}"))?;
+        return Err(e.to_string());
+    }
     crate::tray::rebuild_menu(&app);
 
     Ok(AccountView {
@@ -225,7 +237,7 @@ pub fn add_account(
 }
 
 #[tauri::command]
-pub fn remove_account(
+pub async fn remove_account(
     window: tauri::Window,
     app: tauri::AppHandle,
     id: String,
@@ -235,6 +247,7 @@ pub fn remove_account(
     }
     lock::require_unlocked(&app)?;
 
+    let _guard = accounts::lock_mutations();
     let mut f = accounts::load(&app);
     let removed = accounts::remove(&mut f, &id)?;
     accounts::save(&app, &f).map_err(|e| e.to_string())?;
@@ -263,7 +276,7 @@ pub fn remove_account(
 }
 
 #[tauri::command]
-pub fn rename_account(
+pub async fn rename_account(
     window: tauri::Window,
     app: tauri::AppHandle,
     id: String,
@@ -278,6 +291,7 @@ pub fn rename_account(
         return Err("account name cannot be empty".into());
     }
 
+    let _guard = accounts::lock_mutations();
     let mut f = accounts::load(&app);
     accounts::rename(&mut f, &id, name)?;
     accounts::save(&app, &f).map_err(|e| e.to_string())?;
@@ -290,7 +304,7 @@ pub fn rename_account(
 }
 
 #[tauri::command]
-pub fn open_account(
+pub async fn open_account(
     window: tauri::Window,
     app: tauri::AppHandle,
     id: String,
@@ -299,6 +313,7 @@ pub fn open_account(
         return Err("forbidden".into());
     }
     lock::require_unlocked(&app)?;
+    let _guard = accounts::lock_mutations();
     let f = accounts::load(&app);
     let Some(acct) = f.accounts.iter().find(|a| a.id == id) else {
         return Err(format!("unknown account: {id}"));
@@ -484,9 +499,9 @@ pub fn set_biometric_enabled(
     applock::save(&app, &c).map_err(|e| e.to_string())
 }
 
-/// Manual "Lock now" from the settings window.
+/// Manual "Lock now" from the settings window. Async: it builds the lock window.
 #[tauri::command]
-pub fn lock_app(window: tauri::Window, app: tauri::AppHandle) -> Result<(), String> {
+pub async fn lock_app(window: tauri::Window, app: tauri::AppHandle) -> Result<(), String> {
     if is_remote(&window) {
         return Err("forbidden".into());
     }

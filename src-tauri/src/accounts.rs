@@ -9,6 +9,14 @@ pub type UnreadMap = Mutex<HashMap<String, u32>>;
 /// Window label of the last-focused account window (e.g. `wa-default`). Managed app state.
 pub type ActiveAccount = Mutex<String>;
 
+/// Held across each account command's load-modify-save (and its window build),
+/// so two account commands running at once can't interleave and lose a change.
+static MUTATIONS: Mutex<()> = Mutex::new(());
+
+pub fn lock_mutations() -> std::sync::MutexGuard<'static, ()> {
+    MUTATIONS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// A single WhatsApp account.
 ///
 /// `store_uuid` is `Some` only for non-default accounts (used on macOS >= 14 as the
