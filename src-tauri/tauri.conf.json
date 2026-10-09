@@ -13,6 +13,14 @@
       "csp": null
     }
   },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "name": "WhatsApp link",
+        "schemes": ["whatsapp"]
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["deb", "appimage", "app", "dmg", "nsis", "msi"],

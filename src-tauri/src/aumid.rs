@@ -1,15 +1,14 @@
 //! Windows-only: register the app's AppUserModelID (AUMID) at runtime so WinRT
 //! toast notifications actually render for the installed app (issue #3).
 //!
-//! On an installed build `tauri-plugin-notification` sets the toast's
-//! `System.AppUserModel.ID` to the bundle identifier (`com.karem.whatrust`).
+//! Every toast `notify.rs` raises carries the bundle identifier
+//! (`com.karem.whatrust`) as its `System.AppUserModel.ID`.
 //! Windows only renders a toast whose AUMID is *registered* on the system. The
 //! NSIS/MSI installers do tag their Start-Menu shortcut with the AUMID, but
 //! that registration is fragile: the Desktop shortcut carries no AUMID, a
 //! per-user vs per-machine path mismatch or a regenerated shortcut can drop the
 //! property, and a raw-exe run has none at all. When the AUMID is unregistered
-//! the WinRT call fails *silently* — and whatRust discards the error (see
-//! `notify.rs`), so no notification ever appears.
+//! the WinRT call fails *silently*, so no notification ever appears.
 //!
 //! Registering the AUMID under HKCU on every launch makes toast delivery
 //! self-sufficient regardless of installer or launch path. Both steps below are
@@ -17,8 +16,7 @@
 //! toasts may not render, so we log and never panic or block startup.
 //!
 //! The AUMID is read from the live Tauri config `identifier`, i.e. the exact
-//! value the notification plugin passes to `app_id()`, so the two can never
-//! drift apart.
+//! value `notify.rs` passes to `Toast::new`, so the two can never drift apart.
 
 use tauri::AppHandle;
 

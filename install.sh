@@ -51,10 +51,17 @@ case "$OS" in
 [Desktop Entry]
 Type=Application
 Name=${APP}
-Exec=${OUT}
+Exec=${OUT} %u
 Terminal=false
 Categories=Network;InstantMessaging;
+MimeType=x-scheme-handler/whatsapp;
 EOF
+    # Open whatsapp:// links ("Open app" buttons on websites) in whatRust, unless
+    # the user already picked another handler.
+    have update-desktop-database && update-desktop-database "$APPS" >/dev/null 2>&1 || true
+    if have xdg-mime && [ -z "$(xdg-mime query default x-scheme-handler/whatsapp 2>/dev/null)" ]; then
+      xdg-mime default whatrust.desktop x-scheme-handler/whatsapp >/dev/null 2>&1 || true
+    fi
     grn "Installed to ${OUT}"
     grn "Launch '${APP}' from your app menu, or run: ${OUT}"
     grn "(If it won't start, your system may need FUSE: 'sudo apt install libfuse2', or run with --appimage-extract-and-run.)"

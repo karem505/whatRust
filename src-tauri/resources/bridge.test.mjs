@@ -65,10 +65,61 @@ class FakeInput {
   }
 }
 
+class FakeElement {
+  constructor(tag) {
+    this.tagName = String(tag).toUpperCase();
+    this.children = [];
+    this.parentNode = null;
+    this.attrs = {};
+    this.listeners = {};
+    this.textContent = "";
+    this.className = "";
+    this.title = "";
+  }
+  get isConnected() {
+    let n = this;
+    while (n.parentNode) n = n.parentNode;
+    return n.isRoot === true;
+  }
+  get firstChild() {
+    return this.children[0] || null;
+  }
+  setAttribute(k, v) {
+    this.attrs[k] = String(v);
+  }
+  attachShadow() {
+    const root = new FakeElement("#shadow-root");
+    root.parentNode = this;
+    this.shadow = root;
+    return root;
+  }
+  appendChild(c) {
+    c.parentNode = this;
+    this.children.push(c);
+    return c;
+  }
+  removeChild(c) {
+    this.children = this.children.filter((x) => x !== c);
+    c.parentNode = null;
+    return c;
+  }
+  addEventListener(type, fn) {
+    (this.listeners[type] ||= []).push(fn);
+  }
+  click() {
+    for (const fn of this.listeners.click || []) fn({ isTrusted: true });
+  }
+  // Every element below this one, depth-first.
+  all() {
+    return this.children.flatMap((c) => [c, ...c.all()]);
+  }
+}
+
 function makeHarness(options = {}) {
   const mediaInput = new FakeInput("image/*,video/mp4,video/3gpp,video/quicktime");
   const docInput = new FakeInput("*");
   const logs = [];
+  const warns = [];
   const invocations = [];
   // Simulate WhatsApp's composer lifecycle: it opens right after an input change
   // and "the user sends" ~80ms later. This exercises injectBatch's real waits
@@ -79,7 +130,11 @@ function makeHarness(options = {}) {
   };
   mediaInput.onchange = onChange;
   docInput.onchange = onChange;
+  const body = new FakeElement("body");
+  body.isRoot = true;
   const document = {
+    body,
+    createElement: (tag) => new FakeElement(tag),
     title: "WhatsApp",
     readyState: "complete",
     addEventListener() {},
@@ -101,7 +156,9 @@ function makeHarness(options = {}) {
       core: {
         invoke(cmd, args) {
           invocations.push({ cmd, args });
-          return Promise.resolve();
+          return options.invokeRejects
+            ? Promise.reject(new Error("Command " + cmd + " not allowed by ACL"))
+            : Promise.resolve();
         },
       },
     },
@@ -109,8 +166,8 @@ function makeHarness(options = {}) {
   const sandboxGlobals = {
     window,
     document,
-    navigator: {},
-    console: { log: (m) => logs.push(String(m)), error() {} },
+    navigator: options.navigator || {},
+    console: { log: (m) => logs.push(String(m)), warn: (m) => warns.push(String(m)), error() {} },
     File: FakeFile,
     DataTransfer: FakeDataTransfer,
     Uint8Array: options.Uint8Array || Uint8Array,
@@ -138,7 +195,7 @@ function makeHarness(options = {}) {
   const params = Object.keys(sandboxGlobals);
   const fn = new Function(...params, `"use strict";\n${bridgeSrc}`);
   fn(...params.map((k) => sandboxGlobals[k]));
-  return { window, mediaInput, docInput, logs, invocations };
+  return { window, document, mediaInput, docInput, logs, warns, invocations, navigator: sandboxGlobals.navigator };
 }
 
 // Drive the feed the way window.rs stream_drop does.
@@ -354,7 +411,116 @@ async function testMalformedMessagesAreRejected() {
   assert(w.__whatrustDropFeed({ op: "wat", drop: 9 }) === "BADOP", "unknown op");
 }
 
+async function testNotificationsReachTheNativeNotifyCommand() {
+  console.log("page notifications (both APIs) reach the native notify command once");
+  const { window: w, invocations } = makeHarness();
+  new w.Notification("Alice", { body: "hello" });
+  const notifies = invocations.filter((x) => x.cmd === "notify");
+  assert(notifies.length === 1, "new Notification() forwards to notify");
+  assert(
+    notifies[0] && notifies[0].args.title === "Alice" && notifies[0].args.body === "hello",
+    "title and body are forwarded"
+  );
+  // The same alert again within the burst window is a duplicate, not a second toast.
+  new w.Notification("Alice", { body: "hello" });
+  assert(invocations.filter((x) => x.cmd === "notify").length === 1, "burst duplicate suppressed");
+  assert(w.Notification.permission === "granted", "Notification.permission reads granted");
+}
+
+async function testPermissionsApiAgreesNotificationsAreGranted() {
+  console.log("navigator.permissions reports notifications granted, passes others through");
+  const asked = [];
+  const navigator = {
+    permissions: {
+      query(desc) {
+        asked.push(desc.name);
+        return Promise.resolve({ name: desc.name, state: "prompt" });
+      },
+    },
+  };
+  makeHarness({ navigator });
+  const n = await navigator.permissions.query({ name: "notifications" });
+  assert(n.state === "granted", `notifications state is granted (got ${n.state})`);
+  assert(asked.length === 0, "the engine is not asked about notifications");
+  const mic = await navigator.permissions.query({ name: "microphone" });
+  assert(mic.state === "prompt" && asked[0] === "microphone", "other permissions reach the engine");
+}
+
+async function testRefusedCommandsWarnOnceAndNeverThrow() {
+  console.log("a refused command is swallowed but leaves one console warning");
+  const { window: w, warns } = makeHarness({ invokeRejects: true });
+  new w.Notification("A", { body: "1" });
+  new w.Notification("B", { body: "2" });
+  await sleep(10);
+  const notifyWarns = warns.filter((m) => m.includes("notify was refused"));
+  assert(notifyWarns.length === 1, `one warning for notify (got ${notifyWarns.length})`);
+}
+
+async function testChromeShimsOnlyForAChromeUserAgent() {
+  console.log("Chrome client hints only when the UA claims Chrome (Safari on macOS stays Safari)");
+  const chromeNav = {
+    userAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+  };
+  const chrome = makeHarness({ navigator: chromeNav });
+  assert(chromeNav.userAgentData && chromeNav.userAgentData.platform === "Linux", "Chrome UA gets userAgentData");
+  assert(!!chrome.window.chrome, "Chrome UA gets window.chrome");
+  const safariNav = {
+    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
+  };
+  const safari = makeHarness({ navigator: safariNav });
+  assert(safariNav.userAgentData === undefined, "Safari UA gets no userAgentData");
+  assert(safari.window.chrome === undefined, "Safari UA gets no window.chrome");
+}
+
+function toastsIn(document) {
+  const host = document.body.children.find((c) => c.attrs["data-whatrust"] === "downloads");
+  if (!host) return [];
+  return host.shadow.all().filter((e) => /\btoast\b/.test(e.className));
+}
+const buttonsOf = (toast) => toast.all().filter((e) => e.tagName === "BUTTON");
+
+async function testDownloadToastOffersOpenAndShowInFolder() {
+  console.log("a finished download shows a toast whose buttons send only its id");
+  const { window: w, document, invocations } = makeHarness();
+  const name = '<img src=x onerror="alert(1)">.pdf';
+  assert(w.__whatrustDownloadDone({ ok: true, id: 4, name, canOpen: true }) === true, "toast shown");
+  const [toast] = toastsIn(document);
+  assert(!!toast, "one toast in the page");
+  const texts = toast.all().map((e) => e.textContent);
+  assert(texts.includes("Downloaded") && texts.includes(name), "title and file name, as plain text");
+  const labels = buttonsOf(toast).map((b) => b.textContent);
+  assert(labels.includes("Open") && labels.includes("Show in folder"), `buttons: ${labels}`);
+  buttonsOf(toast).find((b) => b.textContent === "Open").click();
+  const call = invocations.find((x) => x.cmd === "open_download");
+  assert(call && call.args.id === 4 && Object.keys(call.args).length === 1, "Open sends just the id");
+  assert(toastsIn(document).length === 0, "the toast closes after a choice");
+}
+
+async function testRiskyDownloadsAndFailures() {
+  console.log("programs only offer Show in folder; failures say so");
+  const { window: w, document, invocations } = makeHarness();
+  w.__whatrustDownloadDone({ ok: true, id: 9, name: "setup.exe", canOpen: false });
+  const [toast] = toastsIn(document);
+  const labels = buttonsOf(toast).map((b) => b.textContent);
+  assert(!labels.includes("Open"), "no Open button for a program");
+  buttonsOf(toast).find((b) => b.textContent === "Show in folder").click();
+  assert(invocations.some((x) => x.cmd === "reveal_download" && x.args.id === 9), "Show in folder sends the id");
+  w.__whatrustDownloadDone({ ok: false });
+  const [failed] = toastsIn(document);
+  assert(failed && /failed/.test(failed.className), "failure toast");
+  assert(failed.all().some((e) => e.textContent === "Download failed"), "failure says so");
+  assert(buttonsOf(failed).every((b) => b.textContent !== "Open"), "nothing to open after a failure");
+  for (let i = 0; i < 5; i++) w.__whatrustDownloadDone({ ok: true, id: 20 + i, name: i + ".jpg", canOpen: true });
+  assert(toastsIn(document).length === 3, "at most three toasts stack up");
+}
+
 const tests = [
+  testDownloadToastOffersOpenAndShowInFolder,
+  testRiskyDownloadsAndFailures,
+  testChromeShimsOnlyForAChromeUserAgent,
+  testNotificationsReachTheNativeNotifyCommand,
+  testPermissionsApiAgreesNotificationsAreGranted,
+  testRefusedCommandsWarnOnceAndNeverThrow,
   testMixedDropLosesNothing,
   testPureMediaGoesToMediaInput,
   testDistinctSameNamedFilesBothAttach,
@@ -376,4 +542,4 @@ if (failures > 0) {
   console.error(`\n${failures} assertion(s) FAILED`);
   process.exit(1);
 }
-console.log("\nall bridge drop tests passed");
+console.log("\nall bridge tests passed");

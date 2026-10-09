@@ -8,81 +8,136 @@
     <link rel="stylesheet" href="dialog.css" />
   </head>
   <body>
-    <h1>whatRust Settings</h1>
+    <!-- Preferences laid out the way GNOME/Libadwaita does it (issue #21): titled
+         groups of boxed-list rows, a title + subtitle on the left and the control
+         on the right. Element ids are what main.js uses; keep them stable. -->
+    <main class="prefs">
+      <section class="group">
+        <h2 class="group-title">Accounts</h2>
+        <div id="accounts-list" class="boxed-list"></div>
+        <div class="add-row">
+          <input type="text" id="new_account_name" placeholder="New account name" aria-label="New account name" />
+          <button id="add_account">Add</button>
+        </div>
+        <p id="macos-note" class="macos-note" hidden>Multiple accounts require macOS 14 or newer.</p>
+      </section>
 
-    <h2>Accounts</h2>
-    <div id="accounts-list"></div>
-    <div class="add-row">
-      <input type="text" id="new_account_name" placeholder="New account name" />
-      <button id="add_account">+ Add account</button>
-    </div>
-    <p id="macos-note" class="macos-note" hidden>Multiple accounts require macOS 14 or newer.</p>
+      <section class="group">
+        <h2 class="group-title">Behavior</h2>
+        <div class="boxed-list">
+          <label class="row">
+            <span class="row-text"><span class="row-title">Close to tray</span>
+              <span class="row-subtitle">Keep running in the background when the window is closed</span></span>
+            <input type="checkbox" class="switch" id="close_to_tray" />
+          </label>
+          <label class="row">
+            <span class="row-text"><span class="row-title">Start minimized</span>
+              <span class="row-subtitle">Open in the tray instead of a window</span></span>
+            <input type="checkbox" class="switch" id="start_minimized" />
+          </label>
+          <label class="row">
+            <span class="row-text"><span class="row-title">Launch at startup</span></span>
+            <input type="checkbox" class="switch" id="autostart" />
+          </label>
+          <label class="row">
+            <span class="row-text"><span class="row-title">Notifications</span>
+              <span class="row-subtitle">Show new messages as system notifications</span></span>
+            <input type="checkbox" class="switch" id="notifications" />
+          </label>
+        </div>
+      </section>
 
-    <hr class="divider" />
+      <section class="group">
+        <h2 class="group-title">Appearance</h2>
+        <div class="boxed-list">
+          <label class="row">
+            <span class="row-text"><span class="row-title">Display size</span>
+              <span class="row-subtitle">Scales the whole WhatsApp page. Smaller leaves more room for the conversation on a high-DPI display.</span></span>
+            <select id="zoom">
+              <option value="0.75">Smaller</option>
+              <option value="0.85">Small</option>
+              <option value="1">Default</option>
+              <option value="1.15">Big</option>
+            </select>
+          </label>
+        </div>
+      </section>
 
-    <h2 class="section-title">Preferences</h2>
+      <section class="group">
+        <h2 class="group-title">Keyboard Shortcut</h2>
+        <div class="boxed-list">
+          <label class="row">
+            <span class="row-text"><span class="row-title">Show/hide shortcut</span>
+              <span class="row-subtitle">A global key combination that toggles the window</span></span>
+            <input type="checkbox" class="switch" id="hotkey_enabled" />
+          </label>
+          <div class="row">
+            <span class="row-text"><span class="row-title">Shortcut</span></span>
+            <div class="hotkey-row">
+              <input type="text" id="hotkey" placeholder="CmdOrCtrl+Shift+W" aria-label="Shortcut" />
+              <button type="button" id="record_hotkey" class="secondary">Record</button>
+            </div>
+          </div>
+        </div>
+        <p id="hotkey_hint" class="hotkey-hint" hidden></p>
+        <p class="group-note">On Linux/Wayland the in-app shortcut can't fire (the desktop blocks global key grabs). Bind <code>whatrust --toggle</code> in your system keyboard settings instead — see the README.</p>
+      </section>
 
-    <label class="row"><input type="checkbox" id="close_to_tray" /> <span>Close to tray (keep running in background)</span></label>
-    <label class="row"><input type="checkbox" id="start_minimized" /> <span>Start minimized to tray</span></label>
-    <label class="row"><input type="checkbox" id="autostart" /> <span>Launch at system startup</span></label>
-    <label class="row"><input type="checkbox" id="notifications" /> <span>Native notifications</span></label>
+      <section class="group">
+        <h2 class="group-title">App Lock</h2>
 
-    <label class="field">
-      <span>Display size</span>
-      <select id="zoom">
-        <option value="0.75">Smaller</option>
-        <option value="0.85">Small</option>
-        <option value="1">Default</option>
-        <option value="1.15">Big</option>
-      </select>
-    </label>
-    <p class="field-note">Scales the whole WhatsApp page, and applies as soon as you pick it. A smaller size leaves more room for the conversation next to the chat list, which is usually what you want on a high-DPI display.</p>
+        <div id="lock-disabled">
+          <div class="boxed-list">
+            <label class="row entry-row">
+              <span class="row-title">Password</span>
+              <input type="password" id="lock_pw1" autocomplete="new-password" placeholder="At least 4 characters" />
+            </label>
+            <label class="row entry-row">
+              <span class="row-title">Confirm</span>
+              <input type="password" id="lock_pw2" autocomplete="new-password" />
+            </label>
+          </div>
+          <div class="group-actions">
+            <button id="enable_lock">Enable app lock</button>
+          </div>
+        </div>
 
-    <label class="row"><input type="checkbox" id="hotkey_enabled" /> <span>Enable global show/hide shortcut</span></label>
+        <div id="lock-enabled" hidden>
+          <div class="boxed-list">
+            <label class="row" id="biometric_row" hidden>
+              <span class="row-text"><span class="row-title" id="biometric_label">Use biometric</span></span>
+              <input type="checkbox" class="switch" id="biometric_enabled" />
+            </label>
+            <label class="row">
+              <span class="row-text"><span class="row-title">Lock on launch</span></span>
+              <input type="checkbox" class="switch" id="lock_on_launch" />
+            </label>
+            <label class="row">
+              <span class="row-text"><span class="row-title">Lock when hidden to tray</span></span>
+              <input type="checkbox" class="switch" id="lock_on_hide" />
+            </label>
+            <label class="row">
+              <span class="row-text"><span class="row-title">Auto-lock when idle</span>
+                <span class="row-subtitle">Minutes, 0 = off</span></span>
+              <input type="number" id="idle_min" min="0" step="1" value="0" />
+            </label>
+          </div>
+          <div class="group-actions">
+            <button id="lock_now">Lock now</button>
+            <button id="change_pw" class="secondary">Change password…</button>
+            <button id="disable_lock" class="secondary">Disable…</button>
+          </div>
+        </div>
 
-    <label class="field">
-      <span>Shortcut</span>
-      <div class="hotkey-row">
-        <input type="text" id="hotkey" placeholder="CmdOrCtrl+Shift+W" />
-        <button type="button" id="record_hotkey" class="secondary">Record</button>
-      </div>
-    </label>
-    <p id="hotkey_hint" class="hotkey-hint" hidden></p>
-    <p class="field-note">On Linux/Wayland the in-app shortcut can't fire (the desktop blocks global key grabs). Bind <code>whatrust --toggle</code> in your system keyboard settings instead — see the README.</p>
+        <p class="group-note">App lock controls who can open whatRust's windows. It does
+          <strong>not</strong> encrypt your data on disk.</p>
+      </section>
+    </main>
 
-    <hr class="divider" />
-    <h2 class="section-title">Security</h2>
-
-    <div id="lock-disabled">
-      <label class="field"><span>App-lock password (min 4 characters)</span>
-        <input type="password" id="lock_pw1" autocomplete="new-password" /></label>
-      <label class="field"><span>Confirm password</span>
-        <input type="password" id="lock_pw2" autocomplete="new-password" /></label>
-      <button id="enable_lock">Enable app lock</button>
-    </div>
-
-    <div id="lock-enabled" hidden>
-      <label class="row" id="biometric_row" hidden>
-        <input type="checkbox" id="biometric_enabled" /> <span id="biometric_label">Use biometric</span>
-      </label>
-      <label class="row"><input type="checkbox" id="lock_on_launch" /> <span>Lock on launch</span></label>
-      <label class="row"><input type="checkbox" id="lock_on_hide" /> <span>Lock when hidden to tray</span></label>
-      <label class="field"><span>Auto-lock when idle (minutes, 0 = off)</span>
-        <input type="number" id="idle_min" min="0" step="1" value="0" /></label>
-      <div class="actions">
-        <button id="lock_now">Lock now</button>
-        <button id="change_pw" class="secondary">Change password…</button>
-        <button id="disable_lock" class="secondary">Disable…</button>
-      </div>
-    </div>
-
-    <p class="lock-note">App lock controls who can open whatRust's windows. It does
-      <strong>not</strong> encrypt your data on disk.</p>
-
-    <div class="actions">
+    <footer class="footer">
+      <span id="note" class="note" role="status" aria-live="polite"></span>
       <button id="save">Save</button>
-      <span id="note" class="note"></span>
-    </div>
+    </footer>
 
     <script src="dialog.js"></script>
     <script src="hotkey.js"></script>

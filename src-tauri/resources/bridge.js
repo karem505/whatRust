@@ -2,10 +2,19 @@
   "use strict";
   if (window.location.origin !== "https://web.whatsapp.com") return;
 
+  // A rejected command used to vanish here without a trace, which is how every
+  // notify/set_unread call being refused by the IPC permission check went
+  // unnoticed (issues #3, #32). Warn once per command in the page console
+  // (WHATRUST_DEVTOOLS=1 to inspect); the promise still never rejects.
+  var warnedCmds = Object.create(null);
   function invoke(cmd, args) {
     var t = window.__TAURI__;
     if (t && t.core && typeof t.core.invoke === "function") {
-      return t.core.invoke(cmd, args).catch(function () {});
+      return t.core.invoke(cmd, args).catch(function (e) {
+        if (warnedCmds[cmd]) return;
+        warnedCmds[cmd] = true;
+        try { console.warn("[whatRust] " + cmd + " was refused: " + e); } catch (e2) {}
+      });
     }
     return Promise.resolve();
   }
@@ -78,6 +87,7 @@
   //    real and this shim is skipped. The platform token is derived from the
   //    UA string Rust set (per-OS CHROME_UA), so hints and UA agree instead of
   //    hardcoding "Linux" everywhere.
+  var isChromeUA = /Chrome\//.test(navigator.userAgent || "");
   try {
     var uaPlatform = /Macintosh|Mac OS X/.test(navigator.userAgent || "")
       ? "macOS"
@@ -85,7 +95,10 @@
         ? "Windows"
         : "Linux";
     var uaPlatformVersion = uaPlatform === "macOS" ? "13.0.0" : uaPlatform === "Windows" ? "10.0.0" : "6.0.0";
-    if (!navigator.userAgentData) {
+    // Only a Chrome UA gets Chrome's client hints. On macOS the window presents
+    // itself as Safari (window.rs `user_agent`, issue #15), and Safari has no
+    // userAgentData — adding one would make the fingerprint contradict itself.
+    if (!navigator.userAgentData && isChromeUA) {
       Object.defineProperty(navigator, "userAgentData", {
         configurable: true,
         value: {
@@ -131,13 +144,14 @@
   // 1b) Chrome environment marker. WhatsApp Web's eligibility checks probe for
   //     `window.chrome` beyond the UA and userAgentData (both spoofed above). Add a
   //     minimal, idempotent stand-in matching what a real Chrome minimally exposes;
-  //     never clobber a genuine `window.chrome` (WebView2 on Windows has a real one).
+  //     never clobber a genuine `window.chrome` (WebView2 on Windows has a real one),
+  //     and never add one when the UA is Safari (macOS).
   //     NOTE: this makes the *presentation* consistent; it cannot conjure missing
   //     engine APIs. Linux distro WebKitGTK ships no WebRTC backend, so calling
   //     stays unsupported there regardless (verified: RTCPeerConnection undefined
   //     with enable-webrtc on, webkit2gtk 2.52.3).
   try {
-    if (!window.chrome) {
+    if (!window.chrome && isChromeUA) {
       Object.defineProperty(window, "chrome", {
         configurable: true,
         enumerable: true,
@@ -170,6 +184,35 @@
       return Promise.resolve("granted");
     };
     window.Notification = ShimNotification;
+  } catch (e) {}
+
+  // 2a) Permissions API. The shim above reports Notification.permission
+  //     "granted", but navigator.permissions.query({name:"notifications"}) still
+  //     asks the engine, which answers "prompt" (WebView2 has no notification
+  //     grant from us, WebKit none either). A page that checks permission that way
+  //     sees notifications as off and never raises one — while still playing its
+  //     own in-page sound, which is exactly the Windows report in issue #3. Answer
+  //     "granted" for notifications so both APIs agree; other permissions pass
+  //     through to the engine untouched.
+  try {
+    var perms = navigator.permissions;
+    if (perms && typeof perms.query === "function") {
+      var nativeQuery = perms.query.bind(perms);
+      perms.query = function (desc) {
+        if (desc && desc.name === "notifications") {
+          return Promise.resolve({
+            name: "notifications",
+            state: "granted",
+            status: "granted",
+            onchange: null,
+            addEventListener: function () {},
+            removeEventListener: function () {},
+            dispatchEvent: function () { return false; },
+          });
+        }
+        return nativeQuery(desc);
+      };
+    }
   } catch (e) {}
 
   // 2b) Service-worker notification path. Modern WhatsApp Web also raises notifications
@@ -225,6 +268,115 @@
   } else {
     start();
   }
+
+  // 3b) Download toast (issue #21). Rust calls __whatrustDownloadDone when a
+  //     download finishes: {ok:true,id,name,canOpen} or {ok:false}. Show a small
+  //     browser-style confirmation with Open / Show in folder, or the failure.
+  //     It lives in a shadow root so WhatsApp's styles can't reach it, the file
+  //     name is set as text (never parsed as HTML), and the buttons only send the
+  //     download's id back — Rust holds the path and decides what may be opened.
+  try {
+    var dl = {};
+    dl.MAX = 3;
+    dl.TTL = 8000;
+    dl.host = null;
+    dl.root = null;
+    dl.mount = function () {
+      if (dl.host && dl.host.isConnected) return dl.root;
+      var body = document.body;
+      if (!body) return null;
+      dl.host = document.createElement("div");
+      dl.host.setAttribute("data-whatrust", "downloads");
+      dl.root = dl.host.attachShadow ? dl.host.attachShadow({ mode: "closed" }) : dl.host;
+      var style = document.createElement("style");
+      style.textContent = [
+        ":host{all:initial}",
+        ".stack{position:fixed;left:16px;bottom:16px;z-index:2147483647;display:flex;flex-direction:column;gap:8px;",
+        "font:14px/1.35 system-ui,-apple-system,'Segoe UI',Roboto,Ubuntu,sans-serif;max-width:min(380px,calc(100vw - 32px))}",
+        ".toast{display:flex;align-items:center;gap:12px;padding:10px 10px 10px 14px;border-radius:10px;",
+        "background:#233138;color:#e9edef;box-shadow:0 4px 18px rgba(0,0,0,.35)}",
+        ".text{flex:1;min-width:0}",
+        ".title{font-weight:600}",
+        ".name{opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+        "button{all:unset;cursor:pointer;padding:6px 8px;border-radius:6px;color:#21c063;font-weight:600;white-space:nowrap}",
+        "button:hover,button:focus-visible{background:rgba(255,255,255,.08)}",
+        "button.close{color:#aebac1;font-weight:400;padding:6px 9px}",
+        ".failed .title{color:#f15c6d}",
+      ].join("");
+      var stack = document.createElement("div");
+      stack.className = "stack";
+      stack.setAttribute("role", "status");
+      stack.setAttribute("aria-live", "polite");
+      dl.root.appendChild(style);
+      dl.root.appendChild(stack);
+      dl.stack = stack;
+      body.appendChild(dl.host);
+      return dl.root;
+    };
+    dl.button = function (label, cls, onClick) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = label;
+      if (cls) b.className = cls;
+      b.addEventListener("click", onClick);
+      return b;
+    };
+    dl.show = function (d) {
+      if (!d || !dl.mount()) return false;
+      var toast = document.createElement("div");
+      toast.className = d.ok ? "toast" : "toast failed";
+      var text = document.createElement("div");
+      text.className = "text";
+      var title = document.createElement("div");
+      title.className = "title";
+      title.textContent = d.ok ? "Downloaded" : "Download failed";
+      var name = document.createElement("div");
+      name.className = "name";
+      name.textContent = d.ok ? String(d.name || "") : "The file could not be downloaded.";
+      if (d.ok) name.title = String(d.name || "");
+      text.appendChild(title);
+      text.appendChild(name);
+      toast.appendChild(text);
+      var timer = null;
+      var close = function () {
+        if (timer) clearTimeout(timer);
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+      };
+      var arm = function () {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(close, dl.TTL);
+      };
+      if (d.ok && typeof d.id === "number") {
+        if (d.canOpen) {
+          toast.appendChild(dl.button("Open", "", function () {
+            invoke("open_download", { id: d.id });
+            close();
+          }));
+        }
+        toast.appendChild(dl.button("Show in folder", "", function () {
+          invoke("reveal_download", { id: d.id });
+          close();
+        }));
+      }
+      var x = dl.button("\u00d7", "close", close);
+      x.setAttribute("aria-label", "Dismiss");
+      toast.appendChild(x);
+      // Hovering keeps it up; leaving restarts the countdown.
+      toast.addEventListener("mouseenter", function () { if (timer) clearTimeout(timer); });
+      toast.addEventListener("mouseleave", arm);
+      dl.stack.appendChild(toast);
+      while (dl.stack.children.length > dl.MAX) dl.stack.removeChild(dl.stack.firstChild);
+      arm();
+      return true;
+    };
+    window.__whatrustDownloadDone = function (d) {
+      try {
+        return dl.show(d);
+      } catch (e) {
+        return false;
+      }
+    };
+  } catch (e) {}
 
   // 4) Drag-and-drop file injection.
   //    The native webview never delivers an OS file drop into this page on any platform

@@ -4,12 +4,21 @@ mod aumid;
 mod biometric;
 mod commands;
 mod dlog;
+mod downloads;
+mod links;
 mod lock;
 mod notify;
+mod opener;
 mod settings;
 mod tray;
 mod unread;
 mod window;
+
+// Linux only: the capability files are the same on every OS, and a second
+// `generate_context!` clashes with the embedded Info.plist on macOS, while the
+// mock-runtime test binary lacks the Common Controls manifest on Windows.
+#[cfg(all(test, target_os = "linux"))]
+mod ipc_acl_tests;
 
 use tauri::Manager;
 
@@ -45,6 +54,10 @@ pub fn run() {
                 // so neither can bypass the app lock.
                 if args.iter().any(|a| a == "--toggle") {
                     window::toggle_active(app);
+                } else if let Some(link) = links::link_from_args(&args) {
+                    // A whatsapp:// (or wa.me) link handed to a second launch by
+                    // the OS scheme handler (issue #23): open it in the running copy.
+                    links::open_from_outside(app, &link);
                 } else if !args.iter().any(|a| a == "--minimized") {
                     window::show_main(app);
                 }
@@ -94,11 +107,14 @@ pub fn run() {
 
     builder
         .manage(accounts::UnreadMap::default())
+        .manage(downloads::Downloads::default())
         .manage(accounts::ActiveAccount::new("wa-default".into()))
         .invoke_handler(tauri::generate_handler![
             commands::notify,
             commands::set_unread,
             commands::dlog,
+            commands::open_download,
+            commands::reveal_download,
             commands::get_settings,
             commands::set_settings,
             commands::open_settings,
@@ -170,6 +186,12 @@ pub fn run() {
                 lock::show_lock_window(handle);
             }
 
+            // Launched by the OS to open a whatsapp:// link (issue #23). The
+            // account window is already loading; point it at the chat instead.
+            if let Some(link) = links::link_from_args(&args) {
+                links::open_from_outside(handle, &link);
+            }
+
             // Idle auto-lock watcher. Always running; no-op unless the lock is active
             // with idle_secs > 0 and the app is currently unlocked.
             #[cfg(desktop)]
@@ -199,6 +221,18 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building whatRust")
         .run(|_app_handle, _event| {
+            // macOS delivers scheme links (whatsapp://…, issue #23) as an Apple
+            // event rather than a command-line argument, at launch or later.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = &_event {
+                for url in urls {
+                    if url.scheme() == "whatsapp" || links::whatsapp_web_url(url.as_str()).is_some()
+                    {
+                        links::open_from_outside(_app_handle, url.as_str());
+                    }
+                }
+            }
+
             // macOS: clicking the dock icon after hide-to-tray re-shows the window
             // (otherwise the app is only reachable via the menu-bar tray icon).
             #[cfg(target_os = "macos")]

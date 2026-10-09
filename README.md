@@ -53,8 +53,11 @@ The official WhatsApp Desktop app is built on Electron, which packs an entire Ch
 - **Native OS notifications** for new messages
 - **Display size** — a Smaller / Small / Default / Big page zoom in Settings, so the chat list stops crowding out the conversation on a high-DPI screen
 - **Persistent login** — scan the QR code once, stay signed in across restarts
-- **Voice messages** everywhere, plus **voice & video calls** where the system webview ships WebRTC (Windows and macOS; most Linux distros build WebKitGTK without WebRTC, so calling isn't available on Linux)
+- **Voice messages** everywhere, plus **voice & video calls** on macOS (WhatsApp Web doesn't offer calls on Windows, and most Linux distros build WebKitGTK without WebRTC — see the FAQ)
 - **Drag and drop files and images** — drop a photo, video, or document straight onto a chat to attach it
+- **Links open in your browser** — web, email, and phone links in chats go to your default apps; WhatsApp links (`wa.me`, group invites) stay in the app
+- **Opens `whatsapp://` links** — "Open app" / click-to-chat buttons on websites open the chat in whatRust (registered by the installers, the `.deb`, the Flatpak, and the one-line AppImage install)
+- **Download feedback** — a small toast confirms each download with **Open** and **Show in folder** buttons (programs and installers are only ever shown in their folder, never run)
 - **Launch at startup** (auto-start), optional
 - **Global keyboard shortcut** to show/hide the window (default `Ctrl/Cmd+Shift+W`; record your own by pressing the keys in Settings). On **Wayland**, bind `whatrust --toggle` to a system shortcut instead — see the FAQ.
 - **Single instance** — relaunching focuses the running window; `whatrust --toggle` from a second launch shows/hides it
@@ -106,7 +109,7 @@ OS supports it — before showing your chats. Enable it under **Settings → Sec
 | Unread message badge | ✅ Yes | ✅ Yes |
 | Native notifications | ✅ Yes | ✅ Yes |
 | Voice messages (mic/camera) | ✅ Yes | ✅ Yes |
-| Voice & video calls | ⚠️ Windows/macOS (Linux webview lacks WebRTC) | ✅ Yes |
+| Voice & video calls | ⚠️ macOS only (see the FAQ) | ✅ Yes |
 | Multiple accounts (isolated sessions) | ✅ Yes | ❌ No |
 | Optional app lock (password + biometric) | ✅ Yes | ❌ No |
 | Global show/hide shortcut | ✅ Yes | ❌ No |
@@ -192,7 +195,11 @@ Linux (WebKitGTK), Windows 10/11 (WebView2), and macOS 12.1+ (WKWebView).
 Yes — whatRust is free and open source under the MIT License. The source is on [GitHub](https://github.com/karem505/whatRust).
 
 ### Do voice messages, voice calls, and video calls work in whatRust?
-Voice messages work on every platform — whatRust grants the webview microphone and camera access. Voice and video **calls** additionally need WebRTC inside the system webview: that's there on Windows (WebView2/Chromium) and macOS (WKWebKit), but most Linux distributions build WebKitGTK **without** WebRTC, so WhatsApp correctly reports that calling isn't supported on Linux. This is an engine limitation, not a permissions problem — if your distro ships a WebRTC-enabled WebKitGTK, calls light up automatically.
+Voice messages work on every platform — whatRust grants the webview microphone and camera access. Voice and video **calls** depend on the platform:
+
+- **macOS:** yes. whatRust presents itself as the Safari that ships with your macOS — which is exactly what WKWebView is — so WhatsApp Web uses its Safari calling path.
+- **Windows:** no. WhatsApp Web doesn't offer calls to Windows browsers at all — it shows *"Make calls with the Windows app"* even in Chrome or Edge — and whatRust won't disguise your OS to get around Meta's decision. Use the official WhatsApp app for calls on Windows.
+- **Linux:** most distributions build WebKitGTK **without** WebRTC, so WhatsApp correctly reports that calling isn't supported. This is an engine limitation, not a permissions problem — if your distro ships a WebRTC-enabled WebKitGTK, calls light up automatically.
 
 ### Can I use multiple WhatsApp accounts in whatRust?
 Yes. whatRust supports **multiple WhatsApp accounts** running at the same time — each opens in its own window with a fully isolated session, so different numbers stay logged in independently. Add, rename, and remove accounts from **Settings → Accounts**. On macOS this requires macOS 14 or later; Linux and Windows have no limit.
@@ -219,10 +226,13 @@ No. Login is persistent — scan the QR code once via Linked Devices and you sta
 ### Is whatRust safe? Does it read my messages?
 whatRust only loads the official `web.whatsapp.com` in a native webview and adds no message-handling layer of its own. It requests only the webview, microphone, and camera access that WhatsApp Web itself needs, and it is open source, so the code can be audited.
 
+### My WhatsApp account went "under review" after linking whatRust — why?
+whatRust doesn't talk to WhatsApp's servers itself: it shows the official `web.whatsapp.com` page, exactly as a browser tab would, and linking it is the same Linked Devices flow as WhatsApp Web. Account reviews are decided by WhatsApp's own automated systems, which whatRust can't see or influence. If your account is flagged, appeal through the WhatsApp app on your phone.
+
 ## Limitations
 
 - **Windows unread count**: Windows tray icons ignore text labels, so the unread *number* appears only in the hover tooltip (the icon still switches to a badged variant). macOS and Linux show the count.
-- **Notification click** does not yet focus the window — use the tray icon or the global shortcut.
+- **Notification click** focuses the window on Windows only — elsewhere use the tray icon or the global shortcut.
 - **macOS** builds are unsigned and currently Apple Silicon (arm64) only.
 - **macOS drag-and-drop from Photos.app** (and other apps that "promise" files rather than providing real paths, e.g. dragging an image straight out of a browser) isn't supported by the system webview layer — whatRust shows a hint instead of silently ignoring the drop. Drag from Finder, or use the attach (+) button.
 - **Drag-and-drop limits**: up to 200 files per drop, 500 MB per file, and 500 MB per drop total. Base64 transport is decoded incrementally while files stream in, but the page must still hold the final `File` data in memory. Larger batches can always be sent via WhatsApp's attach (+) → Document picker, which is not routed through these limits. Skipped files are reported in a notification.

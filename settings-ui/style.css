@@ -1,81 +1,146 @@
+/* Settings, styled after GNOME/Libadwaita preferences (issue #21): titled groups
+   of rounded "boxed list" rows, a title and subtitle on the left and the control
+   on the right, switches instead of checkboxes, one compact column. */
 :root {
   color-scheme: light dark;
   --green: #25d366;
+  --on-green: #042f1a;
+  --bg: #fafafa;
+  --card: #ffffff;
+  --fg: #1f1f1f;
+  --dim: #6f6f73;
+  --line: rgba(0, 0, 0, 0.08);
+  --border: rgba(0, 0, 0, 0.12);
+  --hover: rgba(0, 0, 0, 0.04);
+  --switch-off: #cfcfd2;
+  --danger: #c01c28;
+  --warn: #b86e00;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #222226;
+    --card: #2e2e32;
+    --fg: #f0f0f0;
+    --dim: #a3a3a8;
+    --line: rgba(255, 255, 255, 0.07);
+    --border: rgba(255, 255, 255, 0.14);
+    --hover: rgba(255, 255, 255, 0.05);
+    --switch-off: #55555b;
+    --danger: #ff7b81;
+    --warn: #f0a500;
+  }
 }
 * { box-sizing: border-box; }
+html, body { height: 100%; }
 body {
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   margin: 0;
-  padding: 20px 22px;
+  display: flex; flex-direction: column;
+  background: var(--bg); color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", Cantarell, Roboto, Ubuntu, sans-serif;
   font-size: 14px;
 }
-h1 { font-size: 17px; margin: 0 0 16px; }
-.row { display: flex; align-items: center; gap: 10px; padding: 8px 0; cursor: pointer; }
-.row input { width: 16px; height: 16px; accent-color: var(--green); }
-.field { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
-.field input, .field select {
-  padding: 8px 10px; border: 1px solid #8884; border-radius: 8px;
-  background: transparent; color: inherit; font-size: 13px;
+.prefs { flex: 1; overflow-y: auto; padding: 18px 16px 8px; }
+
+/* --- groups --- */
+.group { margin: 0 0 22px; }
+.group-title {
+  font-size: 13px; font-weight: 700; margin: 0 0 8px 2px; color: var(--fg);
 }
-/* A native popup button carries its own fixed control metrics and ignores most
-   of the padding above, so it renders shorter than the text fields beside it.
-   Drop the native appearance and draw the chevron ourselves; the select then
-   uses the same box as every input in this pane. */
-.field select {
+.group-note { font-size: 12px; color: var(--dim); margin: 8px 2px 0; line-height: 1.4; }
+.group-note code { background: var(--hover); padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+.group-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+
+/* --- boxed list --- */
+.boxed-list {
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  overflow: hidden;
+}
+.boxed-list:empty { display: none; }
+.boxed-list > * + * { border-top: 1px solid var(--line); }
+.boxed-list > [hidden] { display: none; }
+.boxed-list > [hidden] + * { border-top: 0; }
+.row {
+  display: flex; align-items: center; gap: 12px;
+  min-height: 50px; padding: 8px 12px;
+}
+label.row { cursor: pointer; }
+label.row:hover { background: var(--hover); }
+.row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.row-title { font-size: 14px; }
+.row-subtitle { font-size: 12px; color: var(--dim); line-height: 1.35; }
+
+/* An entry row: label left, text field filling the rest. */
+.entry-row .row-title { flex: 0 0 76px; }
+.entry-row input { flex: 1; min-width: 0; }
+
+/* --- controls --- */
+input[type="text"], input[type="password"], input[type="number"], select {
+  padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px;
+  background: transparent; color: inherit; font: inherit; font-size: 13px;
+}
+input:focus-visible, select:focus-visible, button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--green) 60%, transparent); outline-offset: 1px;
+}
+input[type="number"] { width: 72px; }
+/* A native popup button carries its own fixed metrics and ignores most padding;
+   drop the native look and draw the chevron so it matches the text fields. */
+select {
   appearance: none; -webkit-appearance: none;
-  line-height: normal; padding-right: 30px;
+  line-height: normal; padding-right: 30px; min-width: 112px;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238696a0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 10px center;
 }
-.actions { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
+select option { color: initial; }
+
+/* Checkbox drawn as an Adwaita-style switch. */
+input.switch {
+  appearance: none; -webkit-appearance: none; flex: none; margin: 0;
+  position: relative; width: 42px; height: 24px; border-radius: 12px;
+  background: var(--switch-off); cursor: pointer; transition: background 0.15s;
+}
+input.switch::before {
+  content: ""; position: absolute; top: 3px; left: 3px;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); transition: transform 0.15s;
+}
+input.switch:checked { background: var(--green); }
+input.switch:checked::before { transform: translateX(18px); }
+input.switch:disabled { opacity: 0.5; cursor: not-allowed; }
+
 button {
-  background: var(--green); color: #042f1a; border: 0; border-radius: 8px;
-  padding: 9px 18px; font-weight: 600; font-size: 14px; cursor: pointer;
+  background: var(--green); color: var(--on-green); border: 0; border-radius: 8px;
+  padding: 8px 16px; font: inherit; font-weight: 600; cursor: pointer;
 }
 button:hover { filter: brightness(1.05); }
-button.secondary { background: transparent; color: inherit; border: 1px solid #8886; }
-button.secondary:hover { filter: none; background: #8881; }
-.note { color: var(--green); font-weight: 600; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+button.secondary { background: var(--hover); color: inherit; border: 1px solid var(--border); }
+button.secondary:hover { filter: none; background: var(--line); }
 
-/* --- Accounts manager --- */
-h2 { font-size: 14px; margin: 0 0 10px; font-weight: 600; }
-.section-title { margin-top: 22px; }
-.divider { border: 0; border-top: 1px solid #8883; margin: 18px 0; }
-#accounts-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
-.account-row {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 10px; border: 1px solid #8884; border-radius: 8px;
-}
-.account-row .acct-name { flex: 1 1 auto; font-size: 13px; }
+/* --- accounts --- */
+.account-row { display: flex; align-items: center; gap: 6px; min-height: 50px; padding: 8px 10px 8px 12px; }
+.account-row .acct-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account-row .acct-unread {
   min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
-  background: var(--green); color: #042f1a; font-size: 11px; font-weight: 700;
+  background: var(--green); color: var(--on-green); font-size: 11px; font-weight: 700;
   display: inline-flex; align-items: center; justify-content: center;
 }
-.account-row button {
-  padding: 5px 10px; font-size: 12px; font-weight: 600;
-}
-.account-row button.secondary {
-  background: transparent; color: inherit; border: 1px solid #8886;
-}
-.account-row button.secondary:hover { filter: none; background: #8881; }
-.account-row button:disabled { opacity: 0.4; cursor: not-allowed; }
-.add-row { display: flex; gap: 8px; }
-.add-row input {
-  flex: 1 1 auto; padding: 8px 10px; border: 1px solid #8884; border-radius: 8px;
-  background: transparent; color: inherit; font-size: 13px;
-}
-.add-row button:disabled { opacity: 0.4; cursor: not-allowed; }
-.macos-note { color: #c0392b; font-size: 12px; margin: 8px 0 0; }
+.account-row button { padding: 5px 10px; font-size: 12px; }
+.add-row { display: flex; gap: 8px; margin-top: 10px; }
+.add-row input { flex: 1 1 auto; min-width: 0; }
+.macos-note { color: var(--danger); font-size: 12px; margin: 8px 2px 0; }
 .macos-note[hidden] { display: none; }
-.lock-note { font-size: 12px; color: #8696a0; margin-top: 10px; line-height: 1.4; }
-#lock-enabled .field input[type="number"] { width: 80px; }
 
-.hotkey-row { display: flex; gap: 8px; align-items: center; }
+/* --- shortcut --- */
+.hotkey-row { display: flex; gap: 6px; align-items: center; flex: 0 1 230px; min-width: 0; }
 .hotkey-row #hotkey { flex: 1; min-width: 0; }
-#record_hotkey.recording { background: #f0a500; color: #1a1a1a; }
-.hotkey-hint { font-size: 12px; color: #f0a500; margin: 4px 0 0; }
+.hotkey-row button { padding: 6px 10px; font-size: 12px; }
+#record_hotkey.recording { background: var(--warn); color: #1a1a1a; border-color: transparent; }
+.hotkey-hint { font-size: 12px; color: var(--warn); margin: 8px 2px 0; }
 
-.field-note { font-size: 12px; color: #8696a0; margin: 4px 0 0; line-height: 1.4; }
-.field-note code { background: #8882; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+/* --- footer --- */
+.footer {
+  display: flex; align-items: center; justify-content: flex-end; gap: 12px;
+  padding: 10px 16px; border-top: 1px solid var(--line); background: var(--bg);
+}
+.note { flex: 1; color: var(--green); font-weight: 600; font-size: 13px; }

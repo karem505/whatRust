@@ -1,7 +1,23 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "settings-local",
-  "description": "Local IPC for the settings window.",
+  "description": "Local IPC for the settings window: settings, accounts and app-lock management.",
   "windows": ["settings"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "allow-get-settings",
+    "allow-set-settings",
+    "allow-list-accounts",
+    "allow-add-account",
+    "allow-remove-account",
+    "allow-rename-account",
+    "allow-open-account",
+    "allow-get-lock-status",
+    "allow-set-app-lock-password",
+    "allow-change-app-lock-password",
+    "allow-disable-app-lock",
+    "allow-set-app-lock-options",
+    "allow-set-biometric-enabled",
+    "allow-lock-app"
+  ]
 }

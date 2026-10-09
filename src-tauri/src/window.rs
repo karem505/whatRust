@@ -1,14 +1,13 @@
 use crate::accounts::{self, Account, ActiveAccount};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
-/// Recent desktop Chrome UA. WhatsApp Web rejects the default WebKitGTK/Safari UA.
-/// Bump the major version occasionally, and keep it in sync with the client-hints
-/// shim in `resources/bridge.js` (brands/fullVersionList/uaFullVersion).
+/// Recent desktop Chrome UA (Linux, Windows). WhatsApp Web rejects the default
+/// WebKitGTK UA. Bump the major version occasionally, and keep it in sync with the
+/// client-hints shim in `resources/bridge.js` (brands/fullVersionList/uaFullVersion).
 ///
 /// Per-OS variants: on Windows WebView2 exposes REAL Chromium client hints with
-/// platform "Windows", and on macOS the engine is WKWebView — advertising an
-/// "X11; Linux" UA there produces a self-contradictory browser fingerprint, so
-/// each OS claims the Chrome build that actually matches its platform token.
+/// platform "Windows", so each OS claims the Chrome build that actually matches
+/// its platform token. macOS is different, see [`user_agent`].
 ///
 /// NOTE (Linux): setting this alone is NOT enough — WebKitGTK's site-specific
 /// quirks override the embedder UA for web.whatsapp.com with a fake macOS Safari
@@ -20,15 +19,49 @@ pub const CHROME_UA: &str =
 #[cfg(target_os = "windows")]
 pub const CHROME_UA: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36";
+
+/// The user agent an account window presents.
+///
+/// macOS (issue #15): the engine is WKWebView, i.e. Safari's WebKit. Claiming to
+/// be Chrome there made WhatsApp pick its Chromium calling path, which WebKit
+/// can't run ("Your browser doesn't support calling") even though WebRTC is
+/// present — with a Safari UA calls work. Safari is a browser WhatsApp Web
+/// supports, and it is what the engine really is, so present the Safari release
+/// that ships with the running macOS.
+#[cfg(not(target_os = "macos"))]
+fn user_agent() -> String {
+    CHROME_UA.to_string()
+}
+
 #[cfg(target_os = "macos")]
-pub const CHROME_UA: &str =
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36";
+fn user_agent() -> String {
+    use objc2_foundation::NSProcessInfo;
+    let major = NSProcessInfo::processInfo()
+        .operatingSystemVersion()
+        .majorVersion;
+    safari_ua(major.max(0) as u64)
+}
+
+/// Safari's UA for a macOS major version. Safari freezes the OS token at
+/// `10_15_7`; its own version is the OS major + 3 up to macOS 15 (Safari 18), and
+/// equal to it from macOS 26 on, when both moved to year-based numbering.
+#[cfg(any(target_os = "macos", test))]
+fn safari_ua(macos_major: u64) -> String {
+    let safari = if macos_major >= 26 {
+        macos_major
+    } else {
+        macos_major.max(11) + 3
+    };
+    format!(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/{safari}.0 Safari/605.1.15"
+    )
+}
 
 const BRIDGE_JS: &str = include_str!("../resources/bridge.js");
 const APP_ICON: &[u8] = include_bytes!("../icons/128x128.png");
 
 /// Open (or focus, if it already exists) the window for `account`. The label is
-/// `wa-<id>`; everything the single-account window carried is preserved (Chrome UA,
+/// `wa-<id>`; everything the single-account window carried is preserved (user agent,
 /// `bridge.js`, app icon, sizes, close-to-tray), plus per-account session isolation
 /// for non-default accounts.
 pub fn open_account_window(
@@ -51,11 +84,12 @@ pub fn open_account_window(
         .inner_size(1100.0, 800.0)
         .min_inner_size(560.0, 480.0)
         .icon(icon)?
-        .user_agent(CHROME_UA)
+        .user_agent(&user_agent())
         .initialization_script(BRIDGE_JS)
         // Drag-and-drop is done by capturing the OS drop in Rust and streaming the file
         // into the page (see `register_drop_handler` + bridge.js `__whatrustDropFeed`).
-        // We deliberately KEEP Tauri's drag-drop handler enabled: on Linux/webkit2gtk the
+        // We deliberately KEEP Tauri's drag-drop handler enabled (except on Windows, see
+        // below): on Linux/webkit2gtk the
         // native webview never delivers a file drop into the page DOM (broken on Wayland;
         // on X11 the GTK drop is accepted — the "+" cursor shows — but it still never
         // reaches WhatsApp Web), so relying on in-page HTML5 drop simply does not work
@@ -63,6 +97,19 @@ pub fn open_account_window(
         // Belt-and-braces: cancel any `file://` navigation so a stray drop can never
         // navigate the window away and tear down the live WhatsApp session.
         .on_navigation(|url| url.scheme() != "file")
+        // Links (issue #30). WhatsApp opens every chat link in a new tab
+        // (`target="_blank"` / `window.open`). Unanswered, the system webview drops
+        // that request (WKWebView, WebKitGTK) or opens nothing useful, so a click
+        // did nothing. Answer it: WhatsApp links load in this window, web/mail/phone
+        // links go to the system's default handler, and no popup window is created.
+        .on_new_window({
+            let app = app.clone();
+            let label = label.clone();
+            move |url, _features| {
+                route_new_window(&app, &label, url);
+                tauri::webview::NewWindowResponse::Deny
+            }
+        })
         // Downloads: with NO handler registered, wry never wires up the platform's
         // download machinery at all — on Linux nobody answers WebKit's
         // `decide-destination` and the engine cancels every download, so WhatsApp's
@@ -71,12 +118,12 @@ pub fn open_account_window(
         // de-duplicated absolute path on Linux/Windows; the fallback covers a
         // platform handing us an empty/relative destination) and toast on finish.
         .on_download(|webview, event| {
+            let app = webview.app_handle();
+            let downloads = app.state::<crate::downloads::Downloads>();
             match event {
                 tauri::webview::DownloadEvent::Requested { url, destination } => {
-                    ensure_download_destination(
-                        destination,
-                        webview.app_handle().path().download_dir().ok(),
-                    );
+                    ensure_download_destination(destination, app.path().download_dir().ok());
+                    downloads.requested(url.as_str(), destination);
                     // Log routing only — never the file name (matches dlog's no-PII rule).
                     crate::dlog::log(&format!(
                         "download: requested scheme={} dest_abs={}",
@@ -84,27 +131,45 @@ pub fn open_account_window(
                         destination.is_absolute()
                     ));
                 }
-                tauri::webview::DownloadEvent::Finished { path, success, .. } => {
+                tauri::webview::DownloadEvent::Finished { url, path, success } => {
                     crate::dlog::log(&format!(
                         "download: finished success={success} path_known={}",
                         path.is_some()
                     ));
-                    let app = webview.app_handle();
-                    if success {
-                        let body = match path.as_ref().and_then(|p| p.file_name()) {
-                            Some(n) => {
-                                format!("{} — saved to your Downloads folder.", n.to_string_lossy())
-                            }
-                            // macOS never reports the final path; the folder is still right.
-                            None => "Saved to your Downloads folder.".to_string(),
-                        };
-                        crate::notify::show(app, "Download complete", &body);
+                    // Issue #21: confirm in the window itself, with Open / Show in
+                    // folder, like a browser. macOS reports no path; the
+                    // destination recorded at request time stands in for it.
+                    let done = if success {
+                        downloads.finished(url.as_str(), path)
                     } else {
-                        crate::notify::show(
-                            app,
-                            "Download failed",
-                            "The file could not be downloaded. Please try again.",
-                        );
+                        downloads.failed(url.as_str());
+                        None
+                    };
+                    let shown = webview
+                        .eval(crate::downloads::toast_js(
+                            done.as_ref().map(|(id, p)| (*id, p.as_path())),
+                        ))
+                        .is_ok();
+                    // Nobody is looking at the window (hidden to the tray, or in
+                    // the background): say it with a system notification too.
+                    let focused = webview.window().is_focused().unwrap_or(false);
+                    if !shown || !focused {
+                        if success {
+                            let body = match done.as_ref().and_then(|(_, p)| p.file_name()) {
+                                Some(n) => format!(
+                                    "{} — saved to your Downloads folder.",
+                                    n.to_string_lossy()
+                                ),
+                                None => "Saved to your Downloads folder.".to_string(),
+                            };
+                            crate::notify::show(app, "Download complete", &body);
+                        } else {
+                            crate::notify::show(
+                                app,
+                                "Download failed",
+                                "The file could not be downloaded. Please try again.",
+                            );
+                        }
                     }
                 }
                 _ => {}
@@ -112,6 +177,17 @@ pub fn open_account_window(
             true
         })
         .visible(!start_hidden);
+
+    // Windows (issue #31): WebView2 is Chromium and delivers OS file drops to the
+    // page natively, so WhatsApp's own drop zone works exactly as in Chrome. With
+    // Tauri's handler enabled, wry instead turns WebView2's external drops OFF and
+    // registers its own IDropTarget on the webview's child windows — enumerated
+    // once, at creation. Current WebView2 runtimes create those child windows
+    // later, so nothing got registered and every drop was silently swallowed.
+    // Let WebView2 handle drops; `register_drop_handler` stays wired but inert
+    // here, and the `file://` navigation guard above still applies.
+    #[cfg(windows)]
+    let builder = builder.disable_drag_drop_handler();
 
     let builder = apply_isolation(builder, account, app);
     let win = builder.build()?;
@@ -138,6 +214,42 @@ pub fn open_account_window(
     register_drop_handler(&win);
     enable_webview_media(&win);
     Ok(win)
+}
+
+/// Where a new-window request from an account webview goes.
+#[derive(Debug, PartialEq, Eq)]
+enum NewWindowRoute {
+    /// A WhatsApp link: load the mapped WhatsApp Web page in the same window.
+    InApp(tauri::Url),
+    /// An ordinary link: the system's default browser / mail / phone handler.
+    External(tauri::Url),
+    /// Nothing safe to do (`about:blank` popups, `javascript:`, `file:`, …).
+    Ignore,
+}
+
+fn new_window_route(url: &tauri::Url) -> NewWindowRoute {
+    if let Some(target) = crate::links::whatsapp_web_url(url.as_str()) {
+        NewWindowRoute::InApp(target)
+    } else if crate::opener::is_openable_external(url) {
+        NewWindowRoute::External(url.clone())
+    } else {
+        NewWindowRoute::Ignore
+    }
+}
+
+fn route_new_window(app: &AppHandle, label: &str, url: tauri::Url) {
+    match new_window_route(&url) {
+        NewWindowRoute::InApp(target) => {
+            crate::dlog::log("links: WhatsApp link clicked, opening in-app");
+            if let Some(w) = app.get_webview_window(label) {
+                let _ = w.navigate(target);
+            }
+        }
+        NewWindowRoute::External(url) => crate::opener::open_url(app, url),
+        NewWindowRoute::Ignore => {
+            crate::dlog::log(&format!("links: ignored new window ({})", url.scheme()))
+        }
+    }
 }
 
 /// Set the display zoom on one account webview.
@@ -188,8 +300,8 @@ const CHUNKS_PER_EVAL: usize = 2;
 ///
 /// On Linux the webview never delivers the drop into the page DOM, so Tauri's
 /// drag-drop handler (kept enabled in the builder) is our only source of the dropped
-/// paths — and because that handler consumes the drop on every platform, Windows and
-/// macOS drops arrive here too. A dedicated FIFO worker per account window reads and
+/// paths — and because that handler consumes the drop, macOS drops arrive here too.
+/// (Windows disables the handler and lets WebView2 deliver drops to the page.) A dedicated FIFO worker per account window reads and
 /// streams drops off the UI thread in OS event order, so a later small drop cannot
 /// commit before an earlier large one. Messages reach the page-side
 /// `__whatrustDropFeed` (bridge.js) as begin/chunk/end operations keyed by a
@@ -1080,8 +1192,8 @@ mod tests {
     use super::{
         base64_encode, drop_ack_failed, drop_msg_begin, drop_msg_chunk_prefix_parts,
         drop_msg_commit, drop_msg_end, ensure_download_destination, mime_for, plan_drop,
-        run_drop_queue, stream_chunks, summarize_skips, toggle_decision, DropSkips, StreamAbort,
-        ToggleAct, CHROME_UA, CHUNKS_PER_EVAL, DROP_CHUNK_BYTES, DROP_MSG_CHUNK_SUFFIX_PARTS,
+        run_drop_queue, safari_ua, stream_chunks, summarize_skips, toggle_decision, DropSkips,
+        StreamAbort, ToggleAct, CHUNKS_PER_EVAL, DROP_CHUNK_BYTES, DROP_MSG_CHUNK_SUFFIX_PARTS,
         MAX_DROP_FILES,
     };
 
@@ -1108,11 +1220,12 @@ mod tests {
         );
     }
 
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn chrome_ua_and_bridge_client_hints_agree_on_the_version() {
         // The UA header (Rust) and the client-hints shim (bridge.js) must present the
         // same Chrome major version, or WhatsApp sees an inconsistent browser.
-        let major = CHROME_UA
+        let major = super::CHROME_UA
             .split("Chrome/")
             .nth(1)
             .and_then(|s| s.split('.').next())
@@ -1126,6 +1239,18 @@ mod tests {
             bridge.contains(&format!("uaFullVersion: \"{major}.0.0.0\"")),
             "bridge.js uaFullVersion must advertise Chrome {major}"
         );
+    }
+
+    #[test]
+    fn macos_presents_the_safari_that_ships_with_it() {
+        assert!(safari_ua(15).contains("Version/18.0 Safari/605.1.15"));
+        assert!(safari_ua(14).contains("Version/17.0 "));
+        assert!(safari_ua(26).contains("Version/26.0 "));
+        assert!(safari_ua(27).contains("Version/27.0 "));
+        // A Safari UA carries no Chrome token, so bridge.js leaves the Chrome-only
+        // shims (client hints, window.chrome) out and the fingerprint stays Safari.
+        assert!(!safari_ua(26).contains("Chrome/"));
+        assert!(safari_ua(26).starts_with("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"));
     }
 
     #[test]
@@ -1420,6 +1545,28 @@ mod tests {
         assert_eq!(mime_for("movie.qt"), "video/quicktime");
         assert_eq!(mime_for("pic.hif"), "image/heif");
         assert_eq!(mime_for("clip.3gp2"), "video/3gpp2");
+    }
+
+    #[test]
+    fn new_windows_route_whatsapp_links_in_app_and_web_links_out() {
+        use super::{new_window_route, NewWindowRoute};
+        let route = |u: &str| new_window_route(&u.parse().unwrap());
+        assert_eq!(
+            route("https://github.com/karem505/whatRust"),
+            NewWindowRoute::External("https://github.com/karem505/whatRust".parse().unwrap())
+        );
+        assert!(matches!(route("mailto:a@b.c"), NewWindowRoute::External(_)));
+        assert_eq!(
+            route("https://wa.me/15551234567"),
+            NewWindowRoute::InApp(
+                "https://web.whatsapp.com/send?phone=15551234567"
+                    .parse()
+                    .unwrap()
+            )
+        );
+        assert_eq!(route("about:blank"), NewWindowRoute::Ignore);
+        assert_eq!(route("file:///etc/passwd"), NewWindowRoute::Ignore);
+        assert_eq!(route("javascript:alert(1)"), NewWindowRoute::Ignore);
     }
 
     #[test]
