@@ -23,39 +23,15 @@ fn is_remote_label(label: &str) -> bool {
 #[tauri::command]
 pub fn notify(window: tauri::Window, app: tauri::AppHandle, title: String, body: String) {
     // issue #3 diagnostics: confirm the command is actually reached from the
-    // injected bridge. If this line never appears in the log when a message
-    // arrives, the page never called our Notification shim (e.g. it used the
-    // service-worker showNotification path), not the OS toast layer. No message
-    // content is logged (PII) — only that an event occurred.
+    // injected bridge. No message content is logged (PII).
     crate::dlog::log("commands::notify invoked");
-    // While locked, suppress notifications entirely so message previews don't leak
-    // to the OS notification center / lock screen. The tray unread badge still updates
-    // via set_unread (a count only, no content).
-    if !crate::lock::is_unlocked(&app) {
-        crate::dlog::log("commands::notify suppressed: app is locked");
-        return;
-    }
-    if !crate::settings::load(&app).notifications {
-        crate::dlog::log("commands::notify suppressed: notifications disabled in settings");
-        return;
-    }
-    // Prefix the account name when more than one account exists, so notifications
-    // are attributable (e.g. "Work: New message").
-    let f = accounts::load(&app);
-    let title = if f.accounts.len() > 1 {
-        if let Some(id) = accounts::id_from_label(window.label()) {
-            if let Some(acct) = f.accounts.iter().find(|a| a.id == id) {
-                format!("{}: {}", acct.name, title)
-            } else {
-                title
-            }
-        } else {
-            title
-        }
-    } else {
-        title
-    };
-    crate::notify::show(&app, &title, &body);
+    crate::notify::from_account(
+        &app,
+        window.label(),
+        &title,
+        &body,
+        crate::notify::Source::Page,
+    );
 }
 
 /// Diagnostic breadcrumb from the injected page script (bridge.js) into the same
@@ -100,7 +76,12 @@ pub fn reveal_download(app: tauri::AppHandle, id: u64) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn set_unread(window: tauri::Window, app: tauri::AppHandle, title: String) {
+pub fn set_unread(
+    window: tauri::Window,
+    app: tauri::AppHandle,
+    title: String,
+    settled: Option<bool>,
+) {
     let count = crate::unread::parse_unread(&title);
     let Some(id) = accounts::id_from_label(window.label()) else {
         return;
@@ -109,15 +90,24 @@ pub fn set_unread(window: tauri::Window, app: tauri::AppHandle, title: String) {
     // Update the per-account count and compute the aggregate, then drop all
     // UnreadMap guards BEFORE calling tray::rebuild_menu (which re-locks the map)
     // to avoid a deadlock.
-    let total = {
+    let (previous, total) = {
         let state = app.state::<UnreadMap>();
         let mut map = state.lock().unwrap();
-        map.insert(id.to_string(), count);
-        accounts::aggregate_unread(&map)
+        let previous = map.insert(id.to_string(), count);
+        (previous, accounts::aggregate_unread(&map))
     };
 
     crate::tray::update_badge(&app, total);
     crate::tray::rebuild_menu(&app);
+
+    // A new unread chat while the window is in the background: make sure the
+    // user hears about it even when WhatsApp raises its own notification where
+    // whatRust can't see it (issue #3). Covered by a real notification, this
+    // stays silent; see notify::unread_increased.
+    let focused = window.is_focused().unwrap_or(false) && window.is_visible().unwrap_or(false);
+    if crate::notify::fallback_due(previous, count, focused, settled.unwrap_or(false)) {
+        crate::notify::unread_increased(&app, window.label(), count);
+    }
 }
 
 #[tauri::command]

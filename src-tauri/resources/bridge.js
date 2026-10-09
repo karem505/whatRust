@@ -27,6 +27,15 @@
   // Returns true if forwarded, false if suppressed as a duplicate.
   var DEDUP_MS = 3500;
   var recentNotif = Object.create(null);
+  // Which notification path the page used, logged once per path (issue #3:
+  // on Windows real-message notifications never reached the shim). Names only,
+  // never content.
+  var seenPath = Object.create(null);
+  function notePath(path) {
+    if (seenPath[path]) return;
+    seenPath[path] = true;
+    invoke("dlog", { msg: "notif path: " + path });
+  }
   function nativeNotify(title, body) {
     title = String(title || "WhatsApp");
     body = String(body || "");
@@ -171,6 +180,7 @@
       this.onclose = null;
       this.onerror = null;
       this.onshow = null;
+      notePath("page Notification()");
       nativeNotify(title, options.body);
     }
     ShimNotification.prototype.close = function () {
@@ -228,6 +238,7 @@
     if (SWR && SWR.prototype && typeof SWR.prototype.showNotification === "function") {
       SWR.prototype.showNotification = function (title, options) {
         options = options || {};
+        notePath("page registration.showNotification()");
         // Route through nativeNotify so the service-worker path shares the same de-dup
         // window as window.Notification (an alert that fires on both paths shows once).
         nativeNotify(title, options.body);
@@ -242,12 +253,35 @@
     }
   } catch (e) {}
 
+  // 2c) Service-worker registration, for the diagnostic log: a notification the
+  //     service worker raises itself never passes through the shims above, so
+  //     knowing a worker is installed explains a silent message (issue #3). The
+  //     path of WhatsApp's own script only; nothing about the user.
+  try {
+    var swc = navigator.serviceWorker;
+    if (swc && typeof swc.register === "function") {
+      var nativeRegister = swc.register.bind(swc);
+      swc.register = function (url, opts) {
+        try {
+          var path = new URL(String(url), window.location.href || window.location.origin).pathname;
+          notePath("service worker registered (" + path.slice(0, 80) + ")");
+        } catch (e) {}
+        return nativeRegister(url, opts);
+      };
+    }
+  } catch (e) {}
+
   // 3) Unread count — forward the raw <title> string on change; Rust parses it.
+  // `settled`: the page has been up long enough that a rising count means new
+  // messages, not WhatsApp syncing after a launch or reload (Rust only raises
+  // its unread fallback alert once settled).
   var lastTitle = "";
+  var pageStart = Date.now();
+  var SETTLE_MS = 30000;
   function report() {
     if (document.title === lastTitle) return;
     lastTitle = document.title;
-    invoke("set_unread", { title: document.title });
+    invoke("set_unread", { title: document.title, settled: Date.now() - pageStart > SETTLE_MS });
   }
   function start() {
     try {
