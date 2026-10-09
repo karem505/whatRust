@@ -69,7 +69,8 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-window-state = "2"
 user-idle = { version = "0.6", default-features = false, features = ["dbus"] }  # system idle time for the idle auto-lock trigger (dbus: no libxss-dev needed)
 
-[dev-dependencies]
-# Mock runtime for the IPC permission tests (src/ipc_acl_tests.rs). The feature
-# adds no crates, so Cargo.lock and the offline Flatpak sources are unchanged.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+# Mock runtime for the IPC permission tests (src/ipc_acl_tests.rs, Linux only).
+# The feature adds no crates, so Cargo.lock and the offline Flatpak sources are
+# unchanged.
 tauri = { version = "2", features = ["tray-icon", "image-png", "test"] }

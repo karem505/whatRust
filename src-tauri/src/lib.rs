@@ -14,7 +14,10 @@ mod tray;
 mod unread;
 mod window;
 
-#[cfg(test)]
+// Linux only: the capability files are the same on every OS, and a second
+// `generate_context!` clashes with the embedded Info.plist on macOS, while the
+// mock-runtime test binary lacks the Common Controls manifest on Windows.
+#[cfg(all(test, target_os = "linux"))]
 mod ipc_acl_tests;
 
 use tauri::Manager;
