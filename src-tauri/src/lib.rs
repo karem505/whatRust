@@ -7,6 +7,7 @@ mod dlog;
 mod downloads;
 mod links;
 mod lock;
+mod notif_icon;
 mod notify;
 mod opener;
 mod settings;

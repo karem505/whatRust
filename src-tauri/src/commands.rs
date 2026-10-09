@@ -20,8 +20,16 @@ fn is_remote_label(label: &str) -> bool {
     label.starts_with("wa-")
 }
 
+/// `icon` is the sender's picture as a small base64 PNG (bridge.js), when
+/// WhatsApp gave one and it could be loaded.
 #[tauri::command]
-pub fn notify(window: tauri::Window, app: tauri::AppHandle, title: String, body: String) {
+pub fn notify(
+    window: tauri::Window,
+    app: tauri::AppHandle,
+    title: String,
+    body: String,
+    icon: Option<String>,
+) {
     // issue #3 diagnostics: confirm the command is actually reached from the
     // injected bridge. No message content is logged (PII).
     crate::dlog::log("commands::notify invoked");
@@ -30,6 +38,7 @@ pub fn notify(window: tauri::Window, app: tauri::AppHandle, title: String, body:
         window.label(),
         &title,
         &body,
+        icon.as_deref(),
         crate::notify::Source::Page,
     );
 }

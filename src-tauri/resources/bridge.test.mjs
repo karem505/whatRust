@@ -427,6 +427,52 @@ async function testNotificationsReachTheNativeNotifyCommand() {
   assert(w.Notification.permission === "granted", "Notification.permission reads granted");
 }
 
+async function testNotificationPictureIsForwardedAsPng() {
+  console.log("the sender's picture goes to notify as a small PNG, or the toast goes without it");
+  const { window: w, document: d, invocations } = makeHarness();
+  const fetched = [];
+  const drawn = [];
+  w.fetch = (url, opts) => {
+    fetched.push({ url, opts });
+    return Promise.resolve({ ok: true, blob: () => Promise.resolve({ type: "image/webp" }) });
+  };
+  w.createImageBitmap = () => Promise.resolve({ width: 200, height: 100, close() {} });
+  d.createElement = (tag) =>
+    tag === "canvas"
+      ? {
+          getContext: () => ({ drawImage: (...a) => drawn.push(a) }),
+          toDataURL: (type) => "data:" + type + ";base64,iVBORw0KGgo=",
+        }
+      : new FakeElement(tag);
+  new w.Notification("Bob", { body: "hi", icon: "blob:https://web.whatsapp.com/1234" });
+  await sleep(10);
+  const sent = invocations.filter((x) => x.cmd === "notify");
+  assert(sent.length === 1 && sent[0].args.icon === "iVBORw0KGgo=", "base64 PNG forwarded as icon");
+  assert(sent[0] && sent[0].args.title === "Bob" && sent[0].args.body === "hi", "title and body unchanged");
+  assert(fetched[0] && fetched[0].opts.credentials === "omit", "fetched without credentials");
+  // A 200x100 picture is cropped to its centre square and scaled to 96px.
+  assert(drawn[0] && drawn[0].slice(1).join() === "50,0,100,100,0,0,96,96", "centre square, 96px");
+  const logged = invocations.filter((x) => x.cmd === "dlog").map((x) => x.args.msg);
+  assert(logged.includes("notif path: icon blob ok"), "outcome logged by scheme only");
+  assert(!logged.some((m) => m.includes("1234")), "the picture's URL is never logged");
+
+  // Unloadable: the toast still goes out, just without a picture.
+  w.fetch = () => Promise.reject(new Error("blocked"));
+  new w.Notification("Carol", { body: "yo", icon: "https://pps.whatsapp.net/v/x.jpg" });
+  await sleep(10);
+  const carol = invocations.filter((x) => x.cmd === "notify" && x.args.title === "Carol");
+  assert(carol.length === 1 && !("icon" in carol[0].args), "notify without icon when it can't load");
+
+  // Anything but blob:, data: or https: is not fetched at all.
+  const before = fetched.length;
+  new w.Notification("Dan", { body: "x", icon: "file:///etc/passwd" });
+  assert(
+    invocations.some((x) => x.cmd === "notify" && x.args.title === "Dan" && !("icon" in x.args)),
+    "other schemes: sent at once, no picture"
+  );
+  assert(fetched.length === before, "other schemes are not fetched");
+}
+
 async function testPermissionsApiAgreesNotificationsAreGranted() {
   console.log("navigator.permissions reports notifications granted, passes others through");
   const asked = [];
@@ -545,6 +591,7 @@ const tests = [
   testRiskyDownloadsAndFailures,
   testChromeShimsOnlyForAChromeUserAgent,
   testNotificationsReachTheNativeNotifyCommand,
+  testNotificationPictureIsForwardedAsPng,
   testPermissionsApiAgreesNotificationsAreGranted,
   testRefusedCommandsWarnOnceAndNeverThrow,
   testMixedDropLosesNothing,

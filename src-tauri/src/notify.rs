@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
@@ -92,9 +93,17 @@ fn attributed_title(app: &AppHandle, label: &str, title: &str) -> String {
 }
 
 /// A message notification from an account window, by any route. Applies the
-/// lock and the Notifications setting, drops duplicates, then shows the toast.
+/// lock and the Notifications setting, drops duplicates, then shows the toast,
+/// with the sender's picture when `icon` (base64 PNG) is given and valid.
 /// No message content is logged (PII) — only the route and the outcome.
-pub fn from_account(app: &AppHandle, label: &str, title: &str, body: &str, source: Source) {
+pub fn from_account(
+    app: &AppHandle,
+    label: &str,
+    title: &str,
+    body: &str,
+    icon: Option<&str>,
+    source: Source,
+) {
     crate::dlog::log(&format!("notify: {source:?} notification"));
     // While locked, suppress notifications entirely so message previews don't
     // leak to the OS notification center / lock screen. The tray unread badge
@@ -113,7 +122,14 @@ pub fn from_account(app: &AppHandle, label: &str, title: &str, body: &str, sourc
             return;
         }
     }
-    show(app, &attributed_title(app, label, title), body);
+    // Only written once the toast is certain to show (unlocked, enabled, new).
+    let icon = icon.and_then(|b64| crate::notif_icon::store(app, b64));
+    show_with_icon(
+        app,
+        &attributed_title(app, label, title),
+        body,
+        icon.as_deref(),
+    );
 }
 
 /// The unread count of `label` went up while its window wasn't focused. Wait
@@ -142,7 +158,7 @@ pub fn unread_increased(app: &AppHandle, label: &str, unread_chats: u32) {
             return;
         }
         let (title, body) = fallback_text(unread_chats);
-        from_account(&app, &label, &title, &body, Source::UnreadFallback);
+        from_account(&app, &label, &title, &body, None, Source::UnreadFallback);
     });
 }
 
@@ -154,21 +170,34 @@ pub fn unread_increased(app: &AppHandle, label: &str, unread_chats: u32) {
 /// (issue #3). Here the result is logged, and clicking the toast brings whatRust
 /// forward. No message content is logged (PII) — only that a toast was shown.
 pub fn show(app: &AppHandle, title: &str, body: &str) {
+    show_with_icon(app, title, body, None);
+}
+
+/// `show` with an optional picture (a PNG file): round on a Windows toast, the
+/// notification icon on Linux. macOS notifications always carry the app icon.
+pub fn show_with_icon(app: &AppHandle, title: &str, body: &str, icon: Option<&Path>) {
     #[cfg(windows)]
     {
-        windows_toast(app, title, body);
+        windows_toast(app, title, body, icon.map(Path::to_path_buf));
     }
     #[cfg(not(windows))]
     {
         use tauri_plugin_notification::NotificationExt;
-        let r = app.notification().builder().title(title).body(body).show();
-        crate::dlog::log(&format!("notify::show dispatched (plugin returned {r:?})"));
+        let mut builder = app.notification().builder().title(title).body(body);
+        if let Some(icon) = icon {
+            builder = builder.icon(icon.to_string_lossy());
+        }
+        let r = builder.show();
+        crate::dlog::log(&format!(
+            "notify::show dispatched{} (plugin returned {r:?})",
+            if icon.is_some() { " with picture" } else { "" }
+        ));
     }
 }
 
 #[cfg(windows)]
-fn windows_toast(app: &AppHandle, title: &str, body: &str) {
-    use tauri_winrt_notification::Toast;
+fn windows_toast(app: &AppHandle, title: &str, body: &str, icon: Option<std::path::PathBuf>) {
+    use tauri_winrt_notification::{IconCrop, Toast};
     // The AUMID aumid.rs registers at startup, so the toast is attributed to
     // whatRust and allowed to render.
     let aumid = app.config().identifier.clone();
@@ -176,9 +205,11 @@ fn windows_toast(app: &AppHandle, title: &str, body: &str) {
     // WinRT calls can block briefly; keep them off the UI/IPC thread.
     std::thread::spawn(move || {
         let click = app.clone();
-        let result = Toast::new(&aumid)
-            .title(&title)
-            .text1(&body)
+        let mut toast = Toast::new(&aumid).title(&title).text1(&body);
+        if let Some(icon) = &icon {
+            toast = toast.icon(icon, IconCrop::Circular, "");
+        }
+        let result = toast
             .on_activated(move |_| {
                 let app = click.clone();
                 let _ = click.run_on_main_thread(move || crate::window::show_main(&app));
@@ -186,6 +217,7 @@ fn windows_toast(app: &AppHandle, title: &str, body: &str) {
             })
             .show();
         match result {
+            Ok(()) if icon.is_some() => crate::dlog::log("notify::show: toast shown with picture"),
             Ok(()) => crate::dlog::log("notify::show: toast shown"),
             Err(e) => crate::dlog::log(&format!("notify::show: toast FAILED: {e}")),
         }

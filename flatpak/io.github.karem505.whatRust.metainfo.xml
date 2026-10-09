@@ -62,6 +62,12 @@
   </screenshots>
 
   <releases>
+    <release type="stable" version="0.6.7" date="2026-10-10">
+      <url type="details">https://github.com/karem505/whatRust/releases/tag/v0.6.7</url>
+      <description>
+        <p>Shows the sender's profile picture on message notifications on Windows and Linux, and fixes possible freezes on Windows when adding or opening an account, opening Settings, or locking the app.</p>
+      </description>
+    </release>
     <release type="stable" version="0.6.6" date="2026-10-09">
       <url type="details">https://github.com/karem505/whatRust/releases/tag/v0.6.6</url>
       <description>

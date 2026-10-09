@@ -1120,6 +1120,7 @@ fn enable_media_windows(webview: tauri::webview::PlatformWebview, app: AppHandle
                     &label,
                     &title,
                     &body,
+                    None,
                     crate::notify::Source::WebView2,
                 );
                 Ok(())
