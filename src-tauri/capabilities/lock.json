@@ -1,7 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "lock-local",
-  "description": "IPC for the app-lock screen. core:default for invoke; no remote, no account/notification permissions. Per-command authorization is enforced in Rust (is_lock_window).",
+  "description": "IPC for the app-lock screen. core:default for invoke plus the unlock commands; no remote, no account/notification permissions. Per-command authorization is also enforced in Rust (is_lock_window).",
   "windows": ["lock"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "allow-get-lock-status",
+    "allow-unlock-password",
+    "allow-unlock-biometric",
+    "allow-reset-app-lock"
+  ]
 }

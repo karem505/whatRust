@@ -1,10 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-remote",
-  "description": "Grant the remote WhatsApp Web page IPC access to whatRust's own commands (notify/set_unread). core:default is intentionally NOT granted so the remote origin cannot emit/listen on internal event channels or introspect the app.",
+  "description": "What the remote WhatsApp Web page may call through bridge.js: notifications, the unread count, diagnostic breadcrumbs and the download toast's Open/Show buttons. core:default is intentionally NOT granted so the remote origin cannot emit/listen on internal event channels or introspect the app, and no plugin command is granted (the notification plugin's own command would bypass the lock-aware `notify`).",
   "windows": ["wa-*"],
   "remote": {
     "urls": ["https://web.whatsapp.com/*"]
   },
-  "permissions": ["notification:default"]
+  "permissions": [
+    "allow-notify",
+    "allow-set-unread",
+    "allow-dlog",
+    "allow-open-download",
+    "allow-reveal-download"
+  ]
 }

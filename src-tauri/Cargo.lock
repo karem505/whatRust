@@ -4711,6 +4711,7 @@ dependencies = [
  "tauri-plugin-notification",
  "tauri-plugin-single-instance",
  "tauri-plugin-window-state",
+ "tauri-winrt-notification",
  "user-idle",
  "webkit2gtk",
  "webview2-com",

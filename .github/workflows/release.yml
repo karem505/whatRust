@@ -24,7 +24,8 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
-            libxdo-dev libdbus-1-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libhunspell-dev patchelf
+            libxdo-dev libdbus-1-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libhunspell-dev patchelf \
+            desktop-file-utils
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -43,6 +44,30 @@ jobs:
           releaseName: ${{ github.ref_type == 'tag' && format('whatRust {0}', github.ref_name) || '' }}
           releaseDraft: ${{ github.ref_type == 'tag' }}
           prerelease: false
+
+      # Issue #22: the bundler copies the build host's libwayland-client into the
+      # AppImage, and on any distro with a newer Mesa that old copy stops Mesa's
+      # EGL from loading (blank window, EGL_BAD_PARAMETER). Strip the host-only
+      # libraries, repack, verify, and replace the asset tauri-action uploaded.
+      - name: Strip host-only libraries from the AppImage
+        if: matrix.platform == 'ubuntu-22.04'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          IS_TAG: ${{ github.ref_type == 'tag' }}
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/appimagetool" \
+            https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-x86_64.AppImage
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          set -- src-tauri/target/release/bundle/appimage/*.AppImage
+          [ -f "$1" ] || { echo "no AppImage was built" >&2; exit 1; }
+          for img in "$@"; do
+            APPIMAGETOOL="$RUNNER_TEMP/appimagetool" scripts/strip-appimage-libs.sh "$img"
+            if [ "$IS_TAG" = true ]; then
+              gh release upload "$GITHUB_REF_NAME" "$img" --clobber
+            fi
+          done
 
   flatpak:
     name: Flatpak (${{ matrix.variant.arch }})

@@ -68,6 +68,37 @@ pub fn dlog(msg: String) {
     crate::dlog::log(&format!("js: {msg}"));
 }
 
+/// "Open" on the download toast (issue #21). The page names a download only by
+/// the id we gave it; a program or installer is shown in its folder instead of
+/// run (see downloads.rs).
+#[tauri::command]
+pub fn open_download(app: tauri::AppHandle, id: u64) -> Result<(), String> {
+    lock::require_unlocked(&app)?;
+    let path = app
+        .state::<crate::downloads::Downloads>()
+        .path(id)
+        .ok_or("unknown download")?;
+    if crate::downloads::is_risky(&path) {
+        crate::dlog::log("download: open refused for a program, revealing instead");
+        crate::opener::reveal_file(&app, path);
+    } else {
+        crate::opener::open_file(&app, path);
+    }
+    Ok(())
+}
+
+/// "Show in folder" on the download toast.
+#[tauri::command]
+pub fn reveal_download(app: tauri::AppHandle, id: u64) -> Result<(), String> {
+    lock::require_unlocked(&app)?;
+    let path = app
+        .state::<crate::downloads::Downloads>()
+        .path(id)
+        .ok_or("unknown download")?;
+    crate::opener::reveal_file(&app, path);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn set_unread(window: tauri::Window, app: tauri::AppHandle, title: String) {
     let count = crate::unread::parse_unread(&title);
