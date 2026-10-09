@@ -62,6 +62,12 @@
   </screenshots>
 
   <releases>
+    <release type="stable" version="0.6.6" date="2026-10-09">
+      <url type="details">https://github.com/karem505/whatRust/releases/tag/v0.6.6</url>
+      <description>
+        <p>Fixes the AppImage failing to load WhatsApp behind an HTTP(S) proxy, and a startup error in the page on Linux and macOS.</p>
+      </description>
+    </release>
     <release type="stable" version="0.6.5" date="2026-10-09">
       <url type="details">https://github.com/karem505/whatRust/releases/tag/v0.6.5</url>
       <description>

@@ -1,16 +1,21 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-remote",
-  "description": "What the remote WhatsApp Web page may call through bridge.js: notifications, the unread count, diagnostic breadcrumbs and the download toast's Open/Show buttons. core:default is intentionally NOT granted so the remote origin cannot emit/listen on internal event channels or introspect the app, and no plugin command is granted (the notification plugin's own command would bypass the lock-aware `notify`).",
-  "windows": ["wa-*"],
+  "description": "What the remote WhatsApp Web page may call through bridge.js: notifications, the unread count, diagnostic breadcrumbs and the download toast's Open/Show buttons. core:default is intentionally NOT granted so the remote origin cannot emit/listen on internal event channels or introspect the app, and of the notification plugin only its read-only permission query is granted: its init script asks it on every page load (refused, that logged an unhandled rejection), while its `notify` would bypass the lock-aware `notify` and stays denied.",
+  "windows": [
+    "wa-*"
+  ],
   "remote": {
-    "urls": ["https://web.whatsapp.com/*"]
+    "urls": [
+      "https://web.whatsapp.com/*"
+    ]
   },
   "permissions": [
     "allow-notify",
     "allow-set-unread",
     "allow-dlog",
     "allow-open-download",
-    "allow-reveal-download"
+    "allow-reveal-download",
+    "notification:allow-is-permission-granted"
   ]
 }
