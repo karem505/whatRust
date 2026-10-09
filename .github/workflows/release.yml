@@ -2,10 +2,52 @@ name: release
 on:
   push:
     tags: ["v*"]
+  # Manual run. Leave `tag` empty to only build; give the version's tag (e.g.
+  # v0.6.4) to cut that release from the selected branch without pushing a tag
+  # first — the tag is created when the finished release is published.
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create from this branch (e.g. v0.6.4); empty = build only"
+        required: false
+        default: ""
 
 jobs:
+  # Which release (if any) this run makes: the pushed tag, or the tag given to
+  # a manual run after checking it names the version being built and is new.
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve the release tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="$INPUT_TAG"
+          fi
+          if [ -n "$tag" ] && [ "$GITHUB_REF_TYPE" != tag ]; then
+            version=$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -n1)
+            case "$tag" in
+              "v$version") ;;
+              *) echo "::error::tag $tag does not match the version being built (v$version)"; exit 1 ;;
+            esac
+            if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+              echo "::error::tag $tag already exists"; exit 1
+            fi
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release tag: ${tag:-<none, build only>}"
+
   build:
+    needs: prepare
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
     permissions:
       contents: write
     strategy:
@@ -39,10 +81,10 @@ jobs:
         id: notes
         shell: bash
         run: |
-          f="docs/release-notes/${GITHUB_REF_NAME}.md"
+          f="docs/release-notes/${RELEASE_TAG}.md"
           {
             echo "body<<WHATRUST_NOTES_EOF"
-            if [ "$GITHUB_REF_TYPE" = tag ] && [ -f "$f" ]; then cat "$f"; fi
+            if [ -n "$RELEASE_TAG" ] && [ -f "$f" ]; then cat "$f"; fi
             echo "WHATRUST_NOTES_EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -50,13 +92,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # Only create a (published) release on a version-tag push; on manual
-          # workflow_dispatch, tagName is empty so it just builds (no release
-          # named after the branch).
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
-          releaseName: ${{ github.ref_type == 'tag' && format('whatRust {0}', github.ref_name) || '' }}
+          # Only create a release for a version tag (pushed, or given to a manual
+          # run); otherwise tagName is empty so it just builds (no release
+          # named after the branch). The draft is published by publish-flatpak.
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: ${{ env.RELEASE_TAG != '' && format('whatRust {0}', env.RELEASE_TAG) || '' }}
           releaseBody: ${{ steps.notes.outputs.body }}
-          releaseDraft: ${{ github.ref_type == 'tag' }}
+          releaseDraft: ${{ env.RELEASE_TAG != '' }}
           prerelease: false
 
       # Issue #22: the bundler copies the build host's libwayland-client into the
@@ -69,7 +111,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           APPIMAGE_EXTRACT_AND_RUN: "1"
-          IS_TAG: ${{ github.ref_type == 'tag' }}
         run: |
           curl -fsSL -o "$RUNNER_TEMP/appimagetool" \
             https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-x86_64.AppImage
@@ -78,13 +119,14 @@ jobs:
           [ -f "$1" ] || { echo "no AppImage was built" >&2; exit 1; }
           for img in "$@"; do
             APPIMAGETOOL="$RUNNER_TEMP/appimagetool" scripts/strip-appimage-libs.sh "$img"
-            if [ "$IS_TAG" = true ]; then
-              gh release upload "$GITHUB_REF_NAME" "$img" --clobber
+            if [ -n "$RELEASE_TAG" ]; then
+              gh release upload "$RELEASE_TAG" "$img" --clobber
             fi
           done
 
   flatpak:
     name: Flatpak (${{ matrix.variant.arch }})
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -112,8 +154,8 @@ jobs:
 
   publish-flatpak:
     name: Attach Flatpaks to release
-    if: github.ref_type == 'tag'
-    needs: [build, flatpak]
+    if: needs.prepare.outputs.tag != ''
+    needs: [prepare, build, flatpak]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -123,10 +165,12 @@ jobs:
           pattern: whatRust_*-*.flatpak
           path: flatpak-assets
           merge-multiple: true
+      # Publishing also creates the tag when a manual run cut the release.
       - name: Upload Flatpak bundles and publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
-          gh release upload "$GITHUB_REF_NAME" flatpak-assets/*.flatpak --clobber
-          gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+          gh release upload "$RELEASE_TAG" flatpak-assets/*.flatpak --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --latest
