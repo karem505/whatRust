@@ -81,19 +81,22 @@ jobs:
           $app.Refresh()
           "window title: $($app.MainWindowTitle)"
           Shot 'launch'
-          # "Need help?" on WhatsApp's QR page, in page coordinates (100% scale).
+          # Click two external links on WhatsApp's QR page. The runner's screen is
+          # 1024x768 and the window opens at 0,0; Windows also shows WhatsApp's
+          # "Download WhatsApp for Windows" banner above the QR card.
           $r = New-Object U+RECT
           [U]::GetWindowRect($app.MainWindowHandle, [ref]$r) | Out-Null
           "window rect: $($r.L),$($r.T) - $($r.R),$($r.B)"
-          [U]::SetForegroundWindow($app.MainWindowHandle) | Out-Null
-          $before = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*faq.whatsapp.com*' }).Count
-          $content = $r.B - $r.T - 800   # title bar + borders above the 800px page
-          [U]::SetCursorPos($r.L + 8 + 203, $r.T + $content + 366) | Out-Null
-          [U]::mouse_event(2, 0, 0, 0, 0); [U]::mouse_event(4, 0, 0, 0, 0)
-          Start-Sleep 10
-          $browsers = Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*faq.whatsapp.com*' }
-          "browser processes opened on faq.whatsapp.com: $(@($browsers).Count - $before)"
-          $browsers | Select-Object -First 2 | ForEach-Object { "  $($_.Name)" }
+          function Opened { @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'whatsapp\.com' }) }
+          $before = (Opened).Count
+          foreach ($t in @(@{ n = 'Need help?'; x = 171; y = 551 }, @{ n = 'Download'; x = 821; y = 193 })) {
+            [U]::SetForegroundWindow($app.MainWindowHandle) | Out-Null
+            [U]::SetCursorPos($r.L + $t.x, $r.T + $t.y) | Out-Null
+            [U]::mouse_event(2, 0, 0, 0, 0); [U]::mouse_event(4, 0, 0, 0, 0)
+            Start-Sleep 8
+            "clicked '$($t.n)': processes with a whatsapp.com URL now $((Opened).Count) (before $before)"
+          }
+          Opened | Select-Object -First 4 | ForEach-Object { "  $($_.Name): $(($_.CommandLine -split ' ' | Where-Object { $_ -match 'whatsapp\.com' }) -join ' ')" }
           Shot 'after-link'
           Get-Process msedge, chrome -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
           Start-Process 'whatsapp://send?phone=15551234567&text=smoke%20test'
