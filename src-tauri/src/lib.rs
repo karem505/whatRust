@@ -108,6 +108,7 @@ pub fn run() {
     builder
         .manage(accounts::UnreadMap::default())
         .manage(downloads::Downloads::default())
+        .manage(notify::Recent::default())
         .manage(accounts::ActiveAccount::new("wa-default".into()))
         .invoke_handler(tauri::generate_handler![
             commands::notify,

@@ -1033,7 +1033,8 @@ fn enable_webview_media(win: &WebviewWindow) {
     }
     #[cfg(target_os = "windows")]
     {
-        let _ = win.with_webview(enable_media_windows);
+        let (app, label) = (win.app_handle().clone(), win.label().to_string());
+        let _ = win.with_webview(move |webview| enable_media_windows(webview, app, label));
     }
     #[cfg(target_os = "macos")]
     {
@@ -1045,14 +1046,24 @@ fn enable_webview_media(win: &WebviewWindow) {
 
 /// Windows (WebView2): auto-allow microphone/camera permission requests so WhatsApp
 /// voice messages and calls work without a prompt (and can't be wedged by a prior "Block").
+///
+/// Notifications (issue #3): also allow the notification permission, and take
+/// over every notification WebView2 receives from the page. bridge.js only sees
+/// notifications raised in the page itself; one raised from a worker never
+/// reached it, so a v0.6.4 tester got a toast for WhatsApp's test notification
+/// but none for real messages. WebView2's `NotificationReceived` sees those too:
+/// it is turned into a whatRust toast (lock-aware, de-duplicated) instead of
+/// WebView2's own popup.
 #[cfg(target_os = "windows")]
-fn enable_media_windows(webview: tauri::webview::PlatformWebview) {
+fn enable_media_windows(webview: tauri::webview::PlatformWebview, app: AppHandle, label: String) {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
-        ICoreWebView2, ICoreWebView2PermissionRequestedEventArgs, COREWEBVIEW2_PERMISSION_KIND,
+        ICoreWebView2, ICoreWebView2NotificationReceivedEventArgs,
+        ICoreWebView2PermissionRequestedEventArgs, ICoreWebView2_24, COREWEBVIEW2_PERMISSION_KIND,
         COREWEBVIEW2_PERMISSION_KIND_CAMERA, COREWEBVIEW2_PERMISSION_KIND_MICROPHONE,
-        COREWEBVIEW2_PERMISSION_STATE_ALLOW,
+        COREWEBVIEW2_PERMISSION_KIND_NOTIFICATIONS, COREWEBVIEW2_PERMISSION_STATE_ALLOW,
     };
-    use webview2_com::PermissionRequestedEventHandler;
+    use webview2_com::{NotificationReceivedEventHandler, PermissionRequestedEventHandler};
+    use windows_core::Interface;
 
     // SAFETY: with_webview runs on the UI thread where the WebView2 controller lives;
     // these are standard WebView2 COM calls.
@@ -1071,6 +1082,7 @@ fn enable_media_windows(webview: tauri::webview::PlatformWebview) {
                     args.PermissionKind(&mut kind)?;
                     if kind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE
                         || kind == COREWEBVIEW2_PERMISSION_KIND_CAMERA
+                        || kind == COREWEBVIEW2_PERMISSION_KIND_NOTIFICATIONS
                     {
                         args.SetState(COREWEBVIEW2_PERMISSION_STATE_ALLOW)?;
                     }
@@ -1080,6 +1092,44 @@ fn enable_media_windows(webview: tauri::webview::PlatformWebview) {
         ));
         let mut token: i64 = 0;
         let _ = core.add_PermissionRequested(&handler, &mut token);
+
+        // NotificationReceived needs ICoreWebView2_24 (WebView2 runtime 1.0.2895+).
+        let Ok(core24) = core.cast::<ICoreWebView2_24>() else {
+            crate::dlog::log("webview2: NotificationReceived unavailable (runtime too old)");
+            return;
+        };
+        let handler = NotificationReceivedEventHandler::create(Box::new(
+            move |_wv: Option<ICoreWebView2>,
+                  args: Option<ICoreWebView2NotificationReceivedEventArgs>|
+                  -> windows_core::Result<()> {
+                let Some(args) = args else { return Ok(()) };
+                let notification = args.Notification()?;
+                let mut title = windows_core::PWSTR::null();
+                let mut body = windows_core::PWSTR::null();
+                notification.Title(&mut title)?;
+                notification.Body(&mut body)?;
+                let (title, body) = (
+                    webview2_com::take_pwstr(title),
+                    webview2_com::take_pwstr(body),
+                );
+                // Ours to show: WebView2 draws nothing itself.
+                args.SetHandled(true)?;
+                let _ = notification.ReportShown();
+                crate::notify::from_account(
+                    &app,
+                    &label,
+                    &title,
+                    &body,
+                    crate::notify::Source::WebView2,
+                );
+                Ok(())
+            },
+        ));
+        let mut token: i64 = 0;
+        match core24.add_NotificationReceived(&handler, &mut token) {
+            Ok(()) => crate::dlog::log("webview2: NotificationReceived handler installed"),
+            Err(e) => crate::dlog::log(&format!("webview2: NotificationReceived failed: {e}")),
+        }
     }
 }
 

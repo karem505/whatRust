@@ -62,6 +62,12 @@
   </screenshots>
 
   <releases>
+    <release type="stable" version="0.6.5" date="2026-10-09">
+      <url type="details">https://github.com/karem505/whatRust/releases/tag/v0.6.5</url>
+      <description>
+        <p>Makes message notifications appear on Windows, with a fallback alert on every platform when a new chat goes unread without one.</p>
+      </description>
+    </release>
     <release type="stable" version="0.6.4" date="2026-10-09">
       <url type="details">https://github.com/karem505/whatRust/releases/tag/v0.6.4</url>
       <description>

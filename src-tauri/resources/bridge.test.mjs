@@ -514,7 +514,33 @@ async function testRiskyDownloadsAndFailures() {
   assert(toastsIn(document).length === 3, "at most three toasts stack up");
 }
 
+async function testNotificationPathIsLoggedOnceWithoutContent() {
+  console.log("the notification path is logged once per path, never the content");
+  const registered = [];
+  const navigator = {
+    serviceWorker: { register: (url) => { registered.push(url); return Promise.resolve({}); } },
+  };
+  const { window: w, invocations } = makeHarness({ navigator });
+  new w.Notification("Alice", { body: "secret text" });
+  new w.Notification("Bob", { body: "more secret text" });
+  await navigator.serviceWorker.register("/serviceworker.js?v=2");
+  const paths = invocations.filter((x) => x.cmd === "dlog" && /^notif path:/.test(x.args.msg)).map((x) => x.args.msg);
+  assert(paths.filter((m) => /Notification\(\)/.test(m)).length === 1, `Notification() logged once (got ${paths})`);
+  assert(paths.some((m) => m === "notif path: service worker registered (/serviceworker.js)"), "service worker logged by path");
+  assert(registered[0] === "/serviceworker.js?v=2", "registration still goes through");
+  assert(!paths.some((m) => /secret|Alice|Bob/.test(m)), "no names or text in the log");
+}
+
+async function testUnreadReportsSayWhenThePageHasSettled() {
+  console.log("unread reports tell Rust whether the page is still syncing");
+  const { invocations } = makeHarness();
+  const first = invocations.find((x) => x.cmd === "set_unread");
+  assert(first && first.args.settled === false, "the first report after load is not settled");
+}
+
 const tests = [
+  testUnreadReportsSayWhenThePageHasSettled,
+  testNotificationPathIsLoggedOnceWithoutContent,
   testDownloadToastOffersOpenAndShowInFolder,
   testRiskyDownloadsAndFailures,
   testChromeShimsOnlyForAChromeUserAgent,
