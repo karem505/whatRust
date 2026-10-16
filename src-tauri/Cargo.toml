@@ -42,6 +42,7 @@ windows = { version = "0.61", features = [
   "Win32_Security",           # SECURITY_ATTRIBUTES (referenced by RegCreateKeyExW)
   "Win32_System_Registry",    # RegCreateKeyExW/RegSetValueExW: register the toast AUMID in HKCU
   "Win32_UI_Shell",           # SetCurrentProcessExplicitAppUserModelID, ShellExecuteW (open links/files)
+  "Win32_UI_Controls_Dialogs", # native per-download Save As dialog
   "Win32_UI_WindowsAndMessaging", # SW_SHOWNORMAL for ShellExecuteW
 ] }
 windows-core = "0.61"

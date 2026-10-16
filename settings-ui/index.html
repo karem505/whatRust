@@ -14,12 +14,17 @@
     <main class="prefs">
       <section class="group">
         <h2 class="group-title">Accounts</h2>
+        <label class="row startup-row">
+          <span class="row-text"><span class="row-title">Account to open at startup</span></span>
+          <select id="startup_account" aria-label="Account to open at startup"></select>
+        </label>
         <div id="accounts-list" class="boxed-list"></div>
         <div class="add-row">
           <input type="text" id="new_account_name" placeholder="New account name" aria-label="New account name" />
           <button id="add_account">Add</button>
         </div>
         <p id="macos-note" class="macos-note" hidden>Multiple accounts require macOS 14 or newer.</p>
+        <p id="accounts-note" class="group-note" role="status" aria-live="polite"></p>
       </section>
 
       <section class="group">

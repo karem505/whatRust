@@ -8,7 +8,6 @@ use tauri::{AppHandle, Manager};
 pub type UnreadMap = Mutex<HashMap<String, u32>>;
 /// Window label of the last-focused account window (e.g. `wa-default`). Managed app state.
 pub type ActiveAccount = Mutex<String>;
-
 /// Held across each account command's load-modify-save (and its window build),
 /// so two account commands running at once can't interleave and lose a change.
 static MUTATIONS: Mutex<()> = Mutex::new(());
@@ -40,6 +39,8 @@ pub struct Account {
 pub struct AccountsFile {
     pub accounts: Vec<Account>,
     pub next_seq: u32,
+    /// Preferred startup account; independent of the historical `default` profile id.
+    pub startup_account: Option<String>,
 }
 
 impl Default for AccountsFile {
@@ -52,6 +53,7 @@ impl Default for AccountsFile {
                 store_uuid: None,
             }],
             next_seq: 1,
+            startup_account: None,
         }
     }
 }
@@ -90,7 +92,27 @@ pub fn remove(f: &mut AccountsFile, id: &str) -> Result<Account, String> {
     let Some(pos) = f.accounts.iter().position(|a| a.id == id) else {
         return Err(format!("unknown account: {id}"));
     };
-    Ok(f.accounts.remove(pos))
+    let removed = f.accounts.remove(pos);
+    if f.startup_account.as_deref() == Some(id) {
+        f.startup_account = None;
+    }
+    Ok(removed)
+}
+
+/// Older files and a removed preference fall back to the first account in UI order.
+pub fn startup_account(f: &AccountsFile) -> Option<&Account> {
+    f.startup_account
+        .as_deref()
+        .and_then(|id| f.accounts.iter().find(|a| a.id == id))
+        .or_else(|| f.accounts.iter().min_by_key(|a| a.order))
+}
+
+pub fn set_startup_account(f: &mut AccountsFile, id: &str) -> Result<(), String> {
+    if !f.accounts.iter().any(|a| a.id == id) {
+        return Err(format!("unknown account: {id}"));
+    }
+    f.startup_account = Some(id.to_owned());
+    Ok(())
 }
 
 /// Rename an account by id. Errors if the id is unknown.
@@ -214,6 +236,53 @@ pub fn gen_store_uuid() -> [u8; 16] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn startup_preference_survives_roundtrip_without_changing_profile_identity() {
+        let mut f = AccountsFile::default();
+        let second = add(&mut f, "Work");
+        set_startup_account(&mut f, &second.id).unwrap();
+        let restored: AccountsFile =
+            serde_json::from_str(&serde_json::to_string(&f).unwrap()).unwrap();
+        assert_eq!(startup_account(&restored), Some(&second));
+        assert_eq!(restored.accounts[0].id, "default");
+        assert_eq!(restored.accounts[0].store_uuid, None);
+    }
+
+    #[test]
+    fn missing_or_stale_startup_preference_uses_ui_order() {
+        let mut f = AccountsFile::default();
+        add(&mut f, "Work");
+        f.accounts.reverse();
+        assert_eq!(startup_account(&f).unwrap().id, "default");
+        f.startup_account = Some("removed-id".into());
+        assert_eq!(startup_account(&f).unwrap().id, "default");
+    }
+
+    #[test]
+    fn removing_preferred_account_selects_remaining_account() {
+        let mut f = AccountsFile::default();
+        let second = add(&mut f, "Work");
+        set_startup_account(&mut f, &second.id).unwrap();
+        remove(&mut f, &second.id).unwrap();
+        assert_eq!(startup_account(&f).unwrap().id, "default");
+        assert_eq!(f.startup_account, None);
+    }
+
+    #[test]
+    fn startup_selection_rejects_unknown_id_without_mutating_state() {
+        let mut f = AccountsFile::default();
+        let before = f.clone();
+        assert!(set_startup_account(&mut f, "missing").is_err());
+        assert_eq!(f, before);
+    }
+
+    #[test]
+    fn no_startup_account_when_list_is_empty() {
+        let mut f = AccountsFile::default();
+        f.accounts.clear();
+        assert!(startup_account(&f).is_none());
+    }
 
     #[test]
     fn default_file_has_single_default_account() {

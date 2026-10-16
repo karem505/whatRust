@@ -99,6 +99,17 @@ pub fn unlock(app: &AppHandle) {
 /// capture of the lock screen; `prevent_close` while locked stops the X from
 /// relaunching into an unlocked state.
 pub fn show_lock_window(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        static CREATE: Mutex<()> = Mutex::new(());
+        let _guard = CREATE.lock().unwrap_or_else(|e| e.into_inner());
+        if !is_unlocked(&app) {
+            show_lock_window_inner(&app);
+        }
+    });
+}
+
+fn show_lock_window_inner(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("lock") {
         let _ = w.show();
         let _ = w.set_focus();
@@ -116,6 +127,12 @@ pub fn show_lock_window(app: &AppHandle) {
         .build();
 
     if let Ok(win) = built {
+        // Unlock can race a queued window creation; never leave a stale lock
+        // screen on top after authentication has already succeeded.
+        if is_unlocked(app) {
+            let _ = win.destroy();
+            return;
+        }
         let app_handle = app.clone();
         win.on_window_event(move |event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

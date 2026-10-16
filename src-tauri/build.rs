@@ -13,6 +13,8 @@ fn main() {
             "dlog",
             "open_download",
             "reveal_download",
+            "switcher_accounts",
+            "switch_account",
             // settings window
             "get_settings",
             "set_settings",
@@ -22,6 +24,7 @@ fn main() {
             "remove_account",
             "rename_account",
             "open_account",
+            "set_default_account",
             "set_app_lock_password",
             "change_app_lock_password",
             "disable_app_lock",

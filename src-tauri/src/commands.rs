@@ -168,6 +168,7 @@ pub struct AccountView {
     pub order: u32,
     pub unread: u32,
     pub open: bool,
+    pub is_default: bool,
 }
 
 fn account_views(app: &tauri::AppHandle) -> Vec<AccountView> {
@@ -185,10 +186,67 @@ fn account_views(app: &tauri::AppHandle) -> Vec<AccountView> {
             open: app
                 .get_webview_window(&accounts::window_label(&a.id))
                 .is_some(),
+            is_default: accounts::startup_account(&f).is_some_and(|startup| startup.id == a.id),
         })
         .collect();
     views.sort_by_key(|v| v.order);
     views
+}
+
+/// Small account list for the WhatsApp-window switcher. Remote windows may only
+/// read display data and request focusing one configured account.
+#[derive(Debug, Clone, Serialize)]
+pub struct SwitcherAccount {
+    pub id: String,
+    pub name: String,
+    pub unread: u32,
+}
+
+#[tauri::command]
+pub fn switcher_accounts(
+    window: tauri::Window,
+    app: tauri::AppHandle,
+) -> Result<Vec<SwitcherAccount>, String> {
+    if !is_remote(&window) {
+        return Err("forbidden".into());
+    }
+    lock::require_unlocked(&app)?;
+    Ok(account_views(&app)
+        .into_iter()
+        .map(|account| SwitcherAccount {
+            id: account.id,
+            name: account.name,
+            unread: account.unread,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn switch_account(
+    window: tauri::Window,
+    app: tauri::AppHandle,
+    id: String,
+) -> Result<(), String> {
+    if !is_remote(&window) {
+        return Err("forbidden".into());
+    }
+    lock::require_unlocked(&app)?;
+    let _guard = accounts::lock_mutations();
+    let f = accounts::load(&app);
+    let Some(acct) = f.accounts.iter().find(|a| a.id == id) else {
+        return Err("unknown account".into());
+    };
+    if app
+        .get_webview_window(&accounts::window_label(&acct.id))
+        .is_none()
+    {
+        crate::window::open_account_window(&app, acct, false).map_err(|e| e.to_string())?;
+    }
+    crate::window::show_account(&app, &accounts::window_label(&acct.id));
+    if let Some(active) = app.try_state::<ActiveAccount>() {
+        *active.lock().unwrap() = accounts::window_label(&acct.id);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -201,6 +259,22 @@ pub fn list_accounts(
     }
     lock::require_unlocked(&app)?;
     Ok(account_views(&app))
+}
+
+#[tauri::command]
+pub fn set_default_account(
+    window: tauri::Window,
+    app: tauri::AppHandle,
+    id: String,
+) -> Result<(), String> {
+    if is_remote(&window) {
+        return Err("forbidden".into());
+    }
+    lock::require_unlocked(&app)?;
+    let _guard = accounts::lock_mutations();
+    let mut f = accounts::load(&app);
+    accounts::set_startup_account(&mut f, &id)?;
+    accounts::save(&app, &f).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -236,12 +310,14 @@ pub async fn add_account(
     }
     crate::tray::rebuild_menu(&app);
 
+    let is_default = accounts::startup_account(&f).is_some_and(|startup| startup.id == acct.id);
     Ok(AccountView {
         id: acct.id,
         name: acct.name,
         order: acct.order,
         unread: 0,
         open: true,
+        is_default,
     })
 }
 

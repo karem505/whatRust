@@ -13,11 +13,82 @@
       return t.core.invoke(cmd, args).catch(function (e) {
         if (warnedCmds[cmd]) return;
         warnedCmds[cmd] = true;
-        try { console.warn("[whatRust] " + cmd + " was refused: " + e); } catch (e2) {}
+        try { console.warn("[whatRust] " + cmd + " was refused"); } catch (e2) {}
       });
     }
     return Promise.resolve();
   }
+
+  // A small, keyboard-accessible account switcher owned by whatRust. It exposes
+  // only account names/unread counts and a request to focus an existing account.
+  function mountAccountSwitcher() {
+    if (!document.body || document.getElementById("__whatrust_accounts")) return;
+    // Join the WhatsApp header's normal layout, so the control never covers
+    // the navigation icons or conversations. Wait until the header is mounted.
+    var header = document.querySelector("#side header, #app header");
+    if (!header) return;
+    var trigger = document.createElement("button");
+    trigger.id = "__whatrust_accounts";
+    trigger.type = "button";
+    trigger.textContent = "⇄";
+    trigger.title = "Trocar conta do WhatsApp";
+    trigger.setAttribute("aria-label", "Trocar conta do WhatsApp");
+    trigger.setAttribute("aria-haspopup", "dialog");
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.style.cssText = "position:static;display:inline-flex;align-items:center;justify-content:center;flex:0 0 36px;align-self:center;width:36px;height:36px;margin-inline-start:8px;padding:0;border:1px solid #00806966;border-radius:50%;background:#00806922;color:inherit;font:600 24px system-ui;line-height:1;cursor:pointer;outline-offset:3px";
+    var oldDialog = document.getElementById("__whatrust_accounts_dialog");
+    if (oldDialog) oldDialog.remove();
+    var dialog = document.createElement("dialog");
+    dialog.id = "__whatrust_accounts_dialog";
+    dialog.setAttribute("aria-label", "Contas do WhatsApp");
+    dialog.style.cssText = "border:0;border-radius:14px;padding:16px;min-width:260px;max-width:90vw;box-shadow:0 8px 36px #0006;font:14px system-ui;color:#222";
+    var heading = document.createElement("h2"); heading.textContent = "Contas do WhatsApp";
+    heading.style.cssText = "font-size:16px;margin:0 0 10px";
+    var list = document.createElement("div"); list.setAttribute("role", "list");
+    var close = document.createElement("button"); close.type = "button"; close.textContent = "Fechar";
+    close.style.cssText = "margin-top:12px;padding:7px 12px;border:0;border-radius:8px;cursor:pointer";
+    close.addEventListener("click", function () { dialog.close(); trigger.focus(); });
+    dialog.append(heading, list, close);
+    dialog.addEventListener("click", function (e) { if (e.target === dialog) { dialog.close(); trigger.focus(); } });
+    dialog.addEventListener("close", function () {
+      trigger.setAttribute("aria-expanded", "false");
+      trigger.focus();
+    });
+    trigger.addEventListener("click", function (event) {
+      event.stopPropagation();
+      invoke("switcher_accounts").then(function (accounts) {
+        if (!Array.isArray(accounts)) return;
+        list.textContent = "";
+        accounts.forEach(function (account) {
+          var item = document.createElement("button"); item.type = "button";
+          var row = document.createElement("div");
+          row.setAttribute("role", "listitem");
+          item.textContent = String(account.name || "WhatsApp") + (account.unread > 0 ? "  ·  " + account.unread + " não lidas" : "");
+          item.setAttribute("aria-label", String(account.name || "WhatsApp") + (account.unread > 0 ? ", " + account.unread + " não lidas" : ""));
+          item.style.cssText = "display:block;width:100%;text-align:left;padding:10px;border:0;border-radius:8px;background:white;color:#222;cursor:pointer";
+          item.addEventListener("click", function () { invoke("switch_account", { id: account.id }); dialog.close(); });
+          row.appendChild(item);
+          list.appendChild(row);
+        });
+        if (!dialog.open) dialog.showModal();
+        trigger.setAttribute("aria-expanded", "true");
+        var first = list.querySelector("button"); if (first) first.focus(); else close.focus();
+      });
+    });
+    header.appendChild(trigger);
+    document.body.appendChild(dialog);
+  }
+  // React can replace the header when navigating or reconnecting.
+  var switcherObserver = new MutationObserver(mountAccountSwitcher);
+  function watchAccountSwitcher() {
+    if (!document.body) return;
+    switcherObserver.observe(document.body, { childList: true, subtree: true });
+    mountAccountSwitcher();
+  }
+  if (document.body) watchAccountSwitcher();
+  else document.addEventListener("DOMContentLoaded", watchAccountSwitcher, { once: true });
+  var switcherTimer = setInterval(mountAccountSwitcher, 500);
+  setTimeout(function () { clearInterval(switcherTimer); }, 30000);
 
   // Native OS toast with short-window de-duplication. WhatsApp can raise the same alert
   // more than once in a burst (a React re-render, or one message surfacing through two

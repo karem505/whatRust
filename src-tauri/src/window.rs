@@ -114,14 +114,28 @@ pub fn open_account_window(
         // download machinery at all — on Linux nobody answers WebKit's
         // `decide-destination` and the engine cancels every download, so WhatsApp's
         // "Download" button (videos, images, documents) silently did nothing.
-        // Accept every download into the user's Downloads folder (wry pre-fills a
-        // de-duplicated absolute path on Linux/Windows; the fallback covers a
-        // platform handing us an empty/relative destination) and toast on finish.
+        // Let the user choose each Windows destination. Other platforms retain
+        // their existing Downloads-folder flow.
         .on_download(|webview, event| {
             let app = webview.app_handle();
             let downloads = app.state::<crate::downloads::Downloads>();
             match event {
                 tauri::webview::DownloadEvent::Requested { url, destination } => {
+                    #[cfg(windows)]
+                    {
+                        let suggested = destination
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("download");
+                        let Some(path) =
+                            choose_download_destination(suggested, webview.window().hwnd().ok())
+                        else {
+                            crate::dlog::log("download: save dialog cancelled");
+                            return false;
+                        };
+                        *destination = path;
+                    }
+                    #[cfg(not(windows))]
                     ensure_download_destination(destination, app.path().download_dir().ok());
                     downloads.requested(url.as_str(), destination);
                     // Log routing only — never the file name (matches dlog's no-PII rule).
@@ -157,15 +171,21 @@ pub fn open_account_window(
                         if success {
                             let body = match done.as_ref().and_then(|(_, p)| p.file_name()) {
                                 Some(n) => format!(
-                                    "{} — saved to your Downloads folder.",
+                                    "{} — saved to your chosen location.",
                                     n.to_string_lossy()
                                 ),
-                                None => "Saved to your Downloads folder.".to_string(),
+                                None => "Saved to your chosen location.".to_string(),
                             };
-                            crate::notify::show(app, "Download complete", &body);
-                        } else {
-                            crate::notify::show(
+                            crate::notify::show_for_account(
                                 app,
+                                webview.label(),
+                                "Download complete",
+                                &body,
+                            );
+                        } else {
+                            crate::notify::show_for_account(
+                                app,
+                                webview.label(),
                                 "Download failed",
                                 "The file could not be downloaded. Please try again.",
                             );
@@ -191,6 +211,7 @@ pub fn open_account_window(
 
     let builder = apply_isolation(builder, account, app);
     let win = builder.build()?;
+    crate::dlog::log("account window: WebView created");
 
     // Close-to-tray (reads the live setting so the toggle takes effect without a restart).
     let app_handle = app.clone();
@@ -214,6 +235,41 @@ pub fn open_account_window(
     register_drop_handler(&win);
     enable_webview_media(&win);
     Ok(win)
+}
+
+/// Native Windows Save As dialog. Returning `None` means the user cancelled,
+/// which the WebView download callback treats as a cancellation.
+#[cfg(windows)]
+fn choose_download_destination(
+    suggested_name: &str,
+    owner: Option<windows::Win32::Foundation::HWND>,
+) -> Option<std::path::PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows::core::{PCWSTR, PWSTR};
+    use windows::Win32::UI::Controls::Dialogs::{
+        GetSaveFileNameW, OFN_EXPLORER, OFN_NOCHANGEDIR, OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST,
+        OPENFILENAMEW,
+    };
+
+    let mut buffer = vec![0u16; 32_768];
+    for (slot, unit) in buffer.iter_mut().zip(suggested_name.encode_utf16()) {
+        *slot = unit;
+    }
+    let filter: Vec<u16> = "All files\0*.*\0\0".encode_utf16().collect();
+    let title: Vec<u16> = "Save downloaded file\0".encode_utf16().collect();
+    let mut dialog = OPENFILENAMEW::default();
+    dialog.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
+    dialog.hwndOwner = owner.unwrap_or_default();
+    dialog.lpstrFilter = PCWSTR(filter.as_ptr());
+    dialog.lpstrFile = PWSTR(buffer.as_mut_ptr());
+    dialog.nMaxFile = buffer.len() as u32;
+    dialog.lpstrTitle = PCWSTR(title.as_ptr());
+    dialog.Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    if !unsafe { GetSaveFileNameW(&mut dialog) }.as_bool() {
+        return None;
+    }
+    let end = buffer.iter().position(|unit| *unit == 0)?;
+    Some(std::ffi::OsString::from_wide(&buffer[..end]).into())
 }
 
 /// Where a new-window request from an account webview goes.
@@ -880,6 +936,7 @@ fn base64_encode(data: &[u8]) -> String {
 /// absolute path with a file name as-is; otherwise rebuild it as
 /// `<download_dir>/<file name>` (file name defaulting to "download", directory
 /// defaulting to the temp dir if the platform can't name a Downloads folder).
+#[cfg(any(not(windows), test))]
 fn ensure_download_destination(
     destination: &mut std::path::PathBuf,
     download_dir: Option<std::path::PathBuf>,
@@ -1136,6 +1193,10 @@ fn enable_media_windows(webview: tauri::webview::PlatformWebview, app: AppHandle
 
 /// Show + unminimize + focus an account window by its `wa-<id>` label.
 pub fn show_account(app: &AppHandle, label: &str) {
+    if !crate::lock::is_unlocked(app) {
+        crate::lock::show_lock_window(app);
+        return;
+    }
     if let Some(w) = app.get_webview_window(label) {
         let _ = w.show();
         let _ = w.unminimize();
@@ -1226,16 +1287,41 @@ pub fn toggle_active(app: &AppHandle) {
 
 /// Opens (or focuses) the local settings window.
 pub fn open_settings_window(app: &AppHandle) {
+    // Tray/menu callbacks can also deadlock WebView2 when they construct a
+    // window synchronously. Serialize creation on a blocking worker instead.
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        static CREATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = CREATE.lock().unwrap_or_else(|e| e.into_inner());
+        open_settings_window_inner(&app);
+    });
+}
+
+fn open_settings_window_inner(app: &AppHandle) {
+    if !crate::lock::is_unlocked(app) {
+        crate::lock::show_lock_window(app);
+        return;
+    }
     if let Some(w) = app.get_webview_window("settings") {
         let _ = w.show();
         let _ = w.set_focus();
         return;
     }
-    let _ = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("index.html".into()))
+    match WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("index.html".into()))
         .title("whatRust — Settings")
         .inner_size(440.0, 680.0)
-        .resizable(false)
-        .build();
+        .min_inner_size(440.0, 520.0)
+        .resizable(true)
+        .visible(false)
+        .build()
+    {
+        Ok(w) if crate::lock::is_unlocked(app) => {
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+        Ok(_) => crate::lock::show_lock_window(app),
+        Err(e) => crate::dlog::log(&format!("settings window creation failed: {e}")),
+    }
 }
 
 #[cfg(test)]

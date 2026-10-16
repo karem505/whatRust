@@ -124,12 +124,27 @@ pub fn from_account(
     }
     // Only written once the toast is certain to show (unlocked, enabled, new).
     let icon = icon.and_then(|b64| crate::notif_icon::store(app, b64));
-    show_with_icon(
+    show_account_click(
         app,
+        label,
         &attributed_title(app, label, title),
         body,
         icon.as_deref(),
     );
+}
+
+/// Account-attributed message toast; activation targets the exact account window.
+fn show_account_click(app: &AppHandle, label: &str, title: &str, body: &str, icon: Option<&Path>) {
+    #[cfg(windows)]
+    windows_toast(
+        app,
+        title,
+        body,
+        icon.map(Path::to_path_buf),
+        Some(label.to_string()),
+    );
+    #[cfg(not(windows))]
+    show_with_icon(app, title, body, icon);
 }
 
 /// The unread count of `label` went up while its window wasn't focused. Wait
@@ -173,12 +188,20 @@ pub fn show(app: &AppHandle, title: &str, body: &str) {
     show_with_icon(app, title, body, None);
 }
 
+/// Native notification associated with the account that produced it.
+pub fn show_for_account(app: &AppHandle, label: &str, title: &str, body: &str) {
+    #[cfg(windows)]
+    windows_toast(app, title, body, None, Some(label.to_string()));
+    #[cfg(not(windows))]
+    show(app, title, body);
+}
+
 /// `show` with an optional picture (a PNG file): round on a Windows toast, the
 /// notification icon on Linux. macOS notifications always carry the app icon.
 pub fn show_with_icon(app: &AppHandle, title: &str, body: &str, icon: Option<&Path>) {
     #[cfg(windows)]
     {
-        windows_toast(app, title, body, icon.map(Path::to_path_buf));
+        windows_toast(app, title, body, icon.map(Path::to_path_buf), None);
     }
     #[cfg(not(windows))]
     {
@@ -196,7 +219,13 @@ pub fn show_with_icon(app: &AppHandle, title: &str, body: &str, icon: Option<&Pa
 }
 
 #[cfg(windows)]
-fn windows_toast(app: &AppHandle, title: &str, body: &str, icon: Option<std::path::PathBuf>) {
+fn windows_toast(
+    app: &AppHandle,
+    title: &str,
+    body: &str,
+    icon: Option<std::path::PathBuf>,
+    account_label: Option<String>,
+) {
     use tauri_winrt_notification::{IconCrop, Toast};
     // The AUMID aumid.rs registers at startup, so the toast is attributed to
     // whatRust and allowed to render.
@@ -205,6 +234,7 @@ fn windows_toast(app: &AppHandle, title: &str, body: &str, icon: Option<std::pat
     // WinRT calls can block briefly; keep them off the UI/IPC thread.
     std::thread::spawn(move || {
         let click = app.clone();
+        let click_label = account_label.clone();
         let mut toast = Toast::new(&aumid).title(&title).text1(&body);
         if let Some(icon) = &icon {
             toast = toast.icon(icon, IconCrop::Circular, "");
@@ -212,7 +242,14 @@ fn windows_toast(app: &AppHandle, title: &str, body: &str, icon: Option<std::pat
         let result = toast
             .on_activated(move |_| {
                 let app = click.clone();
-                let _ = click.run_on_main_thread(move || crate::window::show_main(&app));
+                let account_label = click_label.clone();
+                let _ = click.run_on_main_thread(move || {
+                    if let Some(label) = account_label {
+                        crate::window::show_account(&app, &label);
+                    } else {
+                        crate::window::show_main(&app);
+                    }
+                });
                 Ok(())
             })
             .show();

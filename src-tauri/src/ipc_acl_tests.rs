@@ -23,6 +23,8 @@ const PAGE_COMMANDS: &[&str] = &[
     "dlog",
     "open_download",
     "reveal_download",
+    "switcher_accounts",
+    "switch_account",
 ];
 /// Commands only the local settings window may use.
 const SETTINGS_COMMANDS: &[&str] = &[
@@ -33,6 +35,7 @@ const SETTINGS_COMMANDS: &[&str] = &[
     "remove_account",
     "rename_account",
     "open_account",
+    "set_default_account",
     "get_lock_status",
     "set_app_lock_password",
     "change_app_lock_password",

@@ -16,6 +16,8 @@
     "allow-dlog",
     "allow-open-download",
     "allow-reveal-download",
+    "allow-switcher-accounts",
+    "allow-switch-account",
     "notification:allow-is-permission-granted"
   ]
 }

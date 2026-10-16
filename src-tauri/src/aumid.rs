@@ -18,14 +18,13 @@
 //! The AUMID is read from the live Tauri config `identifier`, i.e. the exact
 //! value `notify.rs` passes to `Toast::new`, so the two can never drift apart.
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 /// No-op on every platform except Windows.
 #[allow(unused_variables)]
 pub fn register(app: &AppHandle) {
     #[cfg(windows)]
     {
-        use tauri::Manager;
         let config = app.config();
         let aumid = &config.identifier;
         let display = config.product_name.as_deref().unwrap_or("whatRust");

@@ -12,6 +12,7 @@
     "allow-remove-account",
     "allow-rename-account",
     "allow-open-account",
+    "allow-set-default-account",
     "allow-get-lock-status",
     "allow-set-app-lock-password",
     "allow-change-app-lock-password",
