@@ -4,7 +4,7 @@
 [[permission]]
 identifier = "allow-whatsapp-bridge"
 description = "Forward notifications, unread titles and diagnostics from WhatsApp account windows."
-commands.allow = ["notify", "set_unread", "dlog"]
+commands.allow = ["notify", "set_unread", "dlog", "switcher_accounts", "switch_account"]
 
 [[permission]]
 identifier = "allow-settings-commands"

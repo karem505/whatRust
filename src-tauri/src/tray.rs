@@ -160,6 +160,17 @@ pub fn rebuild_menu(app: &AppHandle) {
     let _ = tray.set_menu(Some(menu));
 }
 
+/// Show or hide the menu-bar icon (macOS, issue #44). Elsewhere the tray icon
+/// stays: on Windows and Linux it is the only way back to a hidden window,
+/// while macOS always has the Dock icon (see `RunEvent::Reopen` in lib.rs).
+#[allow(unused_variables)]
+pub fn apply_visibility(app: &AppHandle, visible: bool) {
+    #[cfg(target_os = "macos")]
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        let _ = tray.set_visible(visible);
+    }
+}
+
 /// Update the tray to reflect the current (aggregate) unread count.
 pub fn update_badge(app: &AppHandle, count: u32) {
     let Some(tray) = app.tray_by_id("main-tray") else {

@@ -38,8 +38,9 @@ jobs:
         run: cargo build --locked
 
       # Behavioral gates: the unit tests cover the drag-drop planning/streaming
-      # pipeline, download destinations, MIME routing, and UA/client-hints
-      # consistency — building alone caught none of the drop regressions.
+      # pipeline, download destinations, MIME routing, UA/client-hints
+      # consistency, link routing, and which window may call which command
+      # (IPC permissions) — building alone caught none of these regressions.
       - name: cargo test
         working-directory: src-tauri
         run: cargo test --locked
@@ -48,7 +49,7 @@ jobs:
         with:
           node-version: 20
 
-      - name: bridge.js drop-injector tests (mock DOM, zero deps)
+      - name: bridge.js tests — notifications, downloads, drop injector (mock DOM, zero deps)
         run: node src-tauri/resources/bridge.test.mjs
 
       - name: settings-ui hotkey tests

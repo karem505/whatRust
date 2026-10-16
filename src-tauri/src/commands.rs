@@ -20,42 +20,27 @@ fn is_remote_label(label: &str) -> bool {
     label.starts_with("wa-")
 }
 
+/// `icon` is the sender's picture as a small base64 PNG (bridge.js), when
+/// WhatsApp gave one and it could be loaded.
 #[tauri::command]
-pub fn notify(window: tauri::Window, app: tauri::AppHandle, title: String, body: String) {
+pub fn notify(
+    window: tauri::Window,
+    app: tauri::AppHandle,
+    title: String,
+    body: String,
+    icon: Option<String>,
+) {
     // issue #3 diagnostics: confirm the command is actually reached from the
-    // injected bridge. If this line never appears in the log when a message
-    // arrives, the page never called our Notification shim (e.g. it used the
-    // service-worker showNotification path), not the OS toast layer. No message
-    // content is logged (PII) — only that an event occurred.
+    // injected bridge. No message content is logged (PII).
     crate::dlog::log("commands::notify invoked");
-    // While locked, suppress notifications entirely so message previews don't leak
-    // to the OS notification center / lock screen. The tray unread badge still updates
-    // via set_unread (a count only, no content).
-    if !crate::lock::is_unlocked(&app) {
-        crate::dlog::log("commands::notify suppressed: app is locked");
-        return;
-    }
-    if !crate::settings::load(&app).notifications {
-        crate::dlog::log("commands::notify suppressed: notifications disabled in settings");
-        return;
-    }
-    // Prefix the account name when more than one account exists, so notifications
-    // are attributable (e.g. "Work: New message").
-    let f = accounts::load(&app);
-    let title = if f.accounts.len() > 1 {
-        if let Some(id) = accounts::id_from_label(window.label()) {
-            if let Some(acct) = f.accounts.iter().find(|a| a.id == id) {
-                format!("{}: {}", acct.name, title)
-            } else {
-                title
-            }
-        } else {
-            title
-        }
-    } else {
-        title
-    };
-    crate::notify::show(&app, &title, &body);
+    crate::notify::from_account(
+        &app,
+        window.label(),
+        &title,
+        &body,
+        icon.as_deref(),
+        crate::notify::Source::Page,
+    );
 }
 
 /// Diagnostic breadcrumb from the injected page script (bridge.js) into the same
@@ -68,8 +53,44 @@ pub fn dlog(msg: String) {
     crate::dlog::log(&format!("js: {msg}"));
 }
 
+/// "Open" on the download toast (issue #21). The page names a download only by
+/// the id we gave it; a program or installer is shown in its folder instead of
+/// run (see downloads.rs).
 #[tauri::command]
-pub fn set_unread(window: tauri::Window, app: tauri::AppHandle, title: String) {
+pub fn open_download(app: tauri::AppHandle, id: u64) -> Result<(), String> {
+    lock::require_unlocked(&app)?;
+    let path = app
+        .state::<crate::downloads::Downloads>()
+        .path(id)
+        .ok_or("unknown download")?;
+    if crate::downloads::is_risky(&path) {
+        crate::dlog::log("download: open refused for a program, revealing instead");
+        crate::opener::reveal_file(&app, path);
+    } else {
+        crate::opener::open_file(&app, path);
+    }
+    Ok(())
+}
+
+/// "Show in folder" on the download toast.
+#[tauri::command]
+pub fn reveal_download(app: tauri::AppHandle, id: u64) -> Result<(), String> {
+    lock::require_unlocked(&app)?;
+    let path = app
+        .state::<crate::downloads::Downloads>()
+        .path(id)
+        .ok_or("unknown download")?;
+    crate::opener::reveal_file(&app, path);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_unread(
+    window: tauri::Window,
+    app: tauri::AppHandle,
+    title: String,
+    settled: Option<bool>,
+) {
     let count = crate::unread::parse_unread(&title);
     let Some(id) = accounts::id_from_label(window.label()) else {
         return;
@@ -78,15 +99,24 @@ pub fn set_unread(window: tauri::Window, app: tauri::AppHandle, title: String) {
     // Update the per-account count and compute the aggregate, then drop all
     // UnreadMap guards BEFORE calling tray::rebuild_menu (which re-locks the map)
     // to avoid a deadlock.
-    let total = {
+    let (previous, total) = {
         let state = app.state::<UnreadMap>();
         let mut map = state.lock().unwrap();
-        map.insert(id.to_string(), count);
-        accounts::aggregate_unread(&map)
+        let previous = map.insert(id.to_string(), count);
+        (previous, accounts::aggregate_unread(&map))
     };
 
     crate::tray::update_badge(&app, total);
     crate::tray::rebuild_menu(&app);
+
+    // A new unread chat while the window is in the background: make sure the
+    // user hears about it even when WhatsApp raises its own notification where
+    // whatRust can't see it (issue #3). Covered by a real notification, this
+    // stays silent; see notify::unread_increased.
+    let focused = window.is_focused().unwrap_or(false) && window.is_visible().unwrap_or(false);
+    if crate::notify::fallback_due(previous, count, focused, settled.unwrap_or(false)) {
+        crate::notify::unread_increased(&app, window.label(), count);
+    }
 }
 
 #[tauri::command]
@@ -113,8 +143,12 @@ pub fn set_settings(
     Ok(crate::settings::apply(&app, &settings))
 }
 
+// Commands that build a window are `async`. Tauri runs a synchronous command
+// inside WebView2's IPC callback, and creating another WebView2 there deadlocks
+// on Windows (wry#583); an async command runs on the async runtime instead.
+// Keep every window-creating command async.
 #[tauri::command]
-pub fn open_settings(window: tauri::Window, app: tauri::AppHandle) -> Result<(), String> {
+pub async fn open_settings(window: tauri::Window, app: tauri::AppHandle) -> Result<(), String> {
     if is_remote(&window) {
         return Err("forbidden".into());
     }
@@ -152,11 +186,64 @@ fn account_views(app: &tauri::AppHandle) -> Vec<AccountView> {
             open: app
                 .get_webview_window(&accounts::window_label(&a.id))
                 .is_some(),
-            is_default: accounts::startup_account(&f).is_some_and(|selected| selected.id == a.id),
+            is_default: accounts::startup_account(&f).is_some_and(|startup| startup.id == a.id),
         })
         .collect();
     views.sort_by_key(|v| v.order);
     views
+}
+
+/// Small account list for the WhatsApp-window switcher. Remote windows may only
+/// read display data and request focusing one configured account.
+#[derive(Debug, Clone, Serialize)]
+pub struct SwitcherAccount {
+    pub id: String,
+    pub name: String,
+    pub unread: u32,
+}
+
+#[tauri::command]
+pub fn switcher_accounts(
+    window: tauri::Window,
+    app: tauri::AppHandle,
+) -> Result<Vec<SwitcherAccount>, String> {
+    if !is_remote(&window) {
+        return Err("forbidden".into());
+    }
+    lock::require_unlocked(&app)?;
+    Ok(account_views(&app)
+        .into_iter()
+        .map(|account| SwitcherAccount {
+            id: account.id,
+            name: account.name,
+            unread: account.unread,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn switch_account(
+    window: tauri::Window,
+    app: tauri::AppHandle,
+    id: String,
+) -> Result<(), String> {
+    if !is_remote(&window) {
+        return Err("forbidden".into());
+    }
+    lock::require_unlocked(&app)?;
+    let _guard = accounts::lock_mutations();
+    let f = accounts::load(&app);
+    let Some(acct) = f.accounts.iter().find(|a| a.id == id) else {
+        return Err("unknown account".into());
+    };
+    if app.get_webview_window(&accounts::window_label(&acct.id)).is_none() {
+        crate::window::open_account_window(&app, acct, false).map_err(|e| e.to_string())?;
+    }
+    crate::window::show_account(&app, &accounts::window_label(&acct.id));
+    if let Some(active) = app.try_state::<ActiveAccount>() {
+        *active.lock().unwrap() = accounts::window_label(&acct.id);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -169,6 +256,22 @@ pub fn list_accounts(
     }
     lock::require_unlocked(&app)?;
     Ok(account_views(&app))
+}
+
+#[tauri::command]
+pub fn set_default_account(
+    window: tauri::Window,
+    app: tauri::AppHandle,
+    id: String,
+) -> Result<(), String> {
+    if is_remote(&window) {
+        return Err("forbidden".into());
+    }
+    lock::require_unlocked(&app)?;
+    let _guard = accounts::lock_mutations();
+    let mut f = accounts::load(&app);
+    accounts::set_startup_account(&mut f, &id)?;
+    accounts::save(&app, &f).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -189,24 +292,19 @@ pub async fn add_account(
         return Err("account name cannot be empty".into());
     }
 
-    // WebView2 construction must not run inside a synchronous IPC callback.
-    // Do not move this command back onto the UI thread (wry issue #583).
-    let _mutation = accounts::MUTATION
-        .lock()
-        .map_err(|_| "account operation failed")?;
+    let _guard = accounts::lock_mutations();
     let mut f = accounts::load(&app);
     let acct = accounts::add(&mut f, name);
     accounts::save(&app, &f).map_err(|e| e.to_string())?;
 
-    if let Err(error) = crate::window::open_account_window(&app, &acct, true) {
-        // Keep the allocated sequence, but do not leave a phantom account after
-        // a failed window build. A retry must allocate a fresh profile id.
+    if let Err(e) = crate::window::open_account_window(&app, &acct, false) {
+        // Don't leave an account behind that never got a window. The sequence
+        // number stays consumed, so a retry gets a fresh profile id.
         f.accounts.retain(|a| a.id != acct.id);
         accounts::save(&app, &f)
-            .map_err(|rollback| format!("{error}; could not roll back account: {rollback}"))?;
-        return Err(error.to_string());
+            .map_err(|rollback| format!("{e}; and could not roll back the account: {rollback}"))?;
+        return Err(e.to_string());
     }
-    crate::window::show_account(&app, &accounts::window_label(&acct.id));
     crate::tray::rebuild_menu(&app);
 
     Ok(AccountView {
@@ -215,7 +313,7 @@ pub async fn add_account(
         order: acct.order,
         unread: 0,
         open: true,
-        is_default: false,
+        is_default: accounts::startup_account(&f).is_some_and(|startup| startup.id == acct.id),
     })
 }
 
@@ -230,9 +328,7 @@ pub async fn remove_account(
     }
     lock::require_unlocked(&app)?;
 
-    let _mutation = accounts::MUTATION
-        .lock()
-        .map_err(|_| "account operation failed")?;
+    let _guard = accounts::lock_mutations();
     let mut f = accounts::load(&app);
     let removed = accounts::remove(&mut f, &id)?;
     accounts::save(&app, &f).map_err(|e| e.to_string())?;
@@ -276,9 +372,7 @@ pub async fn rename_account(
         return Err("account name cannot be empty".into());
     }
 
-    let _mutation = accounts::MUTATION
-        .lock()
-        .map_err(|_| "account operation failed")?;
+    let _guard = accounts::lock_mutations();
     let mut f = accounts::load(&app);
     accounts::rename(&mut f, &id, name)?;
     accounts::save(&app, &f).map_err(|e| e.to_string())?;
@@ -300,9 +394,7 @@ pub async fn open_account(
         return Err("forbidden".into());
     }
     lock::require_unlocked(&app)?;
-    let _mutation = accounts::MUTATION
-        .lock()
-        .map_err(|_| "account operation failed")?;
+    let _guard = accounts::lock_mutations();
     let f = accounts::load(&app);
     let Some(acct) = f.accounts.iter().find(|a| a.id == id) else {
         return Err(format!("unknown account: {id}"));
@@ -312,7 +404,7 @@ pub async fn open_account(
         .get_webview_window(&accounts::window_label(&acct.id))
         .is_none()
     {
-        crate::window::open_account_window(&app, acct, true).map_err(|e| e.to_string())?;
+        crate::window::open_account_window(&app, acct, false).map_err(|e| e.to_string())?;
     }
     crate::window::show_account(&app, &accounts::window_label(&acct.id));
     // Track as the active account.
@@ -320,24 +412,6 @@ pub async fn open_account(
         *active.lock().unwrap() = accounts::window_label(&acct.id);
     }
     Ok(())
-}
-
-#[tauri::command]
-pub async fn set_default_account(
-    window: tauri::Window,
-    app: tauri::AppHandle,
-    id: String,
-) -> Result<(), String> {
-    if is_remote(&window) {
-        return Err("forbidden".into());
-    }
-    lock::require_unlocked(&app)?;
-    let _mutation = accounts::MUTATION
-        .lock()
-        .map_err(|_| "account operation failed")?;
-    let mut f = accounts::load(&app);
-    accounts::set_startup_account(&mut f, &id)?;
-    accounts::save(&app, &f).map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -506,9 +580,9 @@ pub fn set_biometric_enabled(
     applock::save(&app, &c).map_err(|e| e.to_string())
 }
 
-/// Manual "Lock now" from the settings window.
+/// Manual "Lock now" from the settings window. Async: it builds the lock window.
 #[tauri::command]
-pub fn lock_app(window: tauri::Window, app: tauri::AppHandle) -> Result<(), String> {
+pub async fn lock_app(window: tauri::Window, app: tauri::AppHandle) -> Result<(), String> {
     if is_remote(&window) {
         return Err("forbidden".into());
     }

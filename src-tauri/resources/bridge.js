@@ -2,18 +2,65 @@
   "use strict";
   if (window.location.origin !== "https://web.whatsapp.com") return;
 
+  // A rejected command used to vanish here without a trace, which is how every
+  // notify/set_unread call being refused by the IPC permission check went
+  // unnoticed (issues #3, #32). Warn once per command in the page console
+  // (WHATRUST_DEVTOOLS=1 to inspect); the promise still never rejects.
+  var warnedCmds = Object.create(null);
   function invoke(cmd, args) {
     var t = window.__TAURI__;
     if (t && t.core && typeof t.core.invoke === "function") {
-      return t.core.invoke(cmd, args).catch(function () {
-        // Do not log args or error payloads: they can contain message content.
-        // In particular, an ACL rejection must not silently disable both
-        // notifications and the unread tray indicator.
-        console.error("whatRust bridge: IPC failed for " + cmd);
+      return t.core.invoke(cmd, args).catch(function (e) {
+        if (warnedCmds[cmd]) return;
+        warnedCmds[cmd] = true;
+        try { console.warn("[whatRust] " + cmd + " was refused"); } catch (e2) {}
       });
     }
     return Promise.resolve();
   }
+
+  // A small, keyboard-accessible account switcher owned by whatRust. It exposes
+  // only account names/unread counts and a request to focus an existing account.
+  function mountAccountSwitcher() {
+    if (!document.body || document.getElementById("__whatrust_accounts")) return;
+    var trigger = document.createElement("button");
+    trigger.id = "__whatrust_accounts";
+    trigger.type = "button";
+    trigger.textContent = "Accounts";
+    trigger.setAttribute("aria-label", "Switch WhatsApp account");
+    trigger.style.cssText = "position:fixed;z-index:2147483000;left:12px;bottom:12px;border:0;border-radius:18px;padding:9px 14px;background:#075e54;color:white;font:600 13px system-ui;box-shadow:0 2px 10px #0005;cursor:pointer";
+    var dialog = document.createElement("dialog");
+    dialog.setAttribute("aria-label", "WhatsApp accounts");
+    dialog.style.cssText = "border:0;border-radius:14px;padding:16px;min-width:260px;max-width:90vw;box-shadow:0 8px 36px #0006;font:14px system-ui;color:#222";
+    var heading = document.createElement("h2"); heading.textContent = "WhatsApp accounts";
+    heading.style.cssText = "font-size:16px;margin:0 0 10px";
+    var list = document.createElement("div"); list.setAttribute("role", "list");
+    var close = document.createElement("button"); close.type = "button"; close.textContent = "Close";
+    close.style.cssText = "margin-top:12px;padding:7px 12px;border:0;border-radius:8px;cursor:pointer";
+    close.addEventListener("click", function () { dialog.close(); trigger.focus(); });
+    dialog.append(heading, list, close);
+    dialog.addEventListener("click", function (e) { if (e.target === dialog) { dialog.close(); trigger.focus(); } });
+    trigger.addEventListener("click", function () {
+      invoke("switcher_accounts").then(function (accounts) {
+        if (!Array.isArray(accounts)) return;
+        list.textContent = "";
+        accounts.forEach(function (account) {
+          var item = document.createElement("button"); item.type = "button";
+          item.setAttribute("role", "listitem");
+          item.textContent = String(account.name || "WhatsApp") + (account.unread > 0 ? "  ·  " + account.unread + " unread" : "");
+          item.setAttribute("aria-label", String(account.name || "WhatsApp") + (account.unread > 0 ? ", " + account.unread + " unread" : ""));
+          item.style.cssText = "display:block;width:100%;text-align:left;padding:10px;border:0;border-radius:8px;background:white;color:#222;cursor:pointer";
+          item.addEventListener("click", function () { invoke("switch_account", { id: account.id }); dialog.close(); });
+          list.appendChild(item);
+        });
+        if (!dialog.open) dialog.showModal();
+        var first = list.querySelector("button"); if (first) first.focus(); else close.focus();
+      });
+    });
+    document.body.append(trigger, dialog);
+  }
+  var switcherTimer = setInterval(mountAccountSwitcher, 500);
+  setTimeout(function () { clearInterval(switcherTimer); }, 30000);
 
   // Native OS toast with short-window de-duplication. WhatsApp can raise the same alert
   // more than once in a burst (a React re-render, or one message surfacing through two
@@ -23,7 +70,50 @@
   // Returns true if forwarded, false if suppressed as a duplicate.
   var DEDUP_MS = 3500;
   var recentNotif = Object.create(null);
-  function nativeNotify(title, body) {
+  // Which notification path the page used, logged once per path (issue #3:
+  // on Windows real-message notifications never reached the shim). Names only,
+  // never content.
+  var seenPath = Object.create(null);
+  function notePath(path) {
+    if (seenPath[path]) return;
+    seenPath[path] = true;
+    invoke("dlog", { msg: "notif path: " + path });
+  }
+  // The sender's picture, from the notification's `icon` (a blob:, data: or
+  // https: URL). Loaded, cropped to a square, scaled to ICON_PX and re-encoded
+  // as PNG, so Rust gets one small format every toast can show (Windows toasts
+  // can't show WebP). Resolves to base64 PNG, or null if it can't be had within
+  // ICON_WAIT_MS; the toast then goes out without it. The outcome is logged
+  // once per URL scheme, never the picture or its URL.
+  var ICON_PX = 96;
+  var ICON_WAIT_MS = 1500;
+  function iconPng(url) {
+    var load = Promise.resolve().then(function () {
+      if (typeof window.fetch !== "function" || typeof window.createImageBitmap !== "function") return null;
+      return window.fetch(url, { credentials: "omit" })
+        .then(function (r) { return r && r.ok ? r.blob() : null; })
+        .then(function (blob) { return blob ? window.createImageBitmap(blob) : null; })
+        .then(function (bmp) {
+          if (!bmp || !bmp.width || !bmp.height) return null;
+          var canvas = document.createElement("canvas");
+          canvas.width = ICON_PX;
+          canvas.height = ICON_PX;
+          var side = Math.min(bmp.width, bmp.height);
+          canvas.getContext("2d").drawImage(
+            bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, ICON_PX, ICON_PX
+          );
+          if (typeof bmp.close === "function") bmp.close();
+          var data = String(canvas.toDataURL("image/png"));
+          var at = data.indexOf("base64,");
+          return data.indexOf("data:image/png") === 0 && at > 0 ? data.slice(at + 7) : null;
+        });
+    }).catch(function () { return null; });
+    var timeout = new Promise(function (resolve) {
+      setTimeout(function () { resolve(null); }, ICON_WAIT_MS);
+    });
+    return Promise.race([load, timeout]);
+  }
+  function nativeNotify(title, body, icon) {
     title = String(title || "WhatsApp");
     body = String(body || "");
     var now = Date.now();
@@ -33,7 +123,15 @@
     var key = title + " " + body;
     if (recentNotif[key] && now - recentNotif[key] <= DEDUP_MS) return false;
     recentNotif[key] = now;
-    invoke("notify", { title: title, body: body });
+    var scheme = typeof icon === "string" && (/^(blob|data|https):/.exec(icon) || [])[1];
+    if (!scheme) {
+      invoke("notify", { title: title, body: body });
+      return true;
+    }
+    iconPng(icon).then(function (png) {
+      notePath("icon " + scheme + (png ? " ok" : " unavailable"));
+      invoke("notify", png ? { title: title, body: body, icon: png } : { title: title, body: body });
+    });
     return true;
   }
 
@@ -83,6 +181,7 @@
   //    real and this shim is skipped. The platform token is derived from the
   //    UA string Rust set (per-OS CHROME_UA), so hints and UA agree instead of
   //    hardcoding "Linux" everywhere.
+  var isChromeUA = /Chrome\//.test(navigator.userAgent || "");
   try {
     var uaPlatform = /Macintosh|Mac OS X/.test(navigator.userAgent || "")
       ? "macOS"
@@ -90,7 +189,10 @@
         ? "Windows"
         : "Linux";
     var uaPlatformVersion = uaPlatform === "macOS" ? "13.0.0" : uaPlatform === "Windows" ? "10.0.0" : "6.0.0";
-    if (!navigator.userAgentData) {
+    // Only a Chrome UA gets Chrome's client hints. On macOS the window presents
+    // itself as Safari (window.rs `user_agent`, issue #15), and Safari has no
+    // userAgentData — adding one would make the fingerprint contradict itself.
+    if (!navigator.userAgentData && isChromeUA) {
       Object.defineProperty(navigator, "userAgentData", {
         configurable: true,
         value: {
@@ -136,13 +238,14 @@
   // 1b) Chrome environment marker. WhatsApp Web's eligibility checks probe for
   //     `window.chrome` beyond the UA and userAgentData (both spoofed above). Add a
   //     minimal, idempotent stand-in matching what a real Chrome minimally exposes;
-  //     never clobber a genuine `window.chrome` (WebView2 on Windows has a real one).
+  //     never clobber a genuine `window.chrome` (WebView2 on Windows has a real one),
+  //     and never add one when the UA is Safari (macOS).
   //     NOTE: this makes the *presentation* consistent; it cannot conjure missing
   //     engine APIs. Linux distro WebKitGTK ships no WebRTC backend, so calling
   //     stays unsupported there regardless (verified: RTCPeerConnection undefined
   //     with enable-webrtc on, webkit2gtk 2.52.3).
   try {
-    if (!window.chrome) {
+    if (!window.chrome && isChromeUA) {
       Object.defineProperty(window, "chrome", {
         configurable: true,
         enumerable: true,
@@ -162,7 +265,8 @@
       this.onclose = null;
       this.onerror = null;
       this.onshow = null;
-      nativeNotify(title, options.body);
+      notePath("page Notification()");
+      nativeNotify(title, options.body, options.icon);
     }
     ShimNotification.prototype.close = function () {
       if (typeof this.onclose === "function") this.onclose();
@@ -175,6 +279,35 @@
       return Promise.resolve("granted");
     };
     window.Notification = ShimNotification;
+  } catch (e) {}
+
+  // 2a) Permissions API. The shim above reports Notification.permission
+  //     "granted", but navigator.permissions.query({name:"notifications"}) still
+  //     asks the engine, which answers "prompt" (WebView2 has no notification
+  //     grant from us, WebKit none either). A page that checks permission that way
+  //     sees notifications as off and never raises one — while still playing its
+  //     own in-page sound, which is exactly the Windows report in issue #3. Answer
+  //     "granted" for notifications so both APIs agree; other permissions pass
+  //     through to the engine untouched.
+  try {
+    var perms = navigator.permissions;
+    if (perms && typeof perms.query === "function") {
+      var nativeQuery = perms.query.bind(perms);
+      perms.query = function (desc) {
+        if (desc && desc.name === "notifications") {
+          return Promise.resolve({
+            name: "notifications",
+            state: "granted",
+            status: "granted",
+            onchange: null,
+            addEventListener: function () {},
+            removeEventListener: function () {},
+            dispatchEvent: function () { return false; },
+          });
+        }
+        return nativeQuery(desc);
+      };
+    }
   } catch (e) {}
 
   // 2b) Service-worker notification path. Modern WhatsApp Web also raises notifications
@@ -190,9 +323,10 @@
     if (SWR && SWR.prototype && typeof SWR.prototype.showNotification === "function") {
       SWR.prototype.showNotification = function (title, options) {
         options = options || {};
+        notePath("page registration.showNotification()");
         // Route through nativeNotify so the service-worker path shares the same de-dup
         // window as window.Notification (an alert that fires on both paths shows once).
-        nativeNotify(title, options.body);
+        nativeNotify(title, options.body, options.icon);
         // Real API resolves Promise<undefined>; match it so callers awaiting it don't break.
         return Promise.resolve();
       };
@@ -204,12 +338,35 @@
     }
   } catch (e) {}
 
+  // 2c) Service-worker registration, for the diagnostic log: a notification the
+  //     service worker raises itself never passes through the shims above, so
+  //     knowing a worker is installed explains a silent message (issue #3). The
+  //     path of WhatsApp's own script only; nothing about the user.
+  try {
+    var swc = navigator.serviceWorker;
+    if (swc && typeof swc.register === "function") {
+      var nativeRegister = swc.register.bind(swc);
+      swc.register = function (url, opts) {
+        try {
+          var path = new URL(String(url), window.location.href || window.location.origin).pathname;
+          notePath("service worker registered (" + path.slice(0, 80) + ")");
+        } catch (e) {}
+        return nativeRegister(url, opts);
+      };
+    }
+  } catch (e) {}
+
   // 3) Unread count — forward the raw <title> string on change; Rust parses it.
+  // `settled`: the page has been up long enough that a rising count means new
+  // messages, not WhatsApp syncing after a launch or reload (Rust only raises
+  // its unread fallback alert once settled).
   var lastTitle = "";
+  var pageStart = Date.now();
+  var SETTLE_MS = 30000;
   function report() {
     if (document.title === lastTitle) return;
     lastTitle = document.title;
-    invoke("set_unread", { title: document.title });
+    invoke("set_unread", { title: document.title, settled: Date.now() - pageStart > SETTLE_MS });
   }
   function start() {
     try {
@@ -230,6 +387,115 @@
   } else {
     start();
   }
+
+  // 3b) Download toast (issue #21). Rust calls __whatrustDownloadDone when a
+  //     download finishes: {ok:true,id,name,canOpen} or {ok:false}. Show a small
+  //     browser-style confirmation with Open / Show in folder, or the failure.
+  //     It lives in a shadow root so WhatsApp's styles can't reach it, the file
+  //     name is set as text (never parsed as HTML), and the buttons only send the
+  //     download's id back — Rust holds the path and decides what may be opened.
+  try {
+    var dl = {};
+    dl.MAX = 3;
+    dl.TTL = 8000;
+    dl.host = null;
+    dl.root = null;
+    dl.mount = function () {
+      if (dl.host && dl.host.isConnected) return dl.root;
+      var body = document.body;
+      if (!body) return null;
+      dl.host = document.createElement("div");
+      dl.host.setAttribute("data-whatrust", "downloads");
+      dl.root = dl.host.attachShadow ? dl.host.attachShadow({ mode: "closed" }) : dl.host;
+      var style = document.createElement("style");
+      style.textContent = [
+        ":host{all:initial}",
+        ".stack{position:fixed;left:16px;bottom:16px;z-index:2147483647;display:flex;flex-direction:column;gap:8px;",
+        "font:14px/1.35 system-ui,-apple-system,'Segoe UI',Roboto,Ubuntu,sans-serif;max-width:min(380px,calc(100vw - 32px))}",
+        ".toast{display:flex;align-items:center;gap:12px;padding:10px 10px 10px 14px;border-radius:10px;",
+        "background:#233138;color:#e9edef;box-shadow:0 4px 18px rgba(0,0,0,.35)}",
+        ".text{flex:1;min-width:0}",
+        ".title{font-weight:600}",
+        ".name{opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+        "button{all:unset;cursor:pointer;padding:6px 8px;border-radius:6px;color:#21c063;font-weight:600;white-space:nowrap}",
+        "button:hover,button:focus-visible{background:rgba(255,255,255,.08)}",
+        "button.close{color:#aebac1;font-weight:400;padding:6px 9px}",
+        ".failed .title{color:#f15c6d}",
+      ].join("");
+      var stack = document.createElement("div");
+      stack.className = "stack";
+      stack.setAttribute("role", "status");
+      stack.setAttribute("aria-live", "polite");
+      dl.root.appendChild(style);
+      dl.root.appendChild(stack);
+      dl.stack = stack;
+      body.appendChild(dl.host);
+      return dl.root;
+    };
+    dl.button = function (label, cls, onClick) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = label;
+      if (cls) b.className = cls;
+      b.addEventListener("click", onClick);
+      return b;
+    };
+    dl.show = function (d) {
+      if (!d || !dl.mount()) return false;
+      var toast = document.createElement("div");
+      toast.className = d.ok ? "toast" : "toast failed";
+      var text = document.createElement("div");
+      text.className = "text";
+      var title = document.createElement("div");
+      title.className = "title";
+      title.textContent = d.ok ? "Downloaded" : "Download failed";
+      var name = document.createElement("div");
+      name.className = "name";
+      name.textContent = d.ok ? String(d.name || "") : "The file could not be downloaded.";
+      if (d.ok) name.title = String(d.name || "");
+      text.appendChild(title);
+      text.appendChild(name);
+      toast.appendChild(text);
+      var timer = null;
+      var close = function () {
+        if (timer) clearTimeout(timer);
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+      };
+      var arm = function () {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(close, dl.TTL);
+      };
+      if (d.ok && typeof d.id === "number") {
+        if (d.canOpen) {
+          toast.appendChild(dl.button("Open", "", function () {
+            invoke("open_download", { id: d.id });
+            close();
+          }));
+        }
+        toast.appendChild(dl.button("Show in folder", "", function () {
+          invoke("reveal_download", { id: d.id });
+          close();
+        }));
+      }
+      var x = dl.button("\u00d7", "close", close);
+      x.setAttribute("aria-label", "Dismiss");
+      toast.appendChild(x);
+      // Hovering keeps it up; leaving restarts the countdown.
+      toast.addEventListener("mouseenter", function () { if (timer) clearTimeout(timer); });
+      toast.addEventListener("mouseleave", arm);
+      dl.stack.appendChild(toast);
+      while (dl.stack.children.length > dl.MAX) dl.stack.removeChild(dl.stack.firstChild);
+      arm();
+      return true;
+    };
+    window.__whatrustDownloadDone = function (d) {
+      try {
+        return dl.show(d);
+      } catch (e) {
+        return false;
+      }
+    };
+  } catch (e) {}
 
   // 4) Drag-and-drop file injection.
   //    The native webview never delivers an OS file drop into this page on any platform

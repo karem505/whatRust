@@ -8,8 +8,13 @@ use tauri::{AppHandle, Manager};
 pub type UnreadMap = Mutex<HashMap<String, u32>>;
 /// Window label of the last-focused account window (e.g. `wa-default`). Managed app state.
 pub type ActiveAccount = Mutex<String>;
-/// Serialize account mutations now that window-opening commands run off the UI thread.
-pub static MUTATION: Mutex<()> = Mutex::new(());
+/// Held across each account command's load-modify-save (and its window build),
+/// so two account commands running at once can't interleave and lose a change.
+static MUTATIONS: Mutex<()> = Mutex::new(());
+
+pub fn lock_mutations() -> std::sync::MutexGuard<'static, ()> {
+    MUTATIONS.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 /// A single WhatsApp account.
 ///

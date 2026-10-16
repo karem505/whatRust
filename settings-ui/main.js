@@ -1,5 +1,8 @@
 const invoke = window.__TAURI__.core.invoke;
-const BOOLS = ["close_to_tray", "start_minimized", "autostart", "notifications", "hotkey_enabled"];
+const BOOLS = ["close_to_tray", "start_minimized", "autostart", "notifications", "hotkey_enabled", "menu_bar_icon"];
+// The menu-bar icon can only be hidden on macOS, where the Dock icon still
+// brings the window back (issue #44).
+const IS_MAC = /Mac/.test(navigator.platform || navigator.userAgent);
 const ZOOM_DEFAULT = 1;
 
 // settings.json holds a zoom factor, not a preset name, so a stored value need
@@ -13,6 +16,7 @@ function selectNearestZoom(value) {
 
 async function load() {
   const s = await invoke("get_settings");
+  document.getElementById("menu_bar_icon_row").hidden = !IS_MAC;
   for (const f of BOOLS) {
     const el = document.getElementById(f);
     if (el) el.checked = !!s[f];
