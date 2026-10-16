@@ -17,13 +17,22 @@
     "deep-link": {
       "desktop": {
         "name": "WhatsApp link",
-        "schemes": ["whatsapp"]
+        "schemes": [
+          "whatsapp"
+        ]
       }
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["deb", "appimage", "app", "dmg", "nsis", "msi"],
+    "targets": [
+      "deb",
+      "appimage",
+      "app",
+      "dmg",
+      "nsis",
+      "msi"
+    ],
     "macOS": {
       "minimumSystemVersion": "12.1"
     },
@@ -40,6 +49,15 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "languages": [
+          "PortugueseBR"
+        ],
+        "installMode": "currentUser",
+        "startMenuFolder": "whatRust"
+      }
+    }
   }
 }

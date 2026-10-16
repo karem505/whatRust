@@ -26,9 +26,9 @@ function harness({ reject = false } = {}) {
   };
   runInNewContext(source, {
     window, document, navigator: {},
-    console: { error: message => errors.push(message), log() {} },
+    console: { warn: message => errors.push(message), error: message => errors.push(message), log() {} },
     MutationObserver: class { observe() {} },
-    setInterval: callback => { intervals.push(callback); return 0; },
+    setInterval: (callback, delay) => { intervals.push({ callback, delay }); return 0; },
     setTimeout: () => 0, clearTimeout() {},
   });
   return { window, document, calls, errors, intervals };
@@ -53,7 +53,7 @@ test('the two notification paths do not duplicate the same alert', async () => {
 
 test('unread initialization, changes and clearing reach Rust without repeating unchanged titles', () => {
   const { document, calls, intervals } = harness();
-  const poll = intervals[0];
+  const poll = intervals.find(timer => timer.delay === 2000).callback;
   poll();
   document.title = '(4) WhatsApp'; poll();
   document.title = 'WhatsApp'; poll(); poll();
@@ -65,7 +65,7 @@ test('IPC rejection is visible without logging private notification content', as
   const { window, errors } = harness({ reject: true });
   new window.Notification('private title', { body: 'private body' });
   await new Promise(resolve => setImmediate(resolve));
-  assert.ok(errors.includes('whatRust bridge: IPC failed for notify'));
-  assert.ok(errors.includes('whatRust bridge: IPC failed for set_unread'));
+  assert.ok(errors.includes('[whatRust] notify was refused'));
+  assert.ok(errors.includes('[whatRust] set_unread was refused'));
   assert.ok(errors.every(message => !message.includes('private')));
 });

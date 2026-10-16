@@ -134,6 +134,7 @@ function makeHarness(options = {}) {
   body.isRoot = true;
   const document = {
     body,
+    getElementById() { return null; },
     createElement: (tag) => new FakeElement(tag),
     title: "WhatsApp",
     readyState: "complete",
