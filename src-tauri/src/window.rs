@@ -86,14 +86,9 @@ pub fn open_account_window(
         .icon(icon)?
         .user_agent(&user_agent())
         .initialization_script(BRIDGE_JS)
-        // Drag-and-drop is done by capturing the OS drop in Rust and streaming the file
-        // into the page (see `register_drop_handler` + bridge.js `__whatrustDropFeed`).
-        // We deliberately KEEP Tauri's drag-drop handler enabled (except on Windows, see
-        // below): on Linux/webkit2gtk the
-        // native webview never delivers a file drop into the page DOM (broken on Wayland;
-        // on X11 the GTK drop is accepted — the "+" cursor shows — but it still never
-        // reaches WhatsApp Web), so relying on in-page HTML5 drop simply does not work
-        // there. The handler is what hands us the dropped paths via `WindowEvent::DragDrop`.
+        // Linux needs Tauri's OS-drop handler and the streaming bridge: WebKitGTK
+        // does not reliably deliver file drops into the page DOM. macOS and Windows
+        // use their webviews' native HTML5 drop handling (configured below).
         // Belt-and-braces: cancel any `file://` navigation so a stray drop can never
         // navigate the window away and tear down the live WhatsApp session.
         .on_navigation(|url| url.scheme() != "file")
@@ -178,6 +173,13 @@ pub fn open_account_window(
         })
         .visible(!start_hidden);
 
+    // macOS: WKWebView can deliver Finder drops directly to WhatsApp's own drop
+    // zone. Tauri's handler consumes them before the page sees a drag event, then
+    // our bridge has to locate WhatsApp's changing/localized attachment controls.
+    // A QUEUED ack only confirms receipt of bytes; that injection can still fail
+    // silently without ever opening the attachment preview. Let WebKit deliver
+    // the original drag events and File objects, as it does in Safari.
+    //
     // Windows (issue #31): WebView2 is Chromium and delivers OS file drops to the
     // page natively, so WhatsApp's own drop zone works exactly as in Chrome. With
     // Tauri's handler enabled, wry instead turns WebView2's external drops OFF and
@@ -186,7 +188,7 @@ pub fn open_account_window(
     // later, so nothing got registered and every drop was silently swallowed.
     // Let WebView2 handle drops; `register_drop_handler` stays wired but inert
     // here, and the `file://` navigation guard above still applies.
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     let builder = builder.disable_drag_drop_handler();
 
     let builder = apply_isolation(builder, account, app);
@@ -300,8 +302,8 @@ const CHUNKS_PER_EVAL: usize = 2;
 ///
 /// On Linux the webview never delivers the drop into the page DOM, so Tauri's
 /// drag-drop handler (kept enabled in the builder) is our only source of the dropped
-/// paths — and because that handler consumes the drop, macOS drops arrive here too.
-/// (Windows disables the handler and lets WebView2 deliver drops to the page.) A dedicated FIFO worker per account window reads and
+/// paths. macOS and Windows disable the handler and let WKWebView/WebView2 deliver
+/// drops to the page directly. A dedicated FIFO worker per account window reads and
 /// streams drops off the UI thread in OS event order, so a later small drop cannot
 /// commit before an earlier large one. Messages reach the page-side
 /// `__whatrustDropFeed` (bridge.js) as begin/chunk/end operations keyed by a
