@@ -134,13 +134,7 @@ pub fn from_account(
 }
 
 /// Account-attributed message toast; activation targets the exact account window.
-fn show_account_click(
-    app: &AppHandle,
-    label: &str,
-    title: &str,
-    body: &str,
-    icon: Option<&Path>,
-) {
+fn show_account_click(app: &AppHandle, label: &str, title: &str, body: &str, icon: Option<&Path>) {
     #[cfg(windows)]
     windows_toast(
         app,
@@ -248,9 +242,13 @@ fn windows_toast(
         let result = toast
             .on_activated(move |_| {
                 let app = click.clone();
+                let account_label = click_label.clone();
                 let _ = click.run_on_main_thread(move || {
-                    if let Some(label) = click_label { crate::window::show_account(&app, &label); }
-                    else { crate::window::show_main(&app); }
+                    if let Some(label) = account_label {
+                        crate::window::show_account(&app, &label);
+                    } else {
+                        crate::window::show_main(&app);
+                    }
                 });
                 Ok(())
             })

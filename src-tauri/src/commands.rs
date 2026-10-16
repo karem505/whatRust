@@ -236,7 +236,10 @@ pub async fn switch_account(
     let Some(acct) = f.accounts.iter().find(|a| a.id == id) else {
         return Err("unknown account".into());
     };
-    if app.get_webview_window(&accounts::window_label(&acct.id)).is_none() {
+    if app
+        .get_webview_window(&accounts::window_label(&acct.id))
+        .is_none()
+    {
         crate::window::open_account_window(&app, acct, false).map_err(|e| e.to_string())?;
     }
     crate::window::show_account(&app, &accounts::window_label(&acct.id));
@@ -307,13 +310,14 @@ pub async fn add_account(
     }
     crate::tray::rebuild_menu(&app);
 
+    let is_default = accounts::startup_account(&f).is_some_and(|startup| startup.id == acct.id);
     Ok(AccountView {
         id: acct.id,
         name: acct.name,
         order: acct.order,
         unread: 0,
         open: true,
-        is_default: accounts::startup_account(&f).is_some_and(|startup| startup.id == acct.id),
+        is_default,
     })
 }
 

@@ -127,10 +127,9 @@ pub fn open_account_window(
                             .file_name()
                             .and_then(|n| n.to_str())
                             .unwrap_or("download");
-                        let Some(path) = choose_download_destination(
-                            suggested,
-                            webview.window().hwnd().ok(),
-                        ) else {
+                        let Some(path) =
+                            choose_download_destination(suggested, webview.window().hwnd().ok())
+                        else {
                             crate::dlog::log("download: save dialog cancelled");
                             return false;
                         };
@@ -248,8 +247,8 @@ fn choose_download_destination(
     use std::os::windows::ffi::OsStringExt;
     use windows::core::{PCWSTR, PWSTR};
     use windows::Win32::UI::Controls::Dialogs::{
-        GetSaveFileNameW, OPENFILENAMEW, OFN_EXPLORER, OFN_NOCHANGEDIR, OFN_OVERWRITEPROMPT,
-        OFN_PATHMUSTEXIST,
+        GetSaveFileNameW, OFN_EXPLORER, OFN_NOCHANGEDIR, OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST,
+        OPENFILENAMEW,
     };
 
     let mut buffer = vec![0u16; 32_768];
@@ -937,6 +936,7 @@ fn base64_encode(data: &[u8]) -> String {
 /// absolute path with a file name as-is; otherwise rebuild it as
 /// `<download_dir>/<file name>` (file name defaulting to "download", directory
 /// defaulting to the temp dir if the platform can't name a Downloads folder).
+#[cfg(any(not(windows), test))]
 fn ensure_download_destination(
     destination: &mut std::path::PathBuf,
     download_dir: Option<std::path::PathBuf>,
