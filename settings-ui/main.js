@@ -53,10 +53,18 @@ async function save() {
 
 function renderAccounts(accounts) {
   const list = document.getElementById("accounts-list");
+  const startup = document.getElementById("startup_account");
   list.textContent = "";
+  startup.textContent = "";
   const canRemove = accounts.length > 1;
 
   for (const a of accounts) {
+    const option = document.createElement("option");
+    option.value = a.id;
+    option.textContent = a.name;
+    option.selected = a.is_default;
+    startup.appendChild(option);
+
     const row = document.createElement("div");
     row.className = "account-row";
 
@@ -164,6 +172,15 @@ window.addEventListener("DOMContentLoaded", () => {
   wireLock();
   document.getElementById("save").addEventListener("click", save);
   document.getElementById("add_account").addEventListener("click", addAccount);
+  document.getElementById("startup_account").addEventListener("change", async (event) => {
+    try {
+      await invoke("set_default_account", { id: event.target.value });
+      await loadAccounts();
+    } catch (e) {
+      await Dlg.alert(String(e), { title: "Could not change startup account" });
+      await loadAccounts();
+    }
+  });
   document.getElementById("new_account_name").addEventListener("keydown", (e) => {
     if (e.key === "Enter") addAccount();
   });

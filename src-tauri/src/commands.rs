@@ -168,6 +168,7 @@ pub struct AccountView {
     pub order: u32,
     pub unread: u32,
     pub open: bool,
+    pub is_default: bool,
 }
 
 fn account_views(app: &tauri::AppHandle) -> Vec<AccountView> {
@@ -185,10 +186,27 @@ fn account_views(app: &tauri::AppHandle) -> Vec<AccountView> {
             open: app
                 .get_webview_window(&accounts::window_label(&a.id))
                 .is_some(),
+            is_default: accounts::startup_account(&f).is_some_and(|startup| startup.id == a.id),
         })
         .collect();
     views.sort_by_key(|v| v.order);
     views
+}
+
+#[tauri::command]
+pub fn set_default_account(
+    window: tauri::Window,
+    app: tauri::AppHandle,
+    id: String,
+) -> Result<(), String> {
+    if is_remote(&window) {
+        return Err("forbidden".into());
+    }
+    lock::require_unlocked(&app)?;
+    let _guard = accounts::lock_mutations();
+    let mut f = accounts::load(&app);
+    accounts::set_startup_account(&mut f, &id)?;
+    accounts::save(&app, &f).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -236,12 +254,14 @@ pub async fn add_account(
     }
     crate::tray::rebuild_menu(&app);
 
+    let is_default = accounts::startup_account(&f).is_some_and(|startup| startup.id == acct.id);
     Ok(AccountView {
         id: acct.id,
         name: acct.name,
         order: acct.order,
         unread: 0,
         open: true,
+        is_default,
     })
 }
 

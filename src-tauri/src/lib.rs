@@ -121,6 +121,7 @@ pub fn run() {
             commands::set_settings,
             commands::open_settings,
             commands::list_accounts,
+            commands::set_default_account,
             commands::add_account,
             commands::remove_account,
             commands::rename_account,
@@ -175,9 +176,21 @@ pub fn run() {
             handle.manage(lock::LockState::new(!lock_on_launch));
             let open_hidden = start_hidden || lock_on_launch;
 
+            let startup_label =
+                accounts::startup_account(&f).map(|account| accounts::window_label(&account.id));
+            if let Some(label) = &startup_label {
+                *handle.state::<accounts::ActiveAccount>().lock().unwrap() = label.clone();
+            }
+
             // Open every account window so each one receives messages/notifications.
-            for a in &f.accounts {
-                window::open_account_window(handle, a, open_hidden)?;
+            // On a normal launch the preferred account is the visible one; the rest
+            // stay connected in the background. A minimized or locked launch keeps
+            // every account hidden.
+            for account in &f.accounts {
+                let is_startup = startup_label
+                    .as_deref()
+                    .is_some_and(|label| label == accounts::window_label(&account.id));
+                window::open_account_window(handle, account, open_hidden || !is_startup)?;
             }
 
             tray::setup(handle)?;
