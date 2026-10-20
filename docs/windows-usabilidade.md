@@ -44,7 +44,7 @@ Os comandos Cargo são executados em `src-tauri`; os demais, na raiz do checkout
 
 ## Entrega e limites
 
-O instalador NSIS é em português, para o usuário atual, com menu Iniciar e executável GUI sem console. A versão desta entrega é `0.6.9-local.5`, acima da versão 0.6.8 anteriormente instalada.
+O instalador NSIS é em português, para o usuário atual, com menu Iniciar e executável GUI sem console. A versão desta entrega é `0.6.9-local.6`, acima da versão 0.6.8 anteriormente instalada.
 
 Os testes automatizados não substituem receber mensagens reais no aplicativo instalado, conferir conversas silenciadas em cada layout suportado, testar chamadas/microfone e confirmar arquivos arrastados/baixados com suas contas. Quando faltam sinais confiáveis, o detector adicional permanece conservador. Esses cenários devem constar como pendentes no recibo de entrega quando não executados.
 
@@ -89,3 +89,11 @@ A tela de senha usa SVG de cadeado, paleta neutra, botão verde e textos em port
 A redefinição exige confirmação e grava um marcador fora da pasta dos perfis. A limpeza só ocorre na próxima inicialização, antes de criar WebViews. Falhas mantêm o marcador e abortam a abertura dos perfis; a redefinição não declara sucesso ignorando arquivos em uso. Os testes destrutivos usam somente diretórios temporários sintéticos.
 
 A regressão nativa usa senha sintética para validar rejeição de senha incorreta, troca de senha, bloqueio de janelas principal/destacada, recusa de desbloqueio pela página remota, biometria desativada, restauração da conta pendente, bloqueio ao fechar e desativação com senha atual. O teste visual cobre temas claro/escuro, teclado e textos em português. Autenticação real pelo Windows Hello requer interação com o dispositivo e permanece pendente; não é simulada como sucesso.
+
+## Notificação com conversa aberta e janela minimizada (local.6)
+
+O plugin genérico de notificações do Tauri substituía `window.Notification` por uma função que chamava `plugin:notification|notify`. A ponte capturava essa função como se fosse o construtor nativo e delegava para ela; a recusa assíncrona da ACL não acionava a alternativa. No Windows, o aplicativo não registra mais esse plugin, pois o serviço de `notify.rs` já controla permissões, bloqueio, conta e cliques. As permissões da página remota permanecem restritas. macOS/Linux conservam o plugin existente.
+
+A ponte pede também a permissão real do navegador. Sem ela, usa diretamente o comando próprio; erros assíncronos do construtor nativo acionam a alternativa. O estado de primeiro plano exclui explicitamente janelas minimizadas. O teste nativo agora cria uma notificação pela API JavaScript real dentro do WhatsApp/WebView2, minimizado e oculto na bandeja, e exige recibo da rota WebView2. Uma chamada direta de teste ao Rust não é evidência suficiente para essa integração.
+
+A API persistente `ServiceWorkerRegistration.showNotification()` chamada pela página usa diretamente o comando próprio: o contrato de `ICoreWebView2_24.NotificationReceived` cobre notificações não persistentes, portanto uma Promise persistente resolvida não prova que esse evento ocorreu. Referência: https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2_24 . A permissão real continua sendo solicitada para o navegador, inclusive para os contextos de worker.

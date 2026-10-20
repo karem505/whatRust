@@ -522,6 +522,7 @@ pub fn account_focused(app: &AppHandle, label: &str) -> bool {
     app.get_webview(label).is_some_and(|v| {
         let parent = v.window();
         parent.is_visible().unwrap_or(false)
+            && !parent.is_minimized().unwrap_or(false)
             && parent.is_focused().unwrap_or(false)
             && selected(app, parent.label()).as_deref() == Some(label)
             && state(app).panel_parent.lock().unwrap().as_deref() != Some(parent.label())

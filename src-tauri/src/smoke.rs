@@ -233,6 +233,63 @@ pub fn start(app: &AppHandle) {
             }
             crate::dlog::log("smoke: windows_notification_submission");
             result.push(json!({"test":"windows_notification_submission","pass":app.state::<crate::notify::Recent>().records().iter().any(|n|n.source==crate::notify::Source::Test && n.status=="submitted")}));
+            // Exercise the real page constructor, not just the Rust test command:
+            // plugin JS replacement used to silently invoke forbidden IPC here.
+            let host = app.get_webview(&label).unwrap().window();
+            host.minimize().map_err(|e| e.to_string())?;
+            result.push(json!({"test":"minimized_account_is_not_foreground","pass":wait_until(||host.is_minimized().unwrap_or(false))&&!crate::sessions::account_focused(&app,&label)}));
+            let context=eval(&app,&label,"JSON.stringify({hidden:document.hidden,focused:document.hasFocus(),preferNative:window.__whatrustPreferNative,permission:Notification.permission})")?;
+            crate::dlog::log(&format!("smoke: minimized browser context {context}"));
+            for (test, hide) in [
+                ("page_notification_while_minimized", false),
+                ("page_notification_while_hidden_to_tray", true),
+            ] {
+                if hide {
+                    host.hide().map_err(|e| e.to_string())?;
+                }
+                let previous = app
+                    .state::<crate::notify::Recent>()
+                    .records()
+                    .iter()
+                    .filter(|n| n.source == crate::notify::Source::WebView2)
+                    .count();
+                eval(&app,&label,"new Notification('Teste isolado do whatRust',{body:'Verificação da rota do navegador com janela oculta.'});true")?;
+                let delivered = wait_until(|| {
+                    app.state::<crate::notify::Recent>()
+                        .records()
+                        .iter()
+                        .filter(|n| {
+                            n.source == crate::notify::Source::WebView2
+                                && matches!(
+                                    n.status.as_str(),
+                                    "submitted" | "dismissed" | "activated"
+                                )
+                        })
+                        .count()
+                        > previous
+                });
+                result.push(json!({"test":test,"pass":delivered}));
+            }
+            let page_before = app
+                .state::<crate::notify::Recent>()
+                .records()
+                .iter()
+                .filter(|n| n.source == crate::notify::Source::Page)
+                .count();
+            eval(&app,&label,"ServiceWorkerRegistration.prototype.showNotification.call({},'Teste da rota de registro',{body:'Verificação isolada do encaminhamento ao aplicativo.'});true")?;
+            result.push(json!({"test":"registration_notification_while_hidden_reaches_own_service","pass":wait_until(||app.state::<crate::notify::Recent>().records().iter().filter(|n|n.source==crate::notify::Source::Page&&matches!(n.status.as_str(),"submitted"|"dismissed"|"activated")).count()>page_before)}));
+            let s = crate::settings::load(&app);
+            let mut off = s.clone();
+            off.notifications = false;
+            crate::settings::save(&app, &off).map_err(|e| e.to_string())?;
+            eval(
+                &app,
+                &label,
+                "new Notification('Teste sem aviso',{body:'Desativado nas preferências.'});true",
+            )?;
+            result.push(json!({"test":"page_constructor_respects_notifications_disabled","pass":wait_until(||app.state::<crate::notify::Recent>().records().iter().any(|n|n.source==crate::notify::Source::WebView2&&n.reason.as_deref()==Some("notifications_disabled")))}));
+            crate::settings::save(&app, &s).map_err(|e| e.to_string())?;
+            crate::sessions::activate(&app, &label);
             let panel = app.get_webview("settings").ok_or("missing local panel")?;
             crate::dlog::log("smoke: password_validation");
             result.push(json!({"test":"password_validation","pass":crate::commands::set_app_lock_password(panel.clone(),app.clone(),"abc".into(),"abc".into()).is_err()&&crate::commands::set_app_lock_password(panel.clone(),app.clone(),"test-pass".into(),"mismatch".into()).is_err()}));

@@ -94,7 +94,13 @@ pub fn run() {
         }
     }
 
-    builder = builder.plugin(tauri_plugin_notification::init());
+    // The Windows toast service is owned by notify.rs. This plugin injects a
+    // replacement window.Notification that bypasses that account/lock-aware
+    // service and invokes its own forbidden remote IPC command instead.
+    #[cfg(not(windows))]
+    {
+        builder = builder.plugin(tauri_plugin_notification::init());
+    }
 
     #[cfg(desktop)]
     {

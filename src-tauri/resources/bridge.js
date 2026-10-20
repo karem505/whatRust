@@ -287,8 +287,22 @@
   // 2) Notification override — forward to a native OS notification via Rust.
   try {
     var OriginalNotification = window.Notification;
+    // Request the actual browser permission as well as advertising our own
+    // bridge permission. A shim-only grant cannot enable worker notifications.
+    if (window.__WHATRUST_WINDOWS__ && OriginalNotification && OriginalNotification.requestPermission) {
+      Promise.resolve().then(function(){return OriginalNotification.permission === "granted" ? "granted" : OriginalNotification.requestPermission();}).then(function(permission){
+        notePath("browser permission " + (permission === "granted" ? "granted" : "not granted; page fallback"));
+      }).catch(function(){notePath("browser permission unavailable; page fallback");});
+    }
     function ShimNotification(title, options) {
-      if (window.__whatrustPreferNative && typeof OriginalNotification === "function") { try { return new OriginalNotification(title, options); } catch (e) { notePath("native constructor refused; page fallback"); } }
+      if (window.__whatrustPreferNative && typeof OriginalNotification === "function" && OriginalNotification.permission === "granted") {
+        try {
+          notePath("native Notification()");
+          var notification = new OriginalNotification(title, options);
+          if(notification.addEventListener)notification.addEventListener("error",function(){notePath("native notification error; page fallback");options=options||{};nativeNotify(title,options.body,options.icon);},{once:true});
+          return notification;
+        } catch (e) { notePath("native constructor refused; page fallback"); }
+      }
       options = options || {};
       this.title = title;
       this.body = options.body || "";
@@ -352,10 +366,11 @@
   try {
     var SWR = window.ServiceWorkerRegistration;
     if (SWR && SWR.prototype && typeof SWR.prototype.showNotification === "function") {
-      var originalShowNotification = SWR.prototype.showNotification;
-      var originalGetNotifications = SWR.prototype.getNotifications;
+      // WebView2's NotificationReceived contract covers non-persistent
+      // Notification() events. A persistent showNotification() promise can
+      // resolve without that event, so the page-side registration uses our
+      // own service directly, even when the constructor uses native delivery.
       SWR.prototype.showNotification = function (title, options) {
-        if (window.__whatrustPreferNative) return originalShowNotification.call(this, title, options).catch(function(){options=options||{};nativeNotify(title,options.body,options.icon);});
         options = options || {};
         notePath("page registration.showNotification()");
         // Route through nativeNotify so the service-worker path shares the same de-dup
@@ -366,7 +381,6 @@
       };
       if (typeof SWR.prototype.getNotifications === "function") {
         SWR.prototype.getNotifications = function () {
-          if (window.__whatrustPreferNative) return originalGetNotifications.apply(this, arguments);
           return Promise.resolve([]);
         };
       }

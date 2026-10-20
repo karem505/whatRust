@@ -153,6 +153,7 @@ function makeHarness(options = {}) {
   const window = {
     location: { origin: "https://web.whatsapp.com" },
     Notification: options.nativeNotification,
+    ServiceWorkerRegistration: options.serviceWorkerRegistration,
     __WHATRUST_WINDOWS__: !!options.windows,
     __whatrustPreferNative: !!options.preferNative,
     addEventListener() {},
@@ -590,17 +591,40 @@ async function testUnreadReportsSayWhenThePageHasSettled() {
 
 async function testWindowsNativePreferenceAndFallback() {
   let nativeCalls=0;
-  const healthy=makeHarness({windows:true,preferNative:true,nativeNotification:class {constructor(){nativeCalls++;}}});
+  const healthy=makeHarness({windows:true,preferNative:true,nativeNotification:class {static permission="granted";constructor(){nativeCalls++;}}});
   new healthy.window.Notification("one",{body:"same"});new healthy.window.Notification("two",{body:"same"});
   assert(nativeCalls===2,"healthy native route owns delivery");
   assert(!healthy.invocations.some(x=>x.cmd==="notify"),"page route does not duplicate native delivery");
-  const failed=makeHarness({windows:true,preferNative:true,nativeNotification:class {constructor(){throw Error("permission");}}});
+  const failed=makeHarness({windows:true,preferNative:true,nativeNotification:class {static permission="granted";constructor(){throw Error("permission");}}});
   new failed.window.Notification("same",{body:"same"});new failed.window.Notification("same",{body:"same"});
   assert(failed.invocations.filter(x=>x.cmd==="notify").length===2,"native rejection falls back without dropping distinct repeated text");
 }
 
+async function testNativePermissionAndAsyncErrorFallback() {
+  const denied=makeHarness({windows:true,preferNative:true,nativeNotification:class {static permission="denied";constructor(){throw Error("must not be used");}}});
+  new denied.window.Notification("permission denied",{body:"test"});
+  assert(denied.invocations.filter(x=>x.cmd==="notify").length===1,"missing real browser permission uses safe page route");
+  let fail;
+  const asynchronous=makeHarness({windows:true,preferNative:true,nativeNotification:class {static permission="granted";addEventListener(type,callback){if(type==="error")fail=callback;}}});
+  new asynchronous.window.Notification("async browser failure",{body:"test"});fail();
+  assert(asynchronous.invocations.filter(x=>x.cmd==="notify").length===1,"asynchronous native error reaches page fallback");
+  let requested=0;
+  makeHarness({windows:true,nativeNotification:class {static permission="default";static requestPermission(){requested++;return Promise.resolve("granted");}}});
+  await sleep(0);assert(requested===1,"requests actual browser permission for service-worker notifications");
+}
+
+async function testPersistentWindowsNotificationUsesOwnService() {
+  let originals=0;
+  const h=makeHarness({windows:true,preferNative:true,nativeNotification:class {static permission="granted";},serviceWorkerRegistration:class {showNotification(){originals++;return Promise.resolve();}getNotifications(){return Promise.resolve([]);}}});
+  await new h.window.ServiceWorkerRegistration().showNotification("persistent test",{body:"test"});
+  assert(originals===0,"persistent registration never waits for a non-persistent WebView2 event");
+  assert(h.invocations.filter(x=>x.cmd==="notify").length===1,"Windows registration notification reaches account-aware service exactly once");
+}
+
 const tests = [
   testWindowsNativePreferenceAndFallback,
+  testNativePermissionAndAsyncErrorFallback,
+  testPersistentWindowsNotificationUsesOwnService,
   testUnreadReportsSayWhenThePageHasSettled,
   testNotificationPathIsLoggedOnceWithoutContent,
   testDownloadToastOffersOpenAndShowInFolder,
