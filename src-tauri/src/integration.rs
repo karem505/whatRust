@@ -75,6 +75,8 @@ pub struct BridgeState {
     pub accounts: Vec<DisplayAccount>,
     pub current_id: String,
     pub native_notifications: bool,
+    pub notification_epoch: u64,
+    pub notifications_locked: bool,
     pub windows: bool,
 }
 fn bridge_state(app: &AppHandle, label: &str) -> BridgeState {
@@ -86,6 +88,8 @@ fn bridge_state(app: &AppHandle, label: &str) -> BridgeState {
         },
         current_id: accounts::id_from_label(label).unwrap_or("").into(),
         native_notifications: app.state::<notify::Recent>().native_ready(label),
+        notification_epoch: app.state::<notify::Recent>().epoch(),
+        notifications_locked: !crate::lock::is_unlocked(app),
         windows: cfg!(windows),
     }
 }
@@ -116,7 +120,7 @@ pub fn broadcast(app: &AppHandle) {
         }
     }
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub fn report_integration(
     window: Webview,
     app: AppHandle,

@@ -39,6 +39,15 @@ fn log_path() -> Option<PathBuf> {
 pub fn init() {
     if let Some(p) = log_path() {
         let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        // Keep the preceding run: a forced termination must not erase the
+        // last control-flow evidence as soon as the user opens the app again.
+        if p.exists() {
+            let previous = p.with_file_name(format!(
+                "{}.previous.log",
+                p.file_stem().unwrap_or_default().to_string_lossy()
+            ));
+            let _ = std::fs::copy(&p, previous);
+        }
         let _ = std::fs::File::create(&p);
     }
     log("=== session start ===");

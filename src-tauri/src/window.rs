@@ -78,9 +78,9 @@ macro_rules! account_webview {
         $builder
             .user_agent(&user_agent())
             .initialization_script(if cfg!(windows) {
-                "window.__WHATRUST_WINDOWS__ = true;"
+                format!("window.__WHATRUST_WINDOWS__=true;window.__whatrustNotificationEpoch={};window.__whatrustLocked={};",$app.state::<crate::notify::Recent>().epoch(),!crate::lock::is_unlocked($app))
             } else {
-                ""
+                String::new()
             })
             .initialization_script(include_str!("../resources/integration.js"))
             .initialization_script(BRIDGE_JS)
@@ -251,7 +251,7 @@ pub(crate) fn build_account_window(
             if crate::settings::load(&app_handle).close_to_tray {
                 let lc = crate::applock::load(&app_handle);
                 if lc.should_lock_on_hide() {
-                    crate::lock::lock_now(&app_handle);
+                    crate::lock::lock_on_hide(&app_handle);
                 } else if let Some(w) = app_handle.get_webview_window(&label_for_close) {
                     let _ = w.hide();
                 }
@@ -1175,35 +1175,40 @@ thread_local! { static NATIVE_NOTIFICATIONS: std::cell::RefCell<std::collections
 pub fn native_report(app: &AppHandle, id: &str, action: &str) {
     let id = id.to_string();
     let action = action.to_string();
-    let _ = app.run_on_main_thread(move || {
-        NATIVE_NOTIFICATIONS.with(|items| {
-            let mut items = items.borrow_mut();
+    let handle = app.clone();
+    // Never reenter a WebView2 notification callback, and never keep the
+    // RefCell borrowed while invoking COM (which can dispatch page events).
+    tauri::async_runtime::spawn_blocking(move || {
+        let _ = handle.run_on_main_thread(move || {
+            let _health = crate::ui_health::enter("notification lifecycle");
+            let item = NATIVE_NOTIFICATIONS.with(|items| items.borrow_mut().remove(&id));
+            let Some(mut n) = item else {
+                return;
+            };
             if action == "discard" {
-                items.remove(&id);
                 return;
             }
-            if let Some(n) = items.get_mut(&id) {
-                unsafe {
-                    if action == "shown" && !n.shown && n.notification.ReportShown().is_ok() {
-                        n.shown = true;
-                    }
-                    if action == "clicked" {
-                        n.clicked = true;
-                    }
-                    if action == "closed" {
-                        n.closed = true;
-                    }
-                    if n.shown && n.clicked {
-                        let _ = n.notification.ReportClicked();
-                        n.clicked = false;
-                    }
-                    if n.shown && n.closed {
-                        let _ = n.notification.ReportClosed();
-                        items.remove(&id);
-                    }
+            unsafe {
+                if action == "shown" && !n.shown && n.notification.ReportShown().is_ok() {
+                    n.shown = true;
+                }
+                if action == "clicked" {
+                    n.clicked = true;
+                }
+                if action == "closed" {
+                    n.closed = true;
+                }
+                if n.shown && n.clicked {
+                    let _ = n.notification.ReportClicked();
+                    n.clicked = false;
+                }
+                if n.shown && n.closed {
+                    let _ = n.notification.ReportClosed();
+                    return;
                 }
             }
-        })
+            NATIVE_NOTIFICATIONS.with(|items| items.borrow_mut().insert(id, n));
+        });
     });
 }
 

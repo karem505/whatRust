@@ -143,6 +143,9 @@
     return Promise.race([load, timeout]);
   }
   function nativeNotify(title, body, icon) {
+    if(window.__whatrustLocked)return false;
+    var epoch=window.__whatrustNotificationEpoch||0;
+    function deliver(args){if(window.__WHATRUST_WINDOWS__)args.epoch=epoch;invoke("notify",args);}
     title = String(title || "WhatsApp");
     body = String(body || "");
     var now = Date.now();
@@ -154,12 +157,12 @@
     recentNotif[key] = now;
     var scheme = typeof icon === "string" && (/^(blob|data|https):/.exec(icon) || [])[1];
     if (!scheme) {
-      invoke("notify", { title: title, body: body });
+      deliver({ title: title, body: body });
       return true;
     }
     iconPng(icon).then(function (png) {
       notePath("icon " + scheme + (png ? " ok" : " unavailable"));
-      invoke("notify", png ? { title: title, body: body, icon: png } : { title: title, body: body });
+      deliver(png ? { title: title, body: body, icon: png } : { title: title, body: body });
     });
     return true;
   }

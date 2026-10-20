@@ -44,7 +44,7 @@ Os comandos Cargo são executados em `src-tauri`; os demais, na raiz do checkout
 
 ## Entrega e limites
 
-O instalador NSIS é em português, para o usuário atual, com menu Iniciar e executável GUI sem console. A versão desta entrega é `0.6.9-local.6`, acima da versão 0.6.8 anteriormente instalada.
+O instalador NSIS é em português, para o usuário atual, com menu Iniciar e executável GUI sem console. A versão desta entrega é `0.6.9-local.7`, acima da versão 0.6.8 anteriormente instalada.
 
 Os testes automatizados não substituem receber mensagens reais no aplicativo instalado, conferir conversas silenciadas em cada layout suportado, testar chamadas/microfone e confirmar arquivos arrastados/baixados com suas contas. Quando faltam sinais confiáveis, o detector adicional permanece conservador. Esses cenários devem constar como pendentes no recibo de entrega quando não executados.
 
@@ -99,3 +99,17 @@ A ponte pede também a permissão real do navegador. Sem ela, usa diretamente o 
 A API persistente `ServiceWorkerRegistration.showNotification()` chamada pela página usa diretamente o comando próprio: o contrato de `ICoreWebView2_24.NotificationReceived` cobre notificações não persistentes, portanto uma Promise persistente resolvida não prova que esse evento ocorreu. Referência: https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2_24 . A permissão real continua sendo solicitada para o navegador, inclusive para os contextos de worker.
 
 As WebViews filhas também precisam de visibilidade própria: minimizar a janela nativa deixava `document.hidden === false` mesmo sem foco. O layout agora oculta controladores quando a janela está minimizada, na bandeja ou bloqueada e restaura apenas a conta/painel selecionado ao reaparecer. A minimização preserva o último tamanho útil. Há regressões para `document.hidden` e retorno à visibilidade, além do envio da notificação.
+
+## Bloqueio silencioso, abertura pelo instalador e travamentos (local.7)
+
+“Bloquear ao ocultar” agora protege as contas e permanece na bandeja, sem criar nem focar a tela de senha. Abrir pelo ícone, atalho, menu ou outra execução apresenta o desbloqueio. Bloqueio manual mantém a apresentação imediata. Solicitações antigas de apresentação são invalidadas quando a intenção mais recente é ocultar.
+
+Ao bloquear, o serviço avança uma geração de eventos, cancela os avisos pendentes e remove os avisos anteriores do Windows somente deste aplicativo. A operação do sistema ocorre em workers; o loop gráfico não espera pela limpeza. O envio revalida bloqueio e geração imediatamente antes/depois de chamar o Windows. Temporizadores e conversões de ícone preservam a geração de detecção para não reaparecer após um desbloqueio rápido. A preferência global de notificações e o respeito ao silenciamento continuam valendo.
+
+O evento CloseRequested de uma notificação do WebView2 não executa mais remoção de histórico WinRT de forma síncrona. ReportShown/Clicked/Closed são adiados para fora do callback original; nenhum método COM é chamado com a coleção de notificações emprestada. A visibilidade dos filhos só é alterada quando muda, reduzindo eventos e reentrância. Consultas de Windows Hello e os IPCs de notificações/layout são executados fora do callback gráfico. Essas alterações tratam caminhos capazes de bloquear a UI; o AppHang registrado pelo Windows confirma a ocorrência, mas não fornece a pilha necessária para atribuir todos os congelamentos a uma única causa.
+
+O arquivo de diagnóstico anterior é preservado em `whatrust.previous.log`. Um pulso verifica a resposta da thread gráfica; atraso superior a 5 s registra o estágio técnico atual e o tempo de recuperação, sem conteúdo de conversas. Não encerra nem reinicia o processo automaticamente. O teste nativo provoca um atraso finito em um perfil isolado para validar esse diagnóstico.
+
+A página final NSIS e `/R` passam `--show`. Esse argumento sobrepõe somente a preferência de iniciar oculto; não dispensa a senha quando há bloqueio ao iniciar. Autostart com `--minimized` continua oculto. O template está fixado no Tauri CLI 2.12.3, com origem, hash e licenças em `src-tauri/windows`; apenas as duas chamadas de execução são modificadas.
+
+A regressão nativa inclui 12 ciclos de criar/encerrar avisos enquanto troca conta, abre/fecha painel e altera não lidas; chegada bloqueada; remoção de histórico Windows; reabertura exigindo senha; não repetição de eventos atrasados; e início explícito visível com preferência persistida de segundo plano. Todos os testes usam contas e arquivos sintéticos.

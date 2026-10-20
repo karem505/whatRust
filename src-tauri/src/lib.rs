@@ -17,6 +17,8 @@ mod settings;
 #[cfg(all(windows, debug_assertions))]
 mod smoke;
 mod tray;
+#[cfg(windows)]
+mod ui_health;
 mod unread;
 mod window;
 
@@ -72,7 +74,9 @@ pub fn run() {
                     // A whatsapp:// (or wa.me) link handed to a second launch by
                     // the OS scheme handler (issue #23): open it in the running copy.
                     links::open_from_outside(app, &link);
-                } else if !args.iter().any(|a| a == "--minimized") {
+                } else if args.iter().any(|a| a == "--show")
+                    || !args.iter().any(|a| a == "--minimized")
+                {
                     window::show_main(app);
                 }
             },
@@ -196,9 +200,13 @@ pub fn run() {
             // A reset only runs while no WebViews hold the session stores open.
             // Failure aborts startup before reading accounts or creating a view.
             applock::complete_pending_reset(handle).map_err(std::io::Error::other)?;
-            let s = settings::load(handle);
+            let mut s = settings::load(handle);
+            if smoke_mode {
+                s.start_minimized = true;
+                settings::save(handle, &s)?;
+            }
             let args: Vec<String> = std::env::args().collect();
-            let start_hidden = s.start_minimized || args.iter().any(|a| a == "--minimized");
+            let start_hidden = settings::start_hidden(s.start_minimized, &args);
 
             // Load accounts (seeds a single `default` on first run / corrupt file).
             let mut f = accounts::load(handle);
@@ -248,6 +256,8 @@ pub fn run() {
                 window::open_account_window(handle, account, open_hidden || !is_startup)?;
             }
             dlog::log("startup: account windows built");
+            #[cfg(windows)]
+            ui_health::start(handle);
             tray::setup(handle)?;
             // Let setup return before accessing tray/window APIs again. This
             // avoids waiting on the Windows UI loop while it is being created.

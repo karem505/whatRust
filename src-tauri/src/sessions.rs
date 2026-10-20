@@ -14,10 +14,30 @@ pub struct Sessions {
     pending: Mutex<Option<String>>,
     panel_parent: Mutex<Option<String>>,
     menus_hidden: Mutex<HashMap<String, bool>>,
+    view_visibility: Mutex<HashMap<String, bool>>,
 }
 
 fn state(app: &AppHandle) -> tauri::State<'_, Sessions> {
     app.state::<Sessions>()
+}
+
+fn set_view_visible(app: &AppHandle, view: &tauri::Webview, visible: bool) {
+    let changed = {
+        let s = state(app);
+        let mut map = s.view_visibility.lock().unwrap();
+        map.insert(view.label().into(), visible) != Some(visible)
+    };
+    // Release the cache lock before COM: showing can generate native events.
+    if changed {
+        let result = if visible { view.show() } else { view.hide() };
+        if result.is_err() {
+            state(app)
+                .view_visibility
+                .lock()
+                .unwrap()
+                .remove(view.label());
+        }
+    }
 }
 
 pub fn initialize(app: &AppHandle, hidden: bool) -> tauri::Result<Window> {
@@ -60,7 +80,7 @@ pub fn initialize(app: &AppHandle, hidden: bool) -> tauri::Result<Window> {
                 api.prevent_close();
                 let c = crate::applock::load(&a);
                 if c.should_lock_on_hide() {
-                    crate::lock::lock_now(&a);
+                    crate::lock::lock_on_hide(&a);
                 }
                 if let Some(w) = a.get_window("main") {
                     let _ = w.hide();
@@ -127,7 +147,7 @@ pub fn open_account(app: &AppHandle, account: &Account, hidden: bool) -> tauri::
     let label = accounts::window_label(&account.id);
     if app.get_webview(&label).is_none() {
         let view = crate::window::build_account_view(app, &parent, account)?;
-        let _ = view.hide();
+        set_view_visible(app, &view, false);
     }
     if state(app).main_active.lock().unwrap().is_none() {
         *state(app).main_active.lock().unwrap() = Some(label.clone());
@@ -154,6 +174,7 @@ pub fn activate(app: &AppHandle, label: &str) {
 }
 
 fn activate_on_main(app: &AppHandle, label: &str) {
+    let _health = crate::ui_health::enter("account activation");
     if !crate::lock::is_unlocked(app) {
         *state(app).pending.lock().unwrap() = Some(label.to_string());
         crate::lock::show_lock_window(app);
@@ -168,13 +189,13 @@ fn activate_on_main(app: &AppHandle, label: &str) {
     }
     if let Some(panel) = app.get_webview("settings") {
         if panel.window().label() == parent.label() {
-            let _ = panel.hide();
+            set_view_visible(app, &panel, false);
             *state(app).panel_parent.lock().unwrap() = None;
         }
     }
     for (other, v) in app.webviews() {
         if other.starts_with("wa-") && v.window().label() == parent.label() && other != label {
-            let _ = v.hide();
+            set_view_visible(app, &v, false);
         }
     }
     *app.state::<ActiveAccount>().lock().unwrap() = label.to_string();
@@ -191,7 +212,7 @@ fn activate_on_main(app: &AppHandle, label: &str) {
     let _ = parent.set_title(&format!("whatRust — {name}"));
     let _ = parent.show();
     let _ = parent.unminimize();
-    let _ = view.show();
+    set_view_visible(app, &view, true);
     // WebView2 must be visible before its final bounds/viewport are applied.
     layout(app, parent.label());
     let _ = parent.set_focus();
@@ -200,6 +221,7 @@ fn activate_on_main(app: &AppHandle, label: &str) {
 }
 
 pub fn layout(app: &AppHandle, parent: &str) {
+    let _health = crate::ui_health::enter("account layout");
     let Some(w) = app.get_window(parent) else {
         return;
     };
@@ -215,18 +237,18 @@ pub fn layout(app: &AppHandle, parent: &str) {
             continue;
         }
         if !visible {
-            let _ = view.hide();
+            set_view_visible(app, &view, false);
         } else if label.starts_with("wa-") {
             if !panel_open && active.as_deref() == Some(label.as_str()) {
-                let _ = view.show();
+                set_view_visible(app, &view, true);
             } else {
-                let _ = view.hide();
+                set_view_visible(app, &view, false);
             }
         } else if label == "settings" {
             if panel_open {
-                let _ = view.show();
+                set_view_visible(app, &view, true);
             } else {
-                let _ = view.hide();
+                set_view_visible(app, &view, false);
             }
         }
     }
@@ -280,9 +302,9 @@ pub fn layout(app: &AppHandle, parent: &str) {
                 let _=v.eval(format!("if(document.documentElement&&document.documentElement.dataset.theme!=={json})document.documentElement.dataset.theme={json}"));
             }
             if visible && !panel_open && (active.is_none() || offset > 0) {
-                let _ = v.show();
+                set_view_visible(app, &v, true);
             } else {
-                let _ = v.hide();
+                set_view_visible(app, &v, false);
             }
         }
     }
@@ -292,6 +314,7 @@ pub fn layout(app: &AppHandle, parent: &str) {
 // Changing menus inside layout re-enters that mutex and freezes the UI thread.
 // Record transitions before invoking native APIs; resize only changes bounds.
 fn sync_menu(app: &AppHandle, parent: &str) {
+    let _health = crate::ui_health::enter("native menu");
     let hidden = selected(app, parent).is_some_and(|label| {
         app.state::<crate::integration::Integration>()
             .0
@@ -334,6 +357,7 @@ pub fn integration_changed(app: &AppHandle, label: &str, mounted: bool) {
 }
 
 pub fn detach(app: &AppHandle, id: &str) -> Result<(), String> {
+    let _health = crate::ui_health::enter("detach account");
     crate::lock::require_unlocked(app)?;
     let label = accounts::window_label(id);
     let v = app.get_webview(&label).ok_or("Conta não está aberta")?;
@@ -381,6 +405,7 @@ pub fn detach(app: &AppHandle, id: &str) -> Result<(), String> {
 }
 
 pub fn attach(app: &AppHandle, id: &str) -> Result<(), String> {
+    let _health = crate::ui_health::enter("attach account");
     crate::lock::require_unlocked(app)?;
     let label = accounts::window_label(id);
     let v = app.get_webview(&label).ok_or("Conta não está aberta")?;
@@ -391,7 +416,7 @@ pub fn attach(app: &AppHandle, id: &str) -> Result<(), String> {
     }
     if let Some(panel) = app.get_webview("settings") {
         if panel.window().label() == old.label() {
-            let _ = panel.hide();
+            set_view_visible(app, &panel, false);
             panel
                 .reparent(&initialize(app, true).map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())?;
@@ -433,7 +458,7 @@ fn choose_remaining(app: &AppHandle, exclude: Option<&str>) {
         sync_menu(app, "main");
         layout(app, "main");
         if let Some(v) = app.get_webview("shell-main") {
-            let _ = v.show();
+            set_view_visible(app, &v, true);
         }
     }
 }
@@ -442,6 +467,7 @@ pub fn remove_view(app: &AppHandle, id: &str) -> tauri::Result<()> {
     if let Some(v) = app.get_webview(&accounts::window_label(id)) {
         let owner = v.window();
         v.close()?;
+        state(app).view_visibility.lock().unwrap().remove(v.label());
         if owner.label().starts_with("detached-") {
             let _ = owner.destroy();
         }
@@ -451,6 +477,7 @@ pub fn remove_view(app: &AppHandle, id: &str) -> tauri::Result<()> {
 }
 
 pub fn open_panel(app: &AppHandle, parent: Option<&str>) -> tauri::Result<()> {
+    let _health = crate::ui_health::enter("account panel");
     if !crate::lock::is_unlocked(app) {
         crate::lock::show_lock_window(app);
         return Ok(());
@@ -493,7 +520,7 @@ pub fn open_panel(app: &AppHandle, parent: Option<&str>) -> tauri::Result<()> {
     let _ = panel.eval(theme_script);
     for (l, v) in app.webviews() {
         if l.starts_with("wa-") && v.window().label() == owner.label() {
-            let _ = v.hide();
+            set_view_visible(app, &v, false);
         }
     }
     *state(app).panel_parent.lock().unwrap() = Some(owner.label().into());
@@ -504,7 +531,7 @@ pub fn open_panel(app: &AppHandle, parent: Option<&str>) -> tauri::Result<()> {
         crate::lock::show_lock_window(app);
         return Ok(());
     }
-    let _ = panel.show();
+    set_view_visible(app, &panel, true);
     let _ = owner.show();
     let _ = owner.unminimize();
     let _ = owner.set_focus();
@@ -516,7 +543,7 @@ pub fn close_panel(app: &AppHandle) {
     *state(app).panel_parent.lock().unwrap() = None;
     if let Some(v) = app.get_webview("settings") {
         let parent = v.window();
-        let _ = v.hide();
+        set_view_visible(app, &v, false);
         if let Some(label) = selected(app, parent.label()) {
             activate(app, &label);
         }
@@ -534,7 +561,7 @@ pub fn toggle(app: &AppHandle) {
         if w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false) {
             let c = crate::applock::load(app);
             if c.should_lock_on_hide() {
-                crate::lock::lock_now(app);
+                crate::lock::lock_on_hide(app);
             } else {
                 let _ = w.hide();
                 layout(app, w.label());

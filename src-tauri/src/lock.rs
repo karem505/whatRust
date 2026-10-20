@@ -1,4 +1,7 @@
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex,
+};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// Runtime lock state. `unlocked == false` means the app is locked.
@@ -6,6 +9,7 @@ pub struct LockState {
     pub unlocked: Mutex<bool>,
     /// Labels of windows hidden by `lock_now`, to re-show on `unlock`.
     pub hidden: Mutex<Vec<String>>,
+    prompt_requested: AtomicBool,
 }
 
 impl LockState {
@@ -13,6 +17,7 @@ impl LockState {
         Self {
             unlocked: Mutex::new(unlocked),
             hidden: Mutex::new(Vec::new()),
+            prompt_requested: AtomicBool::new(false),
         }
     }
 }
@@ -56,22 +61,37 @@ pub fn require_unlocked(app: &AppHandle) -> Result<(), String> {
 /// Lock the app: mark locked, hide every user-facing window (recording which were
 /// visible), and show the lock screen.
 pub fn lock_now(app: &AppHandle) {
-    let handle = app.clone();
-    let _ = app.run_on_main_thread(move || lock_on_main(&handle));
+    lock_with_prompt(app, true);
 }
-
-fn lock_on_main(app: &AppHandle) {
+pub fn lock_on_hide(app: &AppHandle) {
+    lock_with_prompt(app, false);
+}
+fn lock_with_prompt(app: &AppHandle, prompt: bool) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || lock_on_main(&handle, prompt));
+}
+fn lock_on_main(app: &AppHandle, prompt: bool) {
     let state = match app.try_state::<LockState>() {
         Some(s) => s,
         None => return, // not yet set up — bail
     };
+    if !prompt {
+        state.prompt_requested.store(false, Ordering::SeqCst);
+        if let Some(w) = app.get_window("lock") {
+            let _ = w.hide();
+        }
+    }
     // Idempotent: if already locked, just ensure the lock screen is up — do NOT
     // re-hide windows or clobber the recorded `hidden` list (which unlock restores).
     if !*state.unlocked.lock().unwrap() {
-        show_lock_window(app);
+        if prompt {
+            show_lock_window(app);
+        }
         return;
     }
     *state.unlocked.lock().unwrap() = false;
+    crate::notify::on_lock(app);
+    crate::integration::broadcast(app);
     let mut hidden = Vec::new();
     for (label, w) in app.windows() {
         if should_hide(&label) && w.is_visible().unwrap_or(false) {
@@ -82,7 +102,9 @@ fn lock_on_main(app: &AppHandle) {
         }
     }
     *state.hidden.lock().unwrap() = hidden;
-    show_lock_window(app);
+    if prompt {
+        show_lock_window(app);
+    }
 }
 
 /// Unlock the app: mark unlocked, destroy the lock window, and restore the windows
@@ -102,6 +124,8 @@ fn unlock_on_main(app: &AppHandle) {
         Some(s) => s,
         None => return, // not yet set up — bail
     };
+    state.prompt_requested.store(false, Ordering::SeqCst);
+    crate::notify::on_unlock(app);
     *state.unlocked.lock().unwrap() = true;
     if let Some(w) = app.get_webview_window("lock") {
         let _ = w.destroy();
@@ -120,17 +144,26 @@ fn unlock_on_main(app: &AppHandle) {
     }
     #[cfg(windows)]
     crate::sessions::restore_pending(app);
+    crate::integration::broadcast(app);
 }
 
 /// Create-or-show the dedicated lock window. `content_protected` blocks screen
 /// capture of the lock screen; `prevent_close` while locked stops the X from
 /// relaunching into an unlocked state.
 pub fn show_lock_window(app: &AppHandle) {
+    if let Some(state) = app.try_state::<LockState>() {
+        state.prompt_requested.store(true, Ordering::SeqCst);
+    }
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         static CREATE: Mutex<()> = Mutex::new(());
         let _guard = CREATE.lock().unwrap_or_else(|e| e.into_inner());
-        if !is_unlocked(&app) {
+        if !is_unlocked(&app)
+            && app
+                .state::<LockState>()
+                .prompt_requested
+                .load(Ordering::SeqCst)
+        {
             show_lock_window_inner(&app);
         }
     });
@@ -156,7 +189,12 @@ fn show_lock_window_inner(app: &AppHandle) {
     if let Ok(win) = built {
         // Unlock can race a queued window creation; never leave a stale lock
         // screen on top after authentication has already succeeded.
-        if is_unlocked(app) {
+        if is_unlocked(app)
+            || !app
+                .state::<LockState>()
+                .prompt_requested
+                .load(Ordering::SeqCst)
+        {
             let _ = win.destroy();
             return;
         }

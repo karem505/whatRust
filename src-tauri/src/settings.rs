@@ -38,6 +38,10 @@ impl Default for Settings {
     }
 }
 
+pub fn start_hidden(preference: bool, args: &[String]) -> bool {
+    !args.iter().any(|a| a == "--show") && (preference || args.iter().any(|a| a == "--minimized"))
+}
+
 /// Zoom bounds. The settings UI only offers four presets inside this range; the
 /// clamp exists so a hand-edited settings.json cannot leave the app at a zoom
 /// level from which the settings window is unreadable.
@@ -312,5 +316,17 @@ mod tests {
         let json = serde_json::to_string(&s).unwrap();
         let back: Settings = serde_json::from_str(&json).unwrap();
         assert_eq!(s, back);
+    }
+    #[test]
+    fn explicit_foreground_launch_overrides_background_preference() {
+        let args = |items: &[&str]| items.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert!(super::start_hidden(true, &args(&[])));
+        assert!(super::start_hidden(false, &args(&["--minimized"])));
+        assert!(!super::start_hidden(true, &args(&["--show"])));
+        assert!(!super::start_hidden(
+            true,
+            &args(&["--show", "--minimized"])
+        ));
+        assert!(!super::start_hidden(false, &args(&[])));
     }
 }

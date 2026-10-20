@@ -24,13 +24,14 @@ fn is_remote_label(label: &str) -> bool {
 
 /// `icon` is the sender's picture as a small base64 PNG (bridge.js), when
 /// WhatsApp gave one and it could be loaded.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn notify(
     window: tauri::Webview,
     app: tauri::AppHandle,
     title: String,
     body: String,
     icon: Option<String>,
+    epoch: Option<u64>,
 ) {
     if crate::integration::remote(&window).is_err() {
         return;
@@ -38,14 +39,7 @@ pub fn notify(
     // issue #3 diagnostics: confirm the command is actually reached from the
     // injected bridge. No message content is logged (PII).
     crate::dlog::log("commands::notify invoked");
-    crate::notify::from_account(
-        &app,
-        window.label(),
-        &title,
-        &body,
-        icon.as_deref(),
-        crate::notify::Source::Page,
-    );
+    crate::notify::from_page(&app, window.label(), &title, &body, icon.as_deref(), epoch);
 }
 
 /// Diagnostic breadcrumb from the injected page script (bridge.js) into the same
@@ -89,7 +83,7 @@ pub fn reveal_download(app: tauri::AppHandle, id: u64) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_unread(
     window: tauri::Webview,
     app: tauri::AppHandle,
@@ -457,7 +451,7 @@ pub struct LockStatus {
 
 /// Read-only status for BOTH the settings window and the lock screen. Never returns
 /// the password hash. Allowed from any non-remote window, even while locked.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_lock_status(
     window: tauri::Webview,
     app: tauri::AppHandle,
@@ -588,7 +582,7 @@ pub fn set_app_lock_options(
 
 /// Enable/disable biometric. Enabling requires the lock to be set, the platform to
 /// report Available, and one successful test authentication.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_biometric_enabled(
     window: tauri::Webview,
     app: tauri::AppHandle,
@@ -655,7 +649,7 @@ pub fn unlock_password(
 }
 
 /// Unlock with biometric. Lock-window only; works while locked.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn unlock_biometric(window: tauri::Webview, app: tauri::AppHandle) -> Result<bool, String> {
     if !lock::is_lock_window(&window) {
         return Err("forbidden".into());

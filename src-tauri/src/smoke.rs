@@ -66,6 +66,11 @@ pub fn start(app: &AppHandle) {
             let a = &f.accounts[0];
             let b = &f.accounts[1];
             let label = crate::accounts::window_label(&a.id);
+            let startup_hidden = crate::settings::start_hidden(
+                crate::settings::load(&app).start_minimized,
+                &std::env::args().collect::<Vec<_>>(),
+            );
+            result.push(json!({"test":"startup_visibility_matches_explicit_foreground_request","pass":app.get_window("main").unwrap().is_visible().unwrap_or(false)!=startup_hidden}));
             crate::dlog::log("smoke: two_live_profiles");
             result.push(json!({"test":"two_live_profiles","pass":app.get_webview(&label).is_some()&&app.get_webview(&crate::accounts::window_label(&b.id)).is_some()}));
             // Reproduce the installed-app regression: the page reports no
@@ -293,6 +298,17 @@ pub fn start(app: &AppHandle) {
             crate::settings::save(&app, &s).map_err(|e| e.to_string())?;
             crate::sessions::activate(&app, &label);
             result.push(json!({"test":"restored_document_is_visible","pass":wait_until(||eval(&app,&label,"!document.hidden").ok().as_deref()==Some("true"))}));
+            for step in 0..12 {
+                eval(&app,&label,"window.__closeStress=new Notification('Teste de encerramento',{body:'Evento sintético para verificar a interface.'});window.__closeStress.close();window.__TAURI__.core.invoke('set_unread',{title:'WhatsApp',settled:true});true")?;
+                crate::sessions::activate(&app, &crate::accounts::window_label(&b.id));
+                crate::sessions::open_panel(&app, Some("main")).map_err(|e| e.to_string())?;
+                crate::sessions::close_panel(&app);
+                crate::sessions::activate(&app, &label);
+                if eval(&app, &label, "1+1")? != "2" {
+                    return Err(format!("UI stalled after notification close, cycle {step}"));
+                }
+            }
+            result.push(json!({"test":"notification_close_with_account_panel_navigation_12_cycles","pass":true}));
             let panel = app.get_webview("settings").ok_or("missing local panel")?;
             crate::dlog::log("smoke: password_validation");
             result.push(json!({"test":"password_validation","pass":crate::commands::set_app_lock_password(panel.clone(),app.clone(),"abc".into(),"abc".into()).is_err()&&crate::commands::set_app_lock_password(panel.clone(),app.clone(),"test-pass".into(),"mismatch".into()).is_err()}));
@@ -383,15 +399,74 @@ pub fn start(app: &AppHandle) {
                 .map_err(|e| e.to_string())?;
             crate::dlog::log("smoke: close_to_tray_locks_when_enabled");
             result.push(json!({"test":"close_to_tray_locks_when_enabled","pass":wait_until(||!crate::lock::is_unlocked(&app)&&!app.get_window("main").unwrap().is_visible().unwrap_or(true))}));
+            std::thread::sleep(Duration::from_millis(300));
+            result.push(json!({"test":"hide_lock_does_not_prompt_until_reopen","pass":app.get_window("lock").is_none_or(|w|!w.is_visible().unwrap_or(false))}));
+            let before = app.state::<crate::notify::Recent>().records().len();
+            eval(
+                &app,
+                &label,
+                "new Notification('Teste bloqueado',{body:'Não deve aparecer no Windows.'});true",
+            )?;
+            result.push(json!({"test":"incoming_browser_notification_suppressed_while_locked","pass":wait_until(||app.state::<crate::notify::Recent>().records().len()>before)&&app.state::<crate::notify::Recent>().records().first().is_some_and(|n|n.status=="suppressed"&&n.reason.as_deref()==Some("locked"))}));
+            result.push(json!({"test":"lock_removes_existing_windows_notification_history","pass":wait_until(||{
+                use windows::{core::HSTRING,UI::Notifications::ToastNotificationManager};
+                ToastNotificationManager::History().and_then(|h|h.GetHistoryWithId(&HSTRING::from(&app.config().identifier))).and_then(|h|h.Size()).is_ok_and(|size|size==0)
+            })}));
+            crate::window::show_main(&app);
+            result.push(json!({"test":"reopen_locked_app_prompts_without_revealing_account","pass":wait_until(||app.get_window("lock").is_some_and(|w|w.is_visible().unwrap_or(false)))&&!app.get_window("main").unwrap().is_visible().unwrap_or(true)}));
             crate::lock::unlock(&app);
             if !wait_until(|| crate::lock::is_unlocked(&app)) {
                 return Err("unlock did not complete".into());
             }
+            let visual_count = app
+                .state::<crate::notify::Recent>()
+                .records()
+                .iter()
+                .filter(|n| n.source == crate::notify::Source::Visual)
+                .count();
+            crate::notify::visual_signal(&app, &label, "delayed-before-lock", true, Some(false));
+            crate::lock::lock_on_hide(&app);
+            if !wait_until(|| !crate::lock::is_unlocked(&app)) {
+                return Err("silent lock did not complete".into());
+            }
+            crate::lock::unlock(&app);
+            if !wait_until(|| crate::lock::is_unlocked(&app)) {
+                return Err("unlock did not complete".into());
+            }
+            std::thread::sleep(Duration::from_millis(2100));
+            result.push(json!({"test":"delayed_notification_not_replayed_after_lock_unlock","pass":app.state::<crate::notify::Recent>().records().iter().filter(|n|n.source==crate::notify::Source::Visual).count()==visual_count}));
+            let stale = app
+                .state::<crate::notify::Recent>()
+                .epoch()
+                .saturating_sub(1);
+            crate::commands::notify(
+                app.get_webview(&label).unwrap(),
+                app.clone(),
+                "Evento antigo".into(),
+                "Conversão de ícone atrasada".into(),
+                None,
+                Some(stale),
+            );
+            result.push(json!({"test":"stale_page_icon_notification_not_replayed_after_unlock","pass":app.state::<crate::notify::Recent>().records().first().is_some_and(|n|n.status=="suppressed"&&n.reason.as_deref()==Some("locked"))}));
             crate::dlog::log("smoke: disable_lock_requires_current_password");
             result.push(json!({"test":"disable_lock_requires_current_password","pass":crate::commands::disable_app_lock(panel.clone(),app.clone(),"wrong".into()).is_err()}));
             crate::commands::disable_app_lock(panel, app.clone(), "smoke-new".into())?;
             crate::dlog::log("smoke: disable_clears_hash_and_biometrics");
             result.push(json!({"test":"disable_clears_hash_and_biometrics","pass":crate::applock::load(&app)==crate::applock::AppLockConfig::default()}));
+
+            // Isolated, finite stall validates the diagnostic path itself.
+            let (tx, rx) = std::sync::mpsc::channel();
+            app.run_on_main_thread(move || {
+                let _health = crate::ui_health::enter("synthetic stall test");
+                std::thread::sleep(Duration::from_millis(7200));
+                let _ = tx.send(());
+            })
+            .map_err(|e| e.to_string())?;
+            let recovered = rx.recv_timeout(Duration::from_secs(12)).is_ok();
+            let log = std::env::var_os("WHATRUST_SMOKE_REPORT")
+                .map(std::path::PathBuf::from)
+                .map(|p| p.with_extension("log"));
+            result.push(json!({"test":"ui_heartbeat_detects_stall_and_recovers","pass":recovered&&wait_until(||log.as_ref().and_then(|p|std::fs::read_to_string(p).ok()).is_some_and(|s|s.contains("ui: heartbeat delayed;")&&s.contains("ui: heartbeat recovered")))}));
 
             Ok(())
         })();

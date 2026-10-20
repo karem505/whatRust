@@ -4695,7 +4695,7 @@ dependencies = [
 
 [[package]]
 name = "whatrust"
-version = "0.6.9-local.6"
+version = "0.6.9-local.7"
 dependencies = [
  "argon2",
  "block2",

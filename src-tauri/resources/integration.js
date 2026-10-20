@@ -27,7 +27,7 @@
     if(menu.open)positionMenu();
     if(keepFocus){var restore=Array.from(menu.querySelectorAll("button")).find(function(b){return b.dataset.item===focusKey;})||menu.querySelector("button");if(restore)restore.focus();}
   }
-  window.__whatrustState=function(next){if(!next)return;state=next;window.__whatrustPreferNative=!!next.native_notifications;draw();};
+  window.__whatrustState=function(next){if(!next)return;state=next;window.__whatrustPreferNative=!!next.native_notifications;window.__whatrustNotificationEpoch=next.notification_epoch||0;window.__whatrustLocked=!!next.notifications_locked;draw();};
   function create(){
     host=document.createElement("span");host.id="__whatrust_controls";host.setAttribute("data-whatrust","controls");
     host.style.cssText="display:inline-flex;align-items:center;flex:0 0 auto;min-width:84px;max-width:200px;margin-inline-start:8px;align-self:center";

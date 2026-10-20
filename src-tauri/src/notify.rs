@@ -29,7 +29,14 @@ pub struct Notice {
     pub reason: Option<String>,
 }
 #[derive(Default)]
-pub struct Recent(Mutex<Inner>);
+pub struct Recent {
+    inner: Mutex<Inner>,
+    generation: AtomicU64,
+    #[cfg(windows)]
+    delivery_gate: Mutex<()>,
+    #[cfg(windows)]
+    cleared_generation: AtomicU64,
+}
 #[derive(Default)]
 struct Inner {
     delivered: HashMap<String, (String, Instant)>,
@@ -47,8 +54,20 @@ pub fn event_id() -> String {
 const DEDUP: Duration = Duration::from_secs(60);
 pub const FALLBACK_WAIT: Duration = Duration::from_secs(3);
 impl Recent {
+    pub fn epoch(&self) -> u64 {
+        self.generation.load(Ordering::SeqCst)
+    }
+    #[cfg(any(windows, test))]
+    fn cancel_pending(&self, label: &str, id: &str, identity: &str) {
+        self.finish(label, id, identity, false);
+        let mut inner = self.inner.lock().unwrap();
+        if let Some(n) = inner.records.iter_mut().find(|n| n.id == id) {
+            n.status = "suppressed".into();
+            n.reason = Some("locked".into());
+        }
+    }
     fn reserve(&self, label: &str, identity: &str, now: Instant) -> bool {
-        let mut i = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut i = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         i.seen.retain(|_, t| now.duration_since(*t) <= DEDUP);
         // Bound both memory and burst bookkeeping. IDs are not message content.
         if i.seen.len() >= 2048 {
@@ -61,7 +80,7 @@ impl Recent {
         true
     }
     pub fn notified_since(&self, label: &str, since: Instant) -> bool {
-        self.0
+        self.inner
             .lock()
             .unwrap()
             .delivered
@@ -69,7 +88,7 @@ impl Recent {
             .is_some_and(|(_, t)| *t >= since)
     }
     pub fn consume_coverage(&self, label: &str, since: Instant) -> bool {
-        let mut inner = self.0.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap();
         let receipts = inner.coverage.entry(label.into()).or_default();
         while receipts.front().is_some_and(|(_, time)| *time < since) {
             receipts.pop_front();
@@ -77,10 +96,10 @@ impl Recent {
         receipts.pop_front().is_some()
     }
     pub fn native_ready(&self, label: &str) -> bool {
-        self.0.lock().unwrap().native.contains(label)
+        self.inner.lock().unwrap().native.contains(label)
     }
     pub fn set_native(&self, label: &str, ready: bool) {
-        let mut i = self.0.lock().unwrap();
+        let mut i = self.inner.lock().unwrap();
         if ready {
             i.native.insert(label.into());
         } else {
@@ -88,7 +107,7 @@ impl Recent {
         }
     }
     pub fn records(&self) -> Vec<Notice> {
-        self.0
+        self.inner
             .lock()
             .unwrap()
             .records
@@ -98,7 +117,7 @@ impl Recent {
             .collect()
     }
     fn record(&self, label: &str, id: &str, source: Source, status: &str, reason: Option<&str>) {
-        let mut i = self.0.lock().unwrap();
+        let mut i = self.inner.lock().unwrap();
         i.records.push_back(Notice {
             id: id.into(),
             account_id: crate::accounts::id_from_label(label).unwrap_or("").into(),
@@ -115,7 +134,7 @@ impl Recent {
         }
     }
     fn finish(&self, label: &str, id: &str, identity: &str, success: bool) {
-        let mut i = self.0.lock().unwrap();
+        let mut i = self.inner.lock().unwrap();
         let success = success && !i.records.iter().any(|r| r.id == id && r.status == "failed");
         let real_source = i
             .records
@@ -150,7 +169,7 @@ impl Recent {
     }
     fn lifecycle(&self, id: &str, status: &str) {
         if let Some(r) = self
-            .0
+            .inner
             .lock()
             .unwrap()
             .records
@@ -204,6 +223,36 @@ pub fn suppression(
         }
     }
     None
+}
+
+pub fn from_page(
+    app: &AppHandle,
+    label: &str,
+    title: &str,
+    body: &str,
+    icon: Option<&str>,
+    epoch: Option<u64>,
+) {
+    let recent = app.state::<Recent>();
+    if epoch.is_some_and(|e| e != recent.epoch()) {
+        recent.record(
+            label,
+            &event_id(),
+            Source::Page,
+            "suppressed",
+            Some("locked"),
+        );
+        crate::dlog::log("notification: stale page event suppressed after lock transition");
+        return;
+    }
+    from_account(app, label, title, body, icon, Source::Page);
+}
+/// Advance again on unlock so work detected during initial locked startup
+/// cannot become deliverable merely because authentication just completed.
+pub fn on_unlock(app: &AppHandle) {
+    app.state::<Recent>()
+        .generation
+        .fetch_add(1, Ordering::SeqCst);
 }
 
 pub fn from_account(
@@ -314,8 +363,12 @@ pub fn unread_increased(app: &AppHandle, label: &str, n: u32) {
     let app = app.clone();
     let label = label.to_string();
     let started = Instant::now();
+    let epoch = app.state::<Recent>().epoch();
     std::thread::spawn(move || {
         std::thread::sleep(FALLBACK_WAIT);
+        if app.state::<Recent>().epoch() != epoch || !crate::lock::is_unlocked(&app) {
+            return;
+        }
         if app
             .state::<Recent>()
             .notified_since(&label, started - Duration::from_secs(5))
@@ -348,9 +401,13 @@ pub fn visual_signal(
     let identity: String = identity.chars().take(180).collect();
     // The queue is bounded by the adapter's batch/rate limit; native delivery
     // gets first refusal. No content is taken from the DOM or kept in history.
+    let epoch = app.state::<Recent>().epoch();
     tauri::async_runtime::spawn(async move {
         let start = Instant::now();
         tokio::time::sleep(Duration::from_millis(1800)).await;
+        if app.state::<Recent>().epoch() != epoch || !crate::lock::is_unlocked(&app) {
+            return;
+        }
         if app
             .state::<Recent>()
             .consume_coverage(&label, start - Duration::from_millis(300))
@@ -384,6 +441,9 @@ pub fn show_for_account(app: &AppHandle, label: &str, title: &str, body: &str) {
     show(app, title, body);
 }
 pub fn show_with_icon(app: &AppHandle, title: &str, body: &str, icon: Option<&Path>) {
+    if !crate::lock::is_unlocked(app) {
+        return;
+    }
     #[cfg(windows)]
     windows_toast(app, title, body, icon.map(Path::to_path_buf), None, None);
     #[cfg(not(windows))]
@@ -414,17 +474,64 @@ fn escape_xml(s: &str) -> String {
 }
 
 #[cfg(windows)]
-pub fn cancel_native(app: &AppHandle, identity: &str) {
+fn clear_history_before_delivery(app: &AppHandle, generation: u64) {
     use windows::{core::HSTRING, UI::Notifications::ToastNotificationManager};
-    if let Ok(history) = ToastNotificationManager::History() {
-        let _ = history.RemoveGroupedTagWithId(
-            &HSTRING::from(identity),
-            &HSTRING::from("messages"),
-            &HSTRING::from(&app.config().identifier),
-        );
+    let recent = app.state::<Recent>();
+    if recent.cleared_generation.load(Ordering::SeqCst) < generation {
+        if let Ok(history) = ToastNotificationManager::History() {
+            let _ = history.ClearWithId(&HSTRING::from(&app.config().identifier));
+        }
+        recent
+            .cleared_generation
+            .store(generation, Ordering::SeqCst);
     }
-    native_report_if_needed(app, identity, "closed");
 }
+
+/// Called immediately on lock. Old asynchronous work must remain cancelled
+/// even if the user unlocks before its timer or icon conversion finishes.
+pub fn on_lock(app: &AppHandle) {
+    let recent = app.state::<Recent>();
+    recent.generation.fetch_add(1, Ordering::SeqCst);
+    #[cfg(windows)]
+    {
+        let generation = recent.epoch();
+        let toasts = std::mem::take(&mut recent.inner.lock().unwrap().toasts);
+        let handle = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let recent = handle.state::<Recent>();
+            let _gate = recent.delivery_gate.lock().unwrap();
+            use windows::{core::HSTRING, UI::Notifications::ToastNotificationManager};
+            if let Ok(notifier) = ToastNotificationManager::CreateToastNotifierWithId(
+                &HSTRING::from(&handle.config().identifier),
+            ) {
+                for toast in toasts.into_values() {
+                    let _ = notifier.Hide(&toast);
+                }
+            }
+            clear_history_before_delivery(&handle, generation);
+        });
+    }
+}
+
+#[cfg(windows)]
+pub fn cancel_native(app: &AppHandle, identity: &str) {
+    // CloseRequested runs on the WebView2 UI thread. WinRT history removal
+    // can wait for Shell callbacks; never do that in this browser callback.
+    let handle = app.clone();
+    let identity = identity.to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        use windows::{core::HSTRING, UI::Notifications::ToastNotificationManager};
+        if let Ok(history) = ToastNotificationManager::History() {
+            let _ = history.RemoveGroupedTagWithId(
+                &HSTRING::from(&identity),
+                &HSTRING::from("messages"),
+                &HSTRING::from(&handle.config().identifier),
+            );
+        }
+        native_report_if_needed(&handle, &identity, "closed");
+    });
+}
+
 #[cfg(windows)]
 fn native_report_if_needed(app: &AppHandle, id: &str, status: &str) {
     crate::window::native_report(app, id, status);
@@ -451,11 +558,15 @@ fn windows_toast(
     let app = app.clone();
     let title = title.to_string();
     let body = body.to_string();
+    let epoch = app.state::<Recent>().epoch();
     std::thread::spawn(move || {
-        if !crate::lock::is_unlocked(&app) {
+        let recent = app.state::<Recent>();
+        let _gate = recent.delivery_gate.lock().unwrap();
+        clear_history_before_delivery(&app, epoch);
+        if !crate::lock::is_unlocked(&app) || app.state::<Recent>().epoch() != epoch {
             if let Some(d) = &delivery {
                 app.state::<Recent>()
-                    .finish(&d.label, &d.id, &d.identity, false);
+                    .cancel_pending(&d.label, &d.id, &d.identity);
                 if d.native {
                     crate::window::native_report(&app, &d.identity, "discard");
                 }
@@ -509,7 +620,7 @@ fn windows_toast(
                 if let Some(d) = &dismissed {
                     let r = dismiss.state::<Recent>();
                     r.lifecycle(&d.id, "dismissed");
-                    r.0.lock().unwrap().toasts.remove(&d.id);
+                    r.inner.lock().unwrap().toasts.remove(&d.id);
                     if d.native {
                         crate::window::native_report(&dismiss, &d.identity, "closed");
                     }
@@ -523,7 +634,7 @@ fn windows_toast(
                     if let Some(d) = &failed {
                         let r = fail.state::<Recent>();
                         r.finish(&d.label, &d.id, &d.identity, false);
-                        r.0.lock().unwrap().toasts.remove(&d.id);
+                        r.inner.lock().unwrap().toasts.remove(&d.id);
                         if d.native {
                             crate::window::native_report(&fail, &d.identity, "discard");
                         }
@@ -532,29 +643,51 @@ fn windows_toast(
                     Ok(())
                 }),
             )?;
-            ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(
+            if !crate::lock::is_unlocked(&app) || app.state::<Recent>().epoch() != epoch {
+                return Err(windows::core::Error::from_hresult(windows::core::HRESULT(
+                    0x800704C7u32 as i32,
+                )));
+            }
+            let notifier = ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(
                 &app.config().identifier,
-            ))?
-            .Show(&toast)?;
+            ))?;
+            notifier.Show(&toast)?;
+            if !crate::lock::is_unlocked(&app) || app.state::<Recent>().epoch() != epoch {
+                let _ = notifier.Hide(&toast);
+                return Err(windows::core::Error::from_hresult(windows::core::HRESULT(
+                    0x800704C7u32 as i32,
+                )));
+            }
             Ok(toast)
         })();
         if let Some(d) = &delivery {
             let recent = app.state::<Recent>();
-            recent.finish(&d.label, &d.id, &d.identity, send.is_ok());
+            if !crate::lock::is_unlocked(&app) || recent.epoch() != epoch {
+                recent.cancel_pending(&d.label, &d.id, &d.identity);
+            } else {
+                recent.finish(&d.label, &d.id, &d.identity, send.is_ok());
+            }
             if let Ok(toast) = &send {
-                let mut i = recent.0.lock().unwrap();
+                let mut i = recent.inner.lock().unwrap();
+
                 if i.toasts.len() >= 100 {
                     if let Some(key) = i.toasts.keys().next().cloned() {
                         i.toasts.remove(&key);
                     }
                 }
-                i.toasts.insert(d.id.clone(), toast.clone());
+                if crate::lock::is_unlocked(&app) && recent.epoch() == epoch {
+                    i.toasts.insert(d.id.clone(), toast.clone());
+                }
             }
             if d.native {
                 crate::window::native_report(
                     &app,
                     &d.identity,
-                    if send.is_ok() { "shown" } else { "discard" },
+                    if send.is_ok() && crate::lock::is_unlocked(&app) && recent.epoch() == epoch {
+                        "shown"
+                    } else {
+                        "discard"
+                    },
                 );
             }
         }
@@ -683,5 +816,17 @@ mod tests {
         assert!(!fallback_due(None, 2, false, true));
         assert!(!fallback_due(Some(1), 2, true, true));
         assert!(!fallback_due(Some(1), 2, false, false));
+    }
+    #[test]
+    fn lock_generation_invalidates_queued_work_across_unlocks() {
+        let recent = Recent::default();
+        let queued = recent.epoch();
+        recent.generation.fetch_add(1, Ordering::SeqCst);
+        assert_ne!(queued, recent.epoch());
+        recent.record("wa-a", "queued", Source::Page, "pending", None);
+        recent.cancel_pending("wa-a", "queued", "event");
+        let record = &recent.records()[0];
+        assert_eq!(record.status, "suppressed");
+        assert_eq!(record.reason.as_deref(), Some("locked"));
     }
 }

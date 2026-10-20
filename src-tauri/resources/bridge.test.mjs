@@ -621,10 +621,21 @@ async function testPersistentWindowsNotificationUsesOwnService() {
   assert(h.invocations.filter(x=>x.cmd==="notify").length===1,"Windows registration notification reaches account-aware service exactly once");
 }
 
+async function testDelayedIconRetainsDetectionEpoch(){
+ const h=makeHarness({windows:true});h.window.__whatrustNotificationEpoch=7;
+ new h.window.Notification("late icon",{body:"test",icon:"https://example.com/icon.png"});
+ h.window.__whatrustNotificationEpoch=8;await sleep(0);
+ assert(h.invocations.find(c=>c.cmd==="notify").args.epoch===7,"icon conversion retains the event epoch from before locking");
+ const before=h.invocations.filter(c=>c.cmd==="notify").length;h.window.__whatrustLocked=true;
+ new h.window.Notification("while locked",{body:"test"});
+ assert(h.invocations.filter(c=>c.cmd==="notify").length===before,"locked page bridge does not forward message notifications");
+}
+
 const tests = [
   testWindowsNativePreferenceAndFallback,
   testNativePermissionAndAsyncErrorFallback,
   testPersistentWindowsNotificationUsesOwnService,
+  testDelayedIconRetainsDetectionEpoch,
   testUnreadReportsSayWhenThePageHasSettled,
   testNotificationPathIsLoggedOnceWithoutContent,
   testDownloadToastOffersOpenAndShowInFolder,
