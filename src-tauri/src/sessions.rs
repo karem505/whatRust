@@ -15,6 +15,8 @@ pub struct Sessions {
     panel_parent: Mutex<Option<String>>,
     menus_hidden: Mutex<HashMap<String, bool>>,
     view_visibility: Mutex<HashMap<String, bool>>,
+    applied_bounds: Mutex<HashMap<String, (i32, i32, u32, u32)>>,
+    pending_layout: Mutex<HashSet<String>>,
 }
 
 fn state(app: &AppHandle) -> tauri::State<'_, Sessions> {
@@ -29,6 +31,13 @@ fn set_view_visible(app: &AppHandle, view: &tauri::Webview, visible: bool) {
     };
     // Release the cache lock before COM: showing can generate native events.
     if changed {
+        if visible {
+            state(app)
+                .applied_bounds
+                .lock()
+                .unwrap()
+                .remove(view.label());
+        }
         let result = if visible { view.show() } else { view.hide() };
         if result.is_err() {
             state(app)
@@ -38,6 +47,51 @@ fn set_view_visible(app: &AppHandle, view: &tauri::Webview, visible: bool) {
                 .remove(view.label());
         }
     }
+}
+
+/// Native focus/resize callbacks execute while Tauri owns listener locks.
+/// Only queue here; COM geometry/visibility must run after that callback exits.
+pub fn schedule_layout(app: &AppHandle, parent: &str) {
+    if !state(app)
+        .pending_layout
+        .lock()
+        .unwrap()
+        .insert(parent.into())
+    {
+        return;
+    }
+    let handle = app.clone();
+    let parent = parent.to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        let ui = handle.clone();
+        let _ = handle.run_on_main_thread(move || {
+            state(&ui).pending_layout.lock().unwrap().remove(&parent);
+            layout(&ui, &parent);
+        });
+    });
+}
+fn forget_view_geometry(app: &AppHandle, label: &str) {
+    state(app).applied_bounds.lock().unwrap().remove(label);
+    state(app).view_visibility.lock().unwrap().remove(label);
+}
+
+fn reparent_on_ui(app: &AppHandle, view: &tauri::Webview, parent: &Window) -> Result<(), String> {
+    let handle = app.clone();
+    let view = view.clone();
+    let parent = parent.clone();
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.run_on_main_thread(move || {
+        let _health = crate::ui_health::enter("reparent webview");
+        // Wry holds its window-id mutex until reparent returns. Doing that on
+        // a worker deadlocks if the UI is concurrently processing layout for
+        // that same dispatcher. Hide first so focus callbacks have completed.
+        set_view_visible(&handle, &view, false);
+        forget_view_geometry(&handle, view.label());
+        let result = view.reparent(&parent).map_err(|e| e.to_string());
+        let _ = tx.send(result);
+    })
+    .map_err(|e| e.to_string())?;
+    rx.recv().map_err(|e| e.to_string())?
 }
 
 pub fn initialize(app: &AppHandle, hidden: bool) -> tauri::Result<Window> {
@@ -66,29 +120,36 @@ pub fn initialize(app: &AppHandle, hidden: bool) -> tauri::Result<Window> {
     let a = app.clone();
     w.on_window_event(move |event| match event {
         tauri::WindowEvent::Resized(_) | tauri::WindowEvent::ScaleFactorChanged { .. } => {
-            layout(&a, "main")
+            schedule_layout(&a, "main")
         }
-        tauri::WindowEvent::Focused(true) => {
-            if let Some(label) = state(&a).main_active.lock().unwrap().clone() {
-                *a.state::<ActiveAccount>().lock().unwrap() = label;
+        tauri::WindowEvent::Focused(focused) => {
+            if *focused {
+                let label = state(&a).main_active.lock().unwrap().clone();
+                if let Some(label) = label {
+                    *a.state::<ActiveAccount>().lock().unwrap() = label;
+                }
             }
-            layout(&a, "main");
+            schedule_layout(&a, "main");
         }
-        tauri::WindowEvent::Focused(false) => layout(&a, "main"),
         tauri::WindowEvent::CloseRequested { api, .. } => {
-            if crate::settings::load(&a).close_to_tray {
-                api.prevent_close();
-                let c = crate::applock::load(&a);
-                if c.should_lock_on_hide() {
-                    crate::lock::lock_on_hide(&a);
-                }
-                if let Some(w) = a.get_window("main") {
-                    let _ = w.hide();
-                    layout(&a, "main");
-                }
-            } else {
-                a.exit(0);
-            }
+            api.prevent_close();
+            let handle = a.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let ui = handle.clone();
+                let _ = handle.run_on_main_thread(move || {
+                    if crate::settings::load(&ui).close_to_tray {
+                        if crate::applock::load(&ui).should_lock_on_hide() {
+                            crate::lock::lock_on_hide(&ui);
+                        }
+                        if let Some(w) = ui.get_window("main") {
+                            let _ = w.hide();
+                            layout(&ui, "main");
+                        }
+                    } else {
+                        ui.exit(0);
+                    }
+                });
+            });
         }
         _ => {}
     });
@@ -221,6 +282,11 @@ fn activate_on_main(app: &AppHandle, label: &str) {
 }
 
 pub fn layout(app: &AppHandle, parent: &str) {
+    let handle = app.clone();
+    let parent = parent.to_string();
+    let _ = app.run_on_main_thread(move || layout_on_main(&handle, &parent));
+}
+fn layout_on_main(app: &AppHandle, parent: &str) {
     let _health = crate::ui_health::enter("account layout");
     let Some(w) = app.get_window(parent) else {
         return;
@@ -282,10 +348,24 @@ pub fn layout(app: &AppHandle, parent: &str) {
         } else {
             size.height.saturating_sub(y).max(1)
         };
-        let _ = v.set_bounds(tauri::Rect {
-            position: tauri::PhysicalPosition::new(0, y as i32).into(),
-            size: tauri::PhysicalSize::new(size.width.max(1), height).into(),
-        });
+        let geometry = (0, y as i32, size.width.max(1), height);
+        let changed = state(app)
+            .applied_bounds
+            .lock()
+            .unwrap()
+            .insert(label.clone(), geometry)
+            != Some(geometry);
+        if changed {
+            let _stage = crate::ui_health::enter("apply webview bounds");
+            if v.set_bounds(tauri::Rect {
+                position: tauri::PhysicalPosition::new(geometry.0, geometry.1).into(),
+                size: tauri::PhysicalSize::new(geometry.2, geometry.3).into(),
+            })
+            .is_err()
+            {
+                state(app).applied_bounds.lock().unwrap().remove(&label);
+            }
+        }
         if shell {
             let theme = active
                 .as_ref()
@@ -375,20 +455,20 @@ pub fn detach(app: &AppHandle, id: &str) -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
     install_menu(app, &w).map_err(|e| e.to_string())?;
-    v.reparent(&w).map_err(|e| e.to_string())?;
+    reparent_on_ui(app, &v, &w)?;
     let a = app.clone();
     let account = id.to_string();
     let p = parent_label.clone();
     let l = label.clone();
     w.on_window_event(move |event| match event {
         tauri::WindowEvent::Resized(_) | tauri::WindowEvent::ScaleFactorChanged { .. } => {
-            layout(&a, &p)
+            schedule_layout(&a, &p)
         }
         tauri::WindowEvent::Focused(true) => {
             *a.state::<ActiveAccount>().lock().unwrap() = l.clone();
-            layout(&a, &p);
+            schedule_layout(&a, &p);
         }
-        tauri::WindowEvent::Focused(false) => layout(&a, &p),
+        tauri::WindowEvent::Focused(false) => schedule_layout(&a, &p),
         tauri::WindowEvent::CloseRequested { api, .. } => {
             api.prevent_close();
             let a = a.clone();
@@ -417,13 +497,14 @@ pub fn attach(app: &AppHandle, id: &str) -> Result<(), String> {
     if let Some(panel) = app.get_webview("settings") {
         if panel.window().label() == old.label() {
             set_view_visible(app, &panel, false);
-            panel
-                .reparent(&initialize(app, true).map_err(|e| e.to_string())?)
-                .map_err(|e| e.to_string())?;
+            reparent_on_ui(
+                app,
+                &panel,
+                &initialize(app, true).map_err(|e| e.to_string())?,
+            )?;
         }
     }
-    v.reparent(&initialize(app, true).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())?;
+    reparent_on_ui(app, &v, &initialize(app, true).map_err(|e| e.to_string())?)?;
     state(app).menus_hidden.lock().unwrap().remove(old.label());
     let _ = old.destroy();
     activate(app, &label);
@@ -504,7 +585,7 @@ pub fn open_panel(app: &AppHandle, parent: Option<&str>) -> tauri::Result<()> {
     let theme_script = format!("document.documentElement.dataset.theme={encoded_theme}");
     let panel = if let Some(v) = app.get_webview("settings") {
         if v.window().label() != owner.label() {
-            v.reparent(&owner)?;
+            reparent_on_ui(app, &v, &owner).map_err(std::io::Error::other)?;
         }
         v
     } else {

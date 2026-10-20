@@ -127,6 +127,18 @@ pub fn start(app: &AppHandle) {
             crate::sessions::attach(&app, &a.id)?;
             crate::dlog::log("smoke: reattach_preserves_view");
             result.push(json!({"test":"reattach_preserves_view","pass":app.get_webview(&label).unwrap().window().label()=="main"&&eval(&app,&label,"window.__whatrustSmokeToken==='same-live-view'")?=="true"}));
+            for cycle in 0..12 {
+                crate::sessions::schedule_layout(&app, "main");
+                crate::sessions::detach(&app, &b.id)?;
+                crate::sessions::schedule_layout(&app, &format!("detached-{}", b.id));
+                crate::sessions::attach(&app, &b.id)?;
+                let target = crate::accounts::window_label(&b.id);
+                if eval(&app, &target, "2+2")? != "4" {
+                    return Err(format!("reparent/layout circular wait at cycle {cycle}"));
+                }
+            }
+            result.push(json!({"test":"reparent_with_pending_layout_12_cycles","pass":true}));
+            crate::sessions::activate(&app, &label);
             crate::sessions::open_panel(&app, Some("main")).map_err(|e| e.to_string())?;
             std::thread::sleep(Duration::from_secs(2));
             crate::dlog::log("smoke: local_panel_same_window");

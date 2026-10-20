@@ -44,7 +44,7 @@ Os comandos Cargo são executados em `src-tauri`; os demais, na raiz do checkout
 
 ## Entrega e limites
 
-O instalador NSIS é em português, para o usuário atual, com menu Iniciar e executável GUI sem console. A versão desta entrega é `0.6.9-local.7`, acima da versão 0.6.8 anteriormente instalada.
+O instalador NSIS é em português, para o usuário atual, com menu Iniciar e executável GUI sem console. A versão desta entrega é `0.6.9-local.8`, acima da versão 0.6.8 anteriormente instalada.
 
 Os testes automatizados não substituem receber mensagens reais no aplicativo instalado, conferir conversas silenciadas em cada layout suportado, testar chamadas/microfone e confirmar arquivos arrastados/baixados com suas contas. Quando faltam sinais confiáveis, o detector adicional permanece conservador. Esses cenários devem constar como pendentes no recibo de entrega quando não executados.
 
@@ -115,3 +115,9 @@ A página final NSIS e `/R` passam `--show`. Esse argumento sobrepõe somente a 
 A regressão nativa inclui 12 ciclos de criar/encerrar avisos enquanto troca conta, abre/fecha painel e altera não lidas; chegada bloqueada; remoção de histórico Windows; reabertura exigindo senha; não repetição de eventos atrasados; e início explícito visível com preferência persistida de segundo plano. Todos os testes usam contas e arquivos sintéticos.
 
 Os testes unitários desativam o arquivo de log instalado. As regressões nativas continuam usando seu próprio relatório/log isolado, evitando misturar arquivos sintéticos com evidência do aplicativo real.
+
+## Layout deferido (local.8)
+
+Um novo atraso real foi registrado em `account layout`. O runtime do Tauri despacha eventos com o mutex de listeners da janela adquirido; aplicar visibilidade/tamanho no callback de foco/redimensionamento permitia reentrada no mesmo caminho nativo. Esses callbacks agora apenas enfileiram um layout por janela; o fechamento também agenda suas mutações após liberar o callback. Limites físicos idênticos não são reaplicados. Mostrar uma visualização ou mover entre janelas invalida a geometria para reaplicar seu tamanho final uma vez. Essa correção é adicional às alterações de notificações da local.7.
+
+A regressão nativa também reproduziu o travamento ao reintegrar uma visualização com layout pendente. O dispatcher Wry segura seu mutex de ID de janela enquanto aguarda a mensagem de reparent; um layout anterior na fila tentava esse mesmo mutex, bloqueando a UI antes de processar a mudança. O reparent agora ocorre na própria tarefa de UI, com a visualização previamente oculta, sem adquirir o mutex no worker que aguardará a fila. Painel e contas compartilham esse caminho.

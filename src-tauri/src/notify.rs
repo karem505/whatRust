@@ -559,6 +559,10 @@ fn windows_toast(
     let title = title.to_string();
     let body = body.to_string();
     let epoch = app.state::<Recent>().epoch();
+    let toast_key = delivery
+        .as_ref()
+        .map(|d| d.id.clone())
+        .unwrap_or_else(event_id);
     std::thread::spawn(move || {
         let recent = app.state::<Recent>();
         let _gate = recent.delivery_gate.lock().unwrap();
@@ -613,6 +617,7 @@ fn windows_toast(
             ))?;
             let dismiss = app.clone();
             let dismissed = delivery.clone();
+            let dismissed_key = toast_key.clone();
             toast.Dismissed(&TypedEventHandler::<
                 ToastNotification,
                 ToastDismissedEventArgs,
@@ -620,25 +625,40 @@ fn windows_toast(
                 if let Some(d) = &dismissed {
                     let r = dismiss.state::<Recent>();
                     r.lifecycle(&d.id, "dismissed");
-                    r.inner.lock().unwrap().toasts.remove(&d.id);
                     if d.native {
                         crate::window::native_report(&dismiss, &d.identity, "closed");
                     }
                 }
+                let retired = dismiss
+                    .state::<Recent>()
+                    .inner
+                    .lock()
+                    .unwrap()
+                    .toasts
+                    .remove(&dismissed_key);
+                drop(retired);
                 Ok(())
             }))?;
             let fail = app.clone();
             let failed = delivery.clone();
+            let failed_key = toast_key.clone();
             toast.Failed(
                 &TypedEventHandler::<ToastNotification, ToastFailedEventArgs>::new(move |_, _| {
                     if let Some(d) = &failed {
                         let r = fail.state::<Recent>();
                         r.finish(&d.label, &d.id, &d.identity, false);
-                        r.inner.lock().unwrap().toasts.remove(&d.id);
                         if d.native {
                             crate::window::native_report(&fail, &d.identity, "discard");
                         }
                     }
+                    let retired = fail
+                        .state::<Recent>()
+                        .inner
+                        .lock()
+                        .unwrap()
+                        .toasts
+                        .remove(&failed_key);
+                    drop(retired);
                     crate::dlog::log("notification: Windows reported asynchronous failure");
                     Ok(())
                 }),
@@ -660,24 +680,32 @@ fn windows_toast(
             }
             Ok(toast)
         })();
+        if let Ok(toast) = &send {
+            let retired = {
+                let mut inner = recent.inner.lock().unwrap();
+                let retired = if inner.toasts.len() >= 100 {
+                    inner
+                        .toasts
+                        .keys()
+                        .next()
+                        .cloned()
+                        .and_then(|key| inner.toasts.remove(&key))
+                } else {
+                    None
+                };
+                if crate::lock::is_unlocked(&app) && recent.epoch() == epoch {
+                    inner.toasts.insert(toast_key, toast.clone());
+                }
+                retired
+            };
+            drop(retired); // Never release an external COM object while holding our state lock.
+        }
         if let Some(d) = &delivery {
             let recent = app.state::<Recent>();
             if !crate::lock::is_unlocked(&app) || recent.epoch() != epoch {
                 recent.cancel_pending(&d.label, &d.id, &d.identity);
             } else {
                 recent.finish(&d.label, &d.id, &d.identity, send.is_ok());
-            }
-            if let Ok(toast) = &send {
-                let mut i = recent.inner.lock().unwrap();
-
-                if i.toasts.len() >= 100 {
-                    if let Some(key) = i.toasts.keys().next().cloned() {
-                        i.toasts.remove(&key);
-                    }
-                }
-                if crate::lock::is_unlocked(&app) && recent.epoch() == epoch {
-                    i.toasts.insert(d.id.clone(), toast.clone());
-                }
             }
             if d.native {
                 crate::window::native_report(
