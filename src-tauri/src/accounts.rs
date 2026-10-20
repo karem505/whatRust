@@ -193,7 +193,36 @@ pub fn load(app: &AppHandle) -> AccountsFile {
         .ok()
         .and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str(&s).ok())
+        .map(ensure_account)
         .unwrap_or_default()
+}
+
+/// An empty configuration still needs one profile to display WhatsApp's login.
+/// This creates no authenticated session and never deletes existing profiles.
+fn ensure_account(mut file: AccountsFile) -> AccountsFile {
+    if file.accounts.is_empty() {
+        file.accounts = AccountsFile::default().accounts;
+        file.startup_account = None;
+        file.next_seq = file.next_seq.max(1);
+    }
+    file
+}
+
+#[cfg(test)]
+mod empty_account_tests {
+    use super::*;
+    #[test]
+    fn empty_configuration_opens_first_login_profile() {
+        let file = ensure_account(AccountsFile {
+            accounts: vec![],
+            next_seq: 7,
+            startup_account: Some("gone".into()),
+        });
+        assert_eq!(file.accounts.len(), 1);
+        assert_eq!(startup_account(&file).unwrap().id, "default");
+        assert_eq!(file.next_seq, 7);
+        assert_eq!(file.startup_account, None);
+    }
 }
 
 pub fn save(app: &AppHandle, f: &AccountsFile) -> tauri::Result<()> {

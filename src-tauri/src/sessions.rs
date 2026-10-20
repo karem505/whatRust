@@ -1,6 +1,6 @@
 //! Windows account ownership. One live WebView per profile; detach moves it.
 use crate::accounts::{self, Account, ActiveAccount};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder},
@@ -13,6 +13,7 @@ pub struct Sessions {
     fallback: Mutex<HashSet<String>>,
     pending: Mutex<Option<String>>,
     panel_parent: Mutex<Option<String>>,
+    menus_hidden: Mutex<HashMap<String, bool>>,
 }
 
 fn state(app: &AppHandle) -> tauri::State<'_, Sessions> {
@@ -25,6 +26,7 @@ pub fn initialize(app: &AppHandle, hidden: bool) -> tauri::Result<Window> {
     }
     let w = WindowBuilder::new(app, "main")
         .title("whatRust")
+        .background_color(tauri::utils::config::Color(22, 23, 23, 255))
         .inner_size(1100., 800.)
         .min_inner_size(560., 480.)
         .icon(tauri::image::Image::from_bytes(include_bytes!(
@@ -120,15 +122,7 @@ pub fn open_account(app: &AppHandle, account: &Account, hidden: bool) -> tauri::
     let parent = initialize(app, hidden)?;
     let label = accounts::window_label(&account.id);
     if app.get_webview(&label).is_none() {
-        // Reuse every existing download/media/profile hook. Move the view BEFORE
-        // destroying its temporary native window; never recreate the session.
-        let _staged = crate::window::build_account_window(app, account, true)?;
-        let original = app.get_window(&label).ok_or(tauri::Error::WindowNotFound)?;
-        let view = app
-            .get_webview(&label)
-            .ok_or(tauri::Error::WindowNotFound)?;
-        view.reparent(&parent)?;
-        original.destroy()?;
+        let view = crate::window::build_account_view(app, &parent, account)?;
         let _ = view.hide();
     }
     if state(app).main_active.lock().unwrap().is_none() {
@@ -167,6 +161,7 @@ pub fn activate(app: &AppHandle, label: &str) {
         }
     }
     *app.state::<ActiveAccount>().lock().unwrap() = label.to_string();
+    sync_menu(app, parent.label());
     layout(app, parent.label());
     let name = accounts::id_from_label(label)
         .and_then(|id| {
@@ -192,21 +187,7 @@ pub fn layout(app: &AppHandle, parent: &str) {
     };
     let Ok(size) = w.inner_size() else { return };
     let scale = w.scale_factor().unwrap_or(1.0);
-    let size = size.to_logical::<f64>(scale);
     let active = selected(app, parent);
-    let integrated = active.as_ref().is_some_and(|l| {
-        app.state::<crate::integration::Integration>()
-            .0
-            .lock()
-            .unwrap()
-            .get(l)
-            .is_some_and(|a| a.mounted)
-    });
-    if integrated {
-        let _ = w.hide_menu();
-    } else {
-        let _ = w.show_menu();
-    }
     let top = if parent == "main"
         && active
             .as_ref()
@@ -220,11 +201,56 @@ pub fn layout(app: &AppHandle, parent: &str) {
         if v.window().label() != parent {
             continue;
         }
-        let y = if label.starts_with("wa-") { top } else { 0. };
+        // Use the current physical client size: no DPI rounding gap, and never
+        // mutate the native menu from a resize callback (SetMenu emits WM_SIZE).
+        let offset = (top * scale).round() as u32;
+        let is_account = label.starts_with("wa-");
+        let y = if is_account { offset } else { 0 };
+        let shell = label.starts_with("shell-");
+        let height = if shell && active.is_some() {
+            offset.max(1)
+        } else {
+            size.height.saturating_sub(y).max(1)
+        };
         let _ = v.set_bounds(tauri::Rect {
-            position: tauri::LogicalPosition::new(0., y).into(),
-            size: tauri::LogicalSize::new(size.width, (size.height - y).max(1.)).into(),
+            position: tauri::PhysicalPosition::new(0, y as i32).into(),
+            size: tauri::PhysicalSize::new(size.width.max(1), height).into(),
         });
+        if shell {
+            let panel_open = state(app).panel_parent.lock().unwrap().as_deref() == Some(parent);
+            if !panel_open && (active.is_none() || offset > 0) {
+                let _ = v.show();
+            } else {
+                let _ = v.hide();
+            }
+        }
+    }
+}
+
+// Tauri holds its menu mutex while SetMenu synchronously dispatches WM_SIZE.
+// Changing menus inside layout re-enters that mutex and freezes the UI thread.
+// Record transitions before invoking native APIs; resize only changes bounds.
+fn sync_menu(app: &AppHandle, parent: &str) {
+    let hidden = selected(app, parent).is_some_and(|label| {
+        app.state::<crate::integration::Integration>()
+            .0
+            .lock()
+            .unwrap()
+            .get(&label)
+            .is_some_and(|adapter| adapter.mounted)
+    });
+    let changed = {
+        let s = state(app);
+        let mut menus = s.menus_hidden.lock().unwrap();
+        menus.insert(parent.into(), hidden) != Some(hidden)
+    };
+    if changed {
+        if let Some(w) = app.get_window(parent) {
+            let result = if hidden { w.hide_menu() } else { w.show_menu() };
+            if result.is_err() {
+                state(app).menus_hidden.lock().unwrap().remove(parent);
+            }
+        }
     }
 }
 
@@ -238,7 +264,11 @@ pub fn integration_changed(app: &AppHandle, label: &str, mounted: bool) {
     }
     drop(f);
     if let Some(v) = app.get_webview(label) {
-        layout(app, v.window().label());
+        let parent = v.window();
+        if selected(app, parent.label()).as_deref() == Some(label) {
+            sync_menu(app, parent.label());
+            layout(app, parent.label());
+        }
     }
 }
 
@@ -253,6 +283,7 @@ pub fn detach(app: &AppHandle, id: &str) -> Result<(), String> {
     let parent_label = format!("detached-{id}");
     let w = WindowBuilder::new(app, &parent_label)
         .title("whatRust — Conta destacada")
+        .background_color(tauri::utils::config::Color(22, 23, 23, 255))
         .inner_size(1000., 760.)
         .min_inner_size(560., 480.)
         .visible(false)
@@ -305,6 +336,7 @@ pub fn attach(app: &AppHandle, id: &str) -> Result<(), String> {
     }
     v.reparent(&initialize(app, true).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
+    state(app).menus_hidden.lock().unwrap().remove(old.label());
     let _ = old.destroy();
     activate(app, &label);
     Ok(())
@@ -334,8 +366,12 @@ fn choose_remaining(app: &AppHandle, exclude: Option<&str>) {
     *state(app).main_active.lock().unwrap() = next.clone();
     if let Some(label) = next {
         activate(app, &label);
-    } else if let Some(v) = app.get_webview("shell-main") {
-        let _ = v.show();
+    } else {
+        sync_menu(app, "main");
+        layout(app, "main");
+        if let Some(v) = app.get_webview("shell-main") {
+            let _ = v.show();
+        }
     }
 }
 

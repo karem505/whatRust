@@ -72,10 +72,140 @@ pub fn open_account_window(app: &AppHandle, account: &Account, hidden: bool) -> 
     }
 }
 
+// Keep navigation, injection and download hooks identical across platform builders.
+macro_rules! account_webview {
+    ($builder:expr, $app:ident, $label:ident) => {
+        $builder
+            .user_agent(&user_agent())
+            .initialization_script(if cfg!(windows) {
+                "window.__WHATRUST_WINDOWS__ = true;"
+            } else {
+                ""
+            })
+            .initialization_script(include_str!("../resources/integration.js"))
+            .initialization_script(BRIDGE_JS)
+            // Drag-and-drop is done by capturing the OS drop in Rust and streaming the file
+            // into the page (see `register_drop_handler` + bridge.js `__whatrustDropFeed`).
+            // We deliberately KEEP Tauri's drag-drop handler enabled (except on Windows, see
+            // below): on Linux/webkit2gtk the
+            // native webview never delivers a file drop into the page DOM (broken on Wayland;
+            // on X11 the GTK drop is accepted — the "+" cursor shows — but it still never
+            // reaches WhatsApp Web), so relying on in-page HTML5 drop simply does not work
+            // there. The handler is what hands us the dropped paths via `WindowEvent::DragDrop`.
+            // Belt-and-braces: cancel any `file://` navigation so a stray drop can never
+            // navigate the window away and tear down the live WhatsApp session.
+            .on_navigation(|url| url.scheme() != "file")
+            // Links (issue #30). WhatsApp opens every chat link in a new tab
+            // (`target="_blank"` / `window.open`). Unanswered, the system webview drops
+            // that request (WKWebView, WebKitGTK) or opens nothing useful, so a click
+            // did nothing. Answer it: WhatsApp links load in this window, web/mail/phone
+            // links go to the system's default handler, and no popup window is created.
+            .on_new_window({
+                let app = $app.clone();
+                let label = $label.clone();
+                move |url, _features| {
+                    route_new_window(&app, &label, url);
+                    tauri::webview::NewWindowResponse::Deny
+                }
+            })
+            // Downloads: with NO handler registered, wry never wires up the platform's
+            // download machinery at all — on Linux nobody answers WebKit's
+            // `decide-destination` and the engine cancels every download, so WhatsApp's
+            // "Download" button (videos, images, documents) silently did nothing.
+            // Let the user choose each Windows destination. Other platforms retain
+            // their existing Downloads-folder flow.
+            .on_download(|webview, event| {
+                let app = webview.app_handle();
+                let downloads = app.state::<crate::downloads::Downloads>();
+                match event {
+                    tauri::webview::DownloadEvent::Requested { url, destination } => {
+                        #[cfg(windows)]
+                        {
+                            let suggested = destination
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("download");
+                            let Some(path) = choose_download_destination(
+                                suggested,
+                                webview.window().hwnd().ok(),
+                            ) else {
+                                crate::dlog::log("download: save dialog cancelled");
+                                return false;
+                            };
+                            *destination = path;
+                        }
+                        #[cfg(not(windows))]
+                        ensure_download_destination(destination, app.path().download_dir().ok());
+                        downloads.requested(url.as_str(), destination);
+                        // Log routing only — never the file name (matches dlog's no-PII rule).
+                        crate::dlog::log(&format!(
+                            "download: requested scheme={} dest_abs={}",
+                            url.scheme(),
+                            destination.is_absolute()
+                        ));
+                    }
+                    tauri::webview::DownloadEvent::Finished { url, path, success } => {
+                        crate::dlog::log(&format!(
+                            "download: finished success={success} path_known={}",
+                            path.is_some()
+                        ));
+                        // Issue #21: confirm in the window itself, with Open / Show in
+                        // folder, like a browser. macOS reports no path; the
+                        // destination recorded at request time stands in for it.
+                        let done = if success {
+                            downloads.finished(url.as_str(), path)
+                        } else {
+                            downloads.failed(url.as_str());
+                            None
+                        };
+                        let shown = webview
+                            .eval(crate::downloads::toast_js(
+                                done.as_ref().map(|(id, p)| (*id, p.as_path())),
+                            ))
+                            .is_ok();
+                        // Nobody is looking at the window (hidden to the tray, or in
+                        // the background): say it with a system notification too.
+                        #[cfg(windows)]
+                        let focused = crate::sessions::account_focused(app, webview.label());
+                        #[cfg(not(windows))]
+                        let focused = webview.window().is_focused().unwrap_or(false);
+                        if !shown || !focused {
+                            if success {
+                                let body = match done.as_ref().and_then(|(_, p)| p.file_name()) {
+                                    Some(n) => format!(
+                                        "{} — saved to your chosen location.",
+                                        n.to_string_lossy()
+                                    ),
+                                    None => "Saved to your chosen location.".to_string(),
+                                };
+                                crate::notify::show_for_account(
+                                    app,
+                                    webview.label(),
+                                    "Download complete",
+                                    &body,
+                                );
+                            } else {
+                                crate::notify::show_for_account(
+                                    app,
+                                    webview.label(),
+                                    "Download failed",
+                                    "The file could not be downloaded. Please try again.",
+                                );
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                true
+            })
+    };
+}
+
 /// Open (or focus, if it already exists) the window for `account`. The label is
 /// `wa-<id>`; everything the single-account window carried is preserved (user agent,
 /// `bridge.js`, app icon, sizes, close-to-tray), plus per-account session isolation
 /// for non-default accounts.
+#[cfg_attr(windows, allow(dead_code))]
 pub(crate) fn build_account_window(
     app: &AppHandle,
     account: &Account,
@@ -95,129 +225,8 @@ pub(crate) fn build_account_window(
         .title(format!("whatRust — {}", account.name))
         .inner_size(1100.0, 800.0)
         .min_inner_size(560.0, 480.0)
-        .icon(icon)?
-        .user_agent(&user_agent())
-        .initialization_script(if cfg!(windows) {
-            "window.__WHATRUST_WINDOWS__ = true;"
-        } else {
-            ""
-        })
-        .initialization_script(include_str!("../resources/integration.js"))
-        .initialization_script(BRIDGE_JS)
-        // Drag-and-drop is done by capturing the OS drop in Rust and streaming the file
-        // into the page (see `register_drop_handler` + bridge.js `__whatrustDropFeed`).
-        // We deliberately KEEP Tauri's drag-drop handler enabled (except on Windows, see
-        // below): on Linux/webkit2gtk the
-        // native webview never delivers a file drop into the page DOM (broken on Wayland;
-        // on X11 the GTK drop is accepted — the "+" cursor shows — but it still never
-        // reaches WhatsApp Web), so relying on in-page HTML5 drop simply does not work
-        // there. The handler is what hands us the dropped paths via `WindowEvent::DragDrop`.
-        // Belt-and-braces: cancel any `file://` navigation so a stray drop can never
-        // navigate the window away and tear down the live WhatsApp session.
-        .on_navigation(|url| url.scheme() != "file")
-        // Links (issue #30). WhatsApp opens every chat link in a new tab
-        // (`target="_blank"` / `window.open`). Unanswered, the system webview drops
-        // that request (WKWebView, WebKitGTK) or opens nothing useful, so a click
-        // did nothing. Answer it: WhatsApp links load in this window, web/mail/phone
-        // links go to the system's default handler, and no popup window is created.
-        .on_new_window({
-            let app = app.clone();
-            let label = label.clone();
-            move |url, _features| {
-                route_new_window(&app, &label, url);
-                tauri::webview::NewWindowResponse::Deny
-            }
-        })
-        // Downloads: with NO handler registered, wry never wires up the platform's
-        // download machinery at all — on Linux nobody answers WebKit's
-        // `decide-destination` and the engine cancels every download, so WhatsApp's
-        // "Download" button (videos, images, documents) silently did nothing.
-        // Let the user choose each Windows destination. Other platforms retain
-        // their existing Downloads-folder flow.
-        .on_download(|webview, event| {
-            let app = webview.app_handle();
-            let downloads = app.state::<crate::downloads::Downloads>();
-            match event {
-                tauri::webview::DownloadEvent::Requested { url, destination } => {
-                    #[cfg(windows)]
-                    {
-                        let suggested = destination
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("download");
-                        let Some(path) =
-                            choose_download_destination(suggested, webview.window().hwnd().ok())
-                        else {
-                            crate::dlog::log("download: save dialog cancelled");
-                            return false;
-                        };
-                        *destination = path;
-                    }
-                    #[cfg(not(windows))]
-                    ensure_download_destination(destination, app.path().download_dir().ok());
-                    downloads.requested(url.as_str(), destination);
-                    // Log routing only — never the file name (matches dlog's no-PII rule).
-                    crate::dlog::log(&format!(
-                        "download: requested scheme={} dest_abs={}",
-                        url.scheme(),
-                        destination.is_absolute()
-                    ));
-                }
-                tauri::webview::DownloadEvent::Finished { url, path, success } => {
-                    crate::dlog::log(&format!(
-                        "download: finished success={success} path_known={}",
-                        path.is_some()
-                    ));
-                    // Issue #21: confirm in the window itself, with Open / Show in
-                    // folder, like a browser. macOS reports no path; the
-                    // destination recorded at request time stands in for it.
-                    let done = if success {
-                        downloads.finished(url.as_str(), path)
-                    } else {
-                        downloads.failed(url.as_str());
-                        None
-                    };
-                    let shown = webview
-                        .eval(crate::downloads::toast_js(
-                            done.as_ref().map(|(id, p)| (*id, p.as_path())),
-                        ))
-                        .is_ok();
-                    // Nobody is looking at the window (hidden to the tray, or in
-                    // the background): say it with a system notification too.
-                    #[cfg(windows)]
-                    let focused = crate::sessions::account_focused(app, webview.label());
-                    #[cfg(not(windows))]
-                    let focused = webview.window().is_focused().unwrap_or(false);
-                    if !shown || !focused {
-                        if success {
-                            let body = match done.as_ref().and_then(|(_, p)| p.file_name()) {
-                                Some(n) => format!(
-                                    "{} — saved to your chosen location.",
-                                    n.to_string_lossy()
-                                ),
-                                None => "Saved to your chosen location.".to_string(),
-                            };
-                            crate::notify::show_for_account(
-                                app,
-                                webview.label(),
-                                "Download complete",
-                                &body,
-                            );
-                        } else {
-                            crate::notify::show_for_account(
-                                app,
-                                webview.label(),
-                                "Download failed",
-                                "The file could not be downloaded. Please try again.",
-                            );
-                        }
-                    }
-                }
-                _ => {}
-            }
-            true
-        })
-        .visible(!start_hidden);
+        .icon(icon)?;
+    let builder = account_webview!(builder, app, label).visible(!start_hidden);
 
     // Windows (issue #31): WebView2 is Chromium and delivers OS file drops to the
     // page natively, so WhatsApp's own drop zone works exactly as in Chrome. With
@@ -256,6 +265,39 @@ pub(crate) fn build_account_window(
     register_drop_handler(&win);
     enable_webview_media(&win);
     Ok(win)
+}
+
+/// Windows views are children from birth. Reparenting a WebviewWindow does
+/// not change Wry's non-child sizing behavior and can leave stale client bounds.
+#[cfg(windows)]
+pub(crate) fn build_account_view(
+    app: &AppHandle,
+    parent: &tauri::Window,
+    account: &Account,
+) -> tauri::Result<tauri::Webview> {
+    let label = accounts::window_label(&account.id);
+    let builder = tauri::WebviewBuilder::new(
+        &label,
+        WebviewUrl::External("https://web.whatsapp.com/".parse().expect("valid url")),
+    );
+    let mut builder = account_webview!(builder, app, label).disable_drag_drop_handler();
+    if account.id != "default" {
+        builder = builder.data_directory(accounts::profile_dir(app, &account.id)?);
+    }
+    let view = parent.add_child(
+        builder,
+        tauri::LogicalPosition::new(0., 0.),
+        tauri::LogicalSize::new(1100., 800.),
+    )?;
+    view.set_auto_resize(false)?;
+    let _ = view.set_zoom(crate::settings::sanitize_zoom(
+        crate::settings::load(app).zoom,
+    ));
+    let handle = app.clone();
+    let view_label = label.clone();
+    view.with_webview(move |platform| enable_media_windows(platform, handle, view_label))?;
+    crate::dlog::log("account view: native child created");
+    Ok(view)
 }
 
 /// Native Windows Save As dialog. Returning `None` means the user cancelled,

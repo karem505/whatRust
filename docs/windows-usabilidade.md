@@ -42,10 +42,20 @@ Os comandos Cargo são executados em `src-tauri`; os demais, na raiz do checkout
 
 ## Entrega e limites
 
-O instalador NSIS é em português, para o usuário atual, com menu Iniciar e executável GUI sem console. A versão desta entrega é `0.6.9-local.1`, acima da versão 0.6.8 anteriormente instalada.
+O instalador NSIS é em português, para o usuário atual, com menu Iniciar e executável GUI sem console. A versão desta entrega é `0.6.9-local.2`, acima da versão 0.6.8 anteriormente instalada.
 
 Os testes automatizados não substituem receber mensagens reais no aplicativo instalado, conferir conversas silenciadas em cada layout suportado, testar chamadas/microfone e confirmar arquivos arrastados/baixados com suas contas. Quando faltam sinais confiáveis, o detector adicional permanece conservador. Esses cenários devem constar como pendentes no recibo de entrega quando não executados.
 
 ## Recuperação
 
 O PR #26 e sua branch foram preservados. Antes das mudanças foi criado um bundle Git completo fora do checkout. A versão anterior do instalador permanece na pasta de entrega. Para voltar à interface anterior, reinstale a versão anterior sem selecionar exclusão de dados do aplicativo. A implementação não migra os diretórios de sessão para outro formato.
+
+## Correção da inicialização instalada (local.2)
+
+O layout não altera menus nativos durante eventos de redimensionamento: `SetMenu` dispara `WM_SIZE` e o bloqueio interno de menu do Tauri pode ser acessado novamente. A visibilidade do menu muda somente quando muda a integração/conta ativa, antes de calcular o layout.
+
+As contas Windows agora nascem como WebViews filhas, sem uma janela temporária. Isso evita a lógica de redimensionamento automático de uma WebviewWindow movida. Os limites usam pixels físicos da área cliente atual. O shell de recuperação ocupa somente sua própria faixa, fica oculto quando os controles integrados estão disponíveis e usa a janela completa apenas quando não existe visualização ativa.
+
+Na primeira execução, o perfil `default` abre a página oficial de vinculação do WhatsApp; um perfil cadastrado não significa uma sessão autenticada. Uma configuração explicitamente vazia recebe um perfil inicial, sem apagar nem modificar outros diretórios. QR Code e login por telefone permanecem no WhatsApp. Não se lê estado privado de autenticação.
+
+A regressão nativa alterna integração/recuperação via IPC real, confere o tamanho físico até o rodapé, redimensiona repetidamente e abre o painel antes de vincular contas. Os cenários usam perfis isolados sem login e não desconectam contas do usuário.

@@ -130,6 +130,9 @@ pub fn report_integration(
         });
     #[cfg(windows)]
     crate::sessions::integration_changed(&app, window.label(), mounted);
+    crate::dlog::log(&format!(
+        "integration: layout completed controls_mounted={mounted} detector={detector}"
+    ));
     Ok(())
 }
 #[derive(Deserialize)]
