@@ -34,6 +34,8 @@ node --test src-tauri/resources/notifications.test.mjs
 node settings-ui/comboToAccelerator.test.mjs
 node settings-ui/dialog.test.mjs
 .\scripts\test-adapter.ps1
+.\scripts\test-ui.ps1
+.\scripts\test-shell.ps1
 ```
 
 Os comandos Cargo são executados em `src-tauri`; os demais, na raiz do checkout. O teste do adaptador usa Playwright CLI com página e dados sintéticos e não acessa conversas reais.
@@ -42,7 +44,7 @@ Os comandos Cargo são executados em `src-tauri`; os demais, na raiz do checkout
 
 ## Entrega e limites
 
-O instalador NSIS é em português, para o usuário atual, com menu Iniciar e executável GUI sem console. A versão desta entrega é `0.6.9-local.4`, acima da versão 0.6.8 anteriormente instalada.
+O instalador NSIS é em português, para o usuário atual, com menu Iniciar e executável GUI sem console. A versão desta entrega é `0.6.9-local.5`, acima da versão 0.6.8 anteriormente instalada.
 
 Os testes automatizados não substituem receber mensagens reais no aplicativo instalado, conferir conversas silenciadas em cada layout suportado, testar chamadas/microfone e confirmar arquivos arrastados/baixados com suas contas. Quando faltam sinais confiáveis, o detector adicional permanece conservador. Esses cenários devem constar como pendentes no recibo de entrega quando não executados.
 
@@ -71,3 +73,19 @@ As regressões incluem navegação vertical antes do cabeçalho correto, cabeça
 ## Barra de recuperação (local.4)
 
 O shell tem uma faixa de 48 px com seletor de contas e configurações. Raiz e corpo não geram rolagem; o texto da tela completa fica oculto na faixa compacta. Seus controles e cores seguem os mesmos tamanhos e temas do WhatsApp. A rolagem das conversas e do painel de configurações não é modificada.
+
+## Largura do seletor (local.5)
+
+O seletor compacto acompanha a largura do nome selecionado até 320 px (ou 65% da janela). O conteúdo excedente usa reticências e o nome completo fica na dica e na opção acessível. Um elemento de medição com a mesma fonte evita que opções maiores afastem a seta de nomes curtos. A atualização local recebe o ID da conta ativa, mantendo nome e janela sincronizados.
+
+## Menus, troca de contas e bloqueio (local.5)
+
+Menus locais removem o `inset` padrão do popover, medem sua altura real e escolhem acima/abaixo do botão conforme o espaço. Acompanham rolagem e redimensionamento e fecham quando o botão sai do painel visível. Restauração de foco não rola o painel nem toma foco de outro menu/diálogo. Diálogos altos e avisos de download têm limites próprios; nomes extensos não ampliam o painel.
+
+A ativação de conta é uma operação única na fila da interface: seleciona a identidade, oculta as demais visualizações, mostra a conta, aplica os limites físicos e publica o mesmo ID ao seletor. O tamanho final é aplicado depois de mostrar a visualização. Atualizações pendentes do seletor usam o ID mais recente.
+
+A tela de senha usa SVG de cadeado, paleta neutra, botão verde e textos em português. A revisão também inclui diálogos de senha, menus nativos e avisos de download/anexo. Bloqueio e ativação compartilham a fila da interface. O desbloqueio sempre retorna do callback IPC antes de destruir o próprio WebView2; destruí-lo dentro do callback podia travar a reintegração. O painel verifica novamente o estado de bloqueio antes de revelar sua janela.
+
+A redefinição exige confirmação e grava um marcador fora da pasta dos perfis. A limpeza só ocorre na próxima inicialização, antes de criar WebViews. Falhas mantêm o marcador e abortam a abertura dos perfis; a redefinição não declara sucesso ignorando arquivos em uso. Os testes destrutivos usam somente diretórios temporários sintéticos.
+
+A regressão nativa usa senha sintética para validar rejeição de senha incorreta, troca de senha, bloqueio de janelas principal/destacada, recusa de desbloqueio pela página remota, biometria desativada, restauração da conta pendente, bloqueio ao fechar e desativação com senha atual. O teste visual cobre temas claro/escuro, teclado e textos em português. Autenticação real pelo Windows Hello requer interação com o dispositivo e permanece pendente; não é simulada como sucesso.

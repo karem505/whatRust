@@ -1,21 +1,22 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>whatRust — Locked</title>
+    <title>whatRust — Bloqueado</title>
     <link rel="stylesheet" href="lock.css" />
     <link rel="stylesheet" href="dialog.css" />
   </head>
   <body>
     <div class="lock-card">
-      <div class="lock-glyph" aria-hidden="true">🔒</div>
-      <h1>whatRust is locked</h1>
-      <input type="password" id="password" placeholder="Password" autocomplete="current-password" aria-label="Password" />
-      <button id="unlock">Unlock</button>
-      <button id="biometric" class="secondary" hidden>Use biometric</button>
+      <div class="lock-glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3 M12 14v3"/></svg></div>
+      <h1>Aplicativo bloqueado</h1>
+      <p class="lock-subtitle">Digite sua senha para acessar suas contas do WhatsApp.</p>
+      <input type="password" id="password" placeholder="Digite sua senha" autocomplete="current-password" aria-label="Senha" />
+      <button id="unlock">Desbloquear</button>
+      <button id="biometric" class="secondary" hidden>Usar biometria</button>
       <p id="error" class="error" role="alert"></p>
-      <a id="reset" href="#" class="reset">Forgot password? Reset…</a>
+      <a id="reset" href="#" class="reset">Esqueceu a senha? Redefinir…</a>
     </div>
     <script src="dialog.js"></script>
     <script src="lock.js"></script>

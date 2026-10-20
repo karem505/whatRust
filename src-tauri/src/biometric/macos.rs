@@ -18,7 +18,7 @@ pub fn authenticate(_app: &tauri::AppHandle, reason: &str) -> Result<bool, Strin
     // Fresh context per call (LAContext caches a prior success).
     let ctx = unsafe { LAContext::new() };
     let reason = if reason.is_empty() {
-        "Unlock whatRust"
+        "Desbloquear o whatRust"
     } else {
         reason
     };
@@ -42,5 +42,5 @@ pub fn authenticate(_app: &tauri::AppHandle, reason: &str) -> Result<bool, Strin
 
     // The reply block fires on a background thread; block until it does (with a cap).
     rx.recv_timeout(std::time::Duration::from_secs(60))
-        .map_err(|_| "biometric prompt timed out".to_string())
+        .map_err(|_| "O tempo para confirmar a biometria terminou.".to_string())
 }

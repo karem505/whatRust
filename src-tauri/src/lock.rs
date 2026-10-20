@@ -56,6 +56,11 @@ pub fn require_unlocked(app: &AppHandle) -> Result<(), String> {
 /// Lock the app: mark locked, hide every user-facing window (recording which were
 /// visible), and show the lock screen.
 pub fn lock_now(app: &AppHandle) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || lock_on_main(&handle));
+}
+
+fn lock_on_main(app: &AppHandle) {
     let state = match app.try_state::<LockState>() {
         Some(s) => s,
         None => return, // not yet set up — bail
@@ -81,6 +86,16 @@ pub fn lock_now(app: &AppHandle) {
 /// Unlock the app: mark unlocked, destroy the lock window, and restore the windows
 /// that were visible when we locked (or fall back to the active account).
 pub fn unlock(app: &AppHandle) {
+    // Password IPC may execute inside this very WebView's callback. Always
+    // return from that callback before destroying its WebView2 controller.
+    let handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let ui = handle.clone();
+        let _ = handle.run_on_main_thread(move || unlock_on_main(&ui));
+    });
+}
+
+fn unlock_on_main(app: &AppHandle) {
     let state = match app.try_state::<LockState>() {
         Some(s) => s,
         None => return, // not yet set up — bail
@@ -124,7 +139,7 @@ fn show_lock_window_inner(app: &AppHandle) {
         return;
     }
     let built = WebviewWindowBuilder::new(app, "lock", WebviewUrl::App("lock.html".into()))
-        .title("whatRust — Locked")
+        .title("whatRust — Bloqueado")
         .inner_size(420.0, 540.0)
         .resizable(false)
         .decorations(false)

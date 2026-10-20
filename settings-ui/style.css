@@ -79,7 +79,7 @@ select option { background: var(--bg); color: var(--fg); }
 .acct-subtitle { font-size: 13px; color: var(--dim); font-weight: 400; }
 .account-more { font-size: 26px; line-height: 1; width: 36px; height: 36px; border-radius: 50%; padding: 0; color: var(--dim); background: transparent; }
 .acct-unread { background: var(--green); color: var(--on-green); font-size: 12px; padding: 2px 7px; border-radius: 10px; }
-.account-actions { position: fixed; border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--fg); box-shadow: 0 2px 12px #0004; padding: 6px 0; width: 245px; margin: 0; max-height: calc(100vh - 24px); overflow-y: auto; }
+.account-actions { position: fixed; inset: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--fg); box-shadow: 0 2px 12px #0004; padding: 6px 0; width: 245px; max-width:calc(100vw - 24px); margin: 0; max-height: calc(100vh - 24px);overflow-y:auto;overscroll-behavior:contain; }
 .account-actions button { display: block; width: 100%; border-radius: 0; background: transparent; color: inherit; text-align: left; font-size: 14px; font-weight: 400; padding: 12px 22px; }
 .account-actions button:hover, .account-actions button:focus-visible { background: var(--hover); }
 .account-actions .danger { color: var(--danger); }
@@ -109,3 +109,11 @@ select option { background: var(--bg); color: var(--fg); }
 @media(max-width:640px){.settings-nav{padding:12px 4px;}.settings-nav a{padding:16px;}.back-button span{display:none;}.back-button{width:40px;padding:8px!important;}}
 
 .back-button span { font-size:14px;color:inherit; }
+
+.row select { max-width:min(280px,100%);text-overflow:ellipsis;white-space:nowrap;overflow:hidden; }
+#startup_account { width:clamp(150px,35vw,280px); }
+
+.row-subtitle,.group-note,.hotkey-hint { overflow-wrap:anywhere; }
+
+.row-title {overflow-wrap:anywhere;}
+.note {min-width:0;overflow-wrap:anywhere;flex:1;}

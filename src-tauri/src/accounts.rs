@@ -87,10 +87,10 @@ pub fn add(f: &mut AccountsFile, name: &str) -> Account {
 /// errors if the id is unknown. Returns the removed account on success.
 pub fn remove(f: &mut AccountsFile, id: &str) -> Result<Account, String> {
     if f.accounts.len() <= 1 {
-        return Err("cannot remove the last account".into());
+        return Err("Não é possível remover a última conta.".into());
     }
     let Some(pos) = f.accounts.iter().position(|a| a.id == id) else {
-        return Err(format!("unknown account: {id}"));
+        return Err(format!("Conta não encontrada: {id}"));
     };
     let removed = f.accounts.remove(pos);
     if f.startup_account.as_deref() == Some(id) {
@@ -109,7 +109,7 @@ pub fn startup_account(f: &AccountsFile) -> Option<&Account> {
 
 pub fn set_startup_account(f: &mut AccountsFile, id: &str) -> Result<(), String> {
     if !f.accounts.iter().any(|a| a.id == id) {
-        return Err(format!("unknown account: {id}"));
+        return Err(format!("Conta não encontrada: {id}"));
     }
     f.startup_account = Some(id.to_owned());
     Ok(())
@@ -118,7 +118,7 @@ pub fn set_startup_account(f: &mut AccountsFile, id: &str) -> Result<(), String>
 /// Rename an account by id. Errors if the id is unknown.
 pub fn rename(f: &mut AccountsFile, id: &str, name: &str) -> Result<(), String> {
     let Some(acct) = f.accounts.iter_mut().find(|a| a.id == id) else {
-        return Err(format!("unknown account: {id}"));
+        return Err(format!("Conta não encontrada: {id}"));
     };
     acct.name = name.to_string();
     Ok(())
@@ -408,7 +408,7 @@ mod tests {
     fn cannot_remove_last_account() {
         let mut f = AccountsFile::default();
         let err = remove(&mut f, "default").unwrap_err();
-        assert!(err.contains("last account"));
+        assert!(err.contains("última conta"));
         assert_eq!(f.accounts.len(), 1);
     }
 
@@ -417,7 +417,7 @@ mod tests {
         let mut f = AccountsFile::default();
         add(&mut f, "Work");
         let err = remove(&mut f, "nope").unwrap_err();
-        assert!(err.contains("unknown account"));
+        assert!(err.contains("Conta não encontrada"));
         assert_eq!(f.accounts.len(), 2);
     }
 
@@ -432,7 +432,7 @@ mod tests {
     fn rename_unknown_id_is_err() {
         let mut f = AccountsFile::default();
         let err = rename(&mut f, "nope", "x").unwrap_err();
-        assert!(err.contains("unknown account"));
+        assert!(err.contains("Conta não encontrada"));
     }
 
     #[test]

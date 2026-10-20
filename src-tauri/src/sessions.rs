@@ -56,7 +56,8 @@ pub fn initialize(app: &AppHandle, hidden: bool) -> tauri::Result<Window> {
         tauri::WindowEvent::CloseRequested { api, .. } => {
             if crate::settings::load(&a).close_to_tray {
                 api.prevent_close();
-                if crate::applock::load(&a).lock_on_hide {
+                let c = crate::applock::load(&a);
+                if c.should_lock_on_hide() {
                     crate::lock::lock_now(&a);
                 }
                 if let Some(w) = a.get_window("main") {
@@ -137,6 +138,19 @@ pub fn open_account(app: &AppHandle, account: &Account, hidden: bool) -> tauri::
 }
 
 pub fn activate(app: &AppHandle, label: &str) {
+    // Commit identity, visibility, title and published state in one UI task.
+    // Calls from notifications, tray and IPC must never interleave these steps.
+    let handle = app.clone();
+    let label = label.to_string();
+    if app
+        .run_on_main_thread(move || activate_on_main(&handle, &label))
+        .is_err()
+    {
+        crate::dlog::log("account activation: UI dispatch failed");
+    }
+}
+
+fn activate_on_main(app: &AppHandle, label: &str) {
     if !crate::lock::is_unlocked(app) {
         *state(app).pending.lock().unwrap() = Some(label.to_string());
         crate::lock::show_lock_window(app);
@@ -162,7 +176,6 @@ pub fn activate(app: &AppHandle, label: &str) {
     }
     *app.state::<ActiveAccount>().lock().unwrap() = label.to_string();
     sync_menu(app, parent.label());
-    layout(app, parent.label());
     let name = accounts::id_from_label(label)
         .and_then(|id| {
             accounts::load(app)
@@ -173,9 +186,11 @@ pub fn activate(app: &AppHandle, label: &str) {
         .map(|a| a.name)
         .unwrap_or_else(|| "WhatsApp".into());
     let _ = parent.set_title(&format!("whatRust — {name}"));
-    let _ = view.show();
     let _ = parent.show();
     let _ = parent.unminimize();
+    let _ = view.show();
+    // WebView2 must be visible before its final bounds/viewport are applied.
+    layout(app, parent.label());
     let _ = parent.set_focus();
     let _ = view.set_focus();
     crate::integration::broadcast(app);
@@ -449,6 +464,12 @@ pub fn open_panel(app: &AppHandle, parent: Option<&str>) -> tauri::Result<()> {
     }
     *state(app).panel_parent.lock().unwrap() = Some(owner.label().into());
     layout(app, owner.label());
+    // A worker can finish constructing a panel after a lock request.
+    if !crate::lock::is_unlocked(app) {
+        let _ = owner.hide();
+        crate::lock::show_lock_window(app);
+        return Ok(());
+    }
     let _ = panel.show();
     let _ = owner.show();
     let _ = owner.unminimize();
@@ -477,7 +498,8 @@ pub fn toggle(app: &AppHandle) {
     if let Some(v) = app.get_webview(&label) {
         let w = v.window();
         if w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false) {
-            if crate::applock::load(app).lock_on_hide {
+            let c = crate::applock::load(app);
+            if c.should_lock_on_hide() {
                 crate::lock::lock_now(app);
             } else {
                 let _ = w.hide();

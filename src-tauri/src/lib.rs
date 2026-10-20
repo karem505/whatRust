@@ -187,6 +187,9 @@ pub fn run() {
             // before any account window can fire a notification. See aumid.rs.
             aumid::register(handle);
 
+            // A reset only runs while no WebViews hold the session stores open.
+            // Failure aborts startup before reading accounts or creating a view.
+            applock::complete_pending_reset(handle).map_err(std::io::Error::other)?;
             let s = settings::load(handle);
             let args: Vec<String> = std::env::args().collect();
             let start_hidden = s.start_minimized || args.iter().any(|a| a == "--minimized");
@@ -199,6 +202,7 @@ pub fn run() {
                     accounts::add(&mut f, "Conta de teste B");
                 }
                 accounts::save(handle, &f)?;
+                applock::save(handle, &applock::AppLockConfig::default())?;
             }
 
             // Backfill a persisted store_uuid for any non-default account missing one
@@ -216,7 +220,7 @@ pub fn run() {
 
             // App lock: decide the initial state and whether to start hidden.
             let lock_cfg = applock::load(handle);
-            let lock_on_launch = lock_cfg.is_active() && lock_cfg.lock_on_launch;
+            let lock_on_launch = lock_cfg.should_lock_on_launch();
             handle.manage(lock::LockState::new(!lock_on_launch));
             let open_hidden = start_hidden || lock_on_launch;
 
@@ -278,7 +282,7 @@ pub fn run() {
                         continue;
                     }
                     let idle_ok = user_idle::UserIdle::get_time()
-                        .map(|t| t.as_seconds() >= c.idle_secs as u64)
+                        .map(|t| c.should_lock_when_idle(t.as_seconds()))
                         .unwrap_or(false);
                     if idle_ok {
                         let h = idle_handle.clone();

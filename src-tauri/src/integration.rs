@@ -105,7 +105,14 @@ pub fn broadcast(app: &AppHandle) {
         } else if label == "settings" {
             let _ = v.eval("typeof loadAccounts === 'function' && !accountsBusy && loadAccounts()");
         } else if label.starts_with("shell-") {
-            let _ = v.eval("window.refresh && window.refresh()");
+            #[cfg(windows)]
+            let current = crate::sessions::selected(app, v.window().label())
+                .and_then(|label| accounts::id_from_label(&label).map(str::to_owned));
+            #[cfg(not(windows))]
+            let current: Option<String> = None;
+            if let Ok(json) = serde_json::to_string(&current) {
+                let _ = v.eval(format!("window.refresh && window.refresh({json})"));
+            }
         }
     }
 }

@@ -47,6 +47,6 @@ pub fn label() -> &'static str {
     }
     #[cfg(target_os = "linux")]
     {
-        "system authentication"
+        "autenticação do sistema"
     }
 }

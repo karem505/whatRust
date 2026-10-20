@@ -74,11 +74,11 @@ async function accountAction(action) {
 }
 
 function accountMenu(a, accounts, anchor) {
-  document.getElementById("account-actions")?.remove();
+  const previous=document.getElementById("account-actions");if(previous){if(previous.dataset.open==="true")previous.hidePopover();previous.remove();}
   const menu = document.createElement("div"); menu.id="account-actions";menu.className="account-actions";
   const nativePopover=typeof menu.showPopover==="function";
   if(nativePopover)menu.setAttribute("popover", "auto");
-  else {menu.style.position="fixed";menu.style.zIndex="9999";menu.showPopover=()=>{menu.style.display="block";menu.dataset.open="true";};menu.hidePopover=()=>{menu.style.display="none";menu.dataset.open="false";anchor.focus();};}menu.setAttribute("role", "menu");menu.setAttribute("aria-label", "Ações de " + a.name);
+  else {menu.style.position="fixed";menu.style.zIndex="9999";menu.showPopover=()=>{menu.style.display="block";menu.dataset.open="true";};menu.hidePopover=()=>{menu.style.display="none";menu.dataset.open="false";anchor.focus({preventScroll:true});};}menu.setAttribute("role", "menu");menu.setAttribute("aria-label", "Ações de " + a.name);
   const actions = [
     ["Abrir conta", () => accountAction(() => invoke("open_account", {id:a.id}))],
     ...( /Win/.test(navigator.platform || navigator.userAgent) ? [[a.detached ? "Reintegrar à janela" : "Abrir em janela separada", () => accountAction(() => invoke(a.detached?"attach_account":"detach_account",{id:a.id}))]] : []),
@@ -92,9 +92,33 @@ function accountMenu(a, accounts, anchor) {
   }
   if(accounts.length>1)actions.push(["Remover conta",async()=>{if(await Dlg.confirm("A sessão local desta conta será apagada. Para usá-la novamente, você precisará ler o QR code.",{title:`Remover "${a.name}"?`,okLabel:"Remover",danger:true}))await accountAction(()=>invoke("remove_account",{id:a.id}));}]);
   for(const [label,action] of actions){const button=document.createElement("button");button.type="button";button.textContent=label;button.setAttribute("role","menuitem");if(label==="Remover conta")button.className="danger";button.onclick=()=>{menu.hidePopover();menu.dataset.open="false";action();};menu.appendChild(button);}
-  document.body.appendChild(menu);const rect=anchor.getBoundingClientRect();menu.style.top=Math.max(12,Math.min(rect.bottom+4,innerHeight-menu.childElementCount*42-16))+"px";menu.style.right=Math.max(12,innerWidth-rect.right)+"px";menu.showPopover();menu.dataset.open="true";menu.querySelector("button").focus();
-  menu.addEventListener("keydown",e=>{if(e.key==="Escape"&&!nativePopover){e.preventDefault();menu.hidePopover();return;}const buttons=[...menu.querySelectorAll("button")],at=buttons.indexOf(document.activeElement);if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();buttons[(at+(e.key==="ArrowDown"?1:-1)+buttons.length)%buttons.length].focus();}});
-  menu.addEventListener("toggle",e=>{menu.dataset.open=String(e.newState==="open");anchor.setAttribute("aria-expanded",String(e.newState==="open"));if(e.newState==="closed")anchor.focus();});
+  const lifecycle=new AbortController();
+  const originalHide=menu.hidePopover.bind(menu);
+  function afterClose(){menu.dataset.open="false";anchor.setAttribute("aria-expanded","false");lifecycle.abort();if(anchor.isConnected&&!document.querySelector('.dlg-backdrop,.account-actions[data-open="true"]'))anchor.focus({preventScroll:true});}
+  menu.hidePopover=()=>{originalHide();afterClose();};
+  function place(){
+    const r=anchor.getBoundingClientRect(),m=menu.getBoundingClientRect(),padding=12,gap=6;
+    const pane=document.querySelector('.prefs').getBoundingClientRect();
+    if(!anchor.isConnected||r.bottom<pane.top||r.top>pane.bottom){menu.hidePopover();return;}
+    const below=Math.max(0,innerHeight-padding-r.bottom-gap),above=Math.max(0,r.top-gap-padding),natural=menu.scrollHeight+2;
+    const down=below>=natural||below>=above;
+    menu.style.maxHeight=Math.max(40,Math.min(innerHeight-24,down?below:above))+"px";
+    const height=menu.getBoundingClientRect().height;
+    const top=down?r.bottom+gap:r.top-height-gap;
+    menu.style.left=Math.max(padding,Math.min(r.right-m.width,innerWidth-m.width-padding))+"px";
+    menu.style.top=Math.max(padding,Math.min(top,innerHeight-height-padding))+"px";
+  }
+  menu.addEventListener("toggle",e=>{menu.dataset.open=String(e.newState==="open");anchor.setAttribute("aria-expanded",String(e.newState==="open"));if(e.newState==="closed")afterClose();});
+  menu.addEventListener("keydown",e=>{
+    if(e.key==="Escape"){e.preventDefault();menu.hidePopover();return;}
+    const buttons=[...menu.querySelectorAll("button")],at=buttons.indexOf(document.activeElement);
+    if(["ArrowDown","ArrowUp","Home","End"].includes(e.key)){e.preventDefault();const next=e.key==="Home"?0:e.key==="End"?buttons.length-1:(at+(e.key==="ArrowDown"?1:-1)+buttons.length)%buttons.length;buttons[next].focus();}
+  });
+  window.addEventListener("resize",place,{signal:lifecycle.signal});
+  document.addEventListener("scroll",place,{capture:true,signal:lifecycle.signal});
+  if(!nativePopover)document.addEventListener("pointerdown",e=>{if(!menu.contains(e.target)&&!anchor.contains(e.target))menu.hidePopover();},{signal:lifecycle.signal});
+  document.body.appendChild(menu);menu.showPopover();menu.dataset.open="true";anchor.setAttribute("aria-expanded","true");place();menu.querySelector("button").focus();
+
 }
 function renderAccounts(accounts) {
   const list=document.getElementById("accounts-list"),startup=document.getElementById("startup_account");
@@ -213,8 +237,8 @@ function wireLock() {
     const next = await Dlg.prompt("Pelo menos 4 caracteres.", {
       title: "Nova senha",
       password: true,
-      okLabel: "Change",
-      requiredMessage: "Enter a new password.",
+      okLabel: "Alterar",
+      requiredMessage: "Informe uma nova senha.",
     });
     if (next === null) return;
     try {
@@ -227,7 +251,7 @@ function wireLock() {
     const current = await Dlg.prompt("Informe sua senha atual para desativar o bloqueio.", {
       title: "Desativar bloqueio",
       password: true,
-      okLabel: "Disable",
+      okLabel: "Desativar",
       danger: true,
       requiredMessage: "Informe sua senha atual.",
     });

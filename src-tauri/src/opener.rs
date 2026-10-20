@@ -42,8 +42,8 @@ pub fn open_url(app: &tauri::AppHandle, url: tauri::Url) {
             crate::dlog::log(&format!("opener: {e}"));
             crate::notify::show(
                 &app,
-                "Couldn't open the link",
-                "No browser could be started. Copy the link and open it yourself.",
+                "Não foi possível abrir o link",
+                "Não foi possível iniciar o navegador. Copie o link e abra-o no navegador.",
             );
         }
     });
@@ -75,8 +75,8 @@ fn report(app: &tauri::AppHandle, what: &str, result: Result<(), String>) {
             crate::dlog::log(&format!("opener: {what} file FAILED: {e}"));
             crate::notify::show(
                 app,
-                "Couldn't open the file",
-                "Open it from your Downloads folder instead.",
+                "Não foi possível abrir o arquivo",
+                "Abra o arquivo pela pasta em que ele foi salvo.",
             );
         }
     }

@@ -7,7 +7,7 @@ let busy = false;
 async function tryUnlock() {
   if (busy) return;
   const password = pwd.value;
-  if (!password) { errEl.textContent = "Enter your password."; return; }
+  if (!password) { errEl.textContent = "Digite sua senha."; return; }
   busy = true;
   document.getElementById("unlock").disabled = true;
   document.getElementById("biometric").disabled = true;
@@ -15,12 +15,12 @@ async function tryUnlock() {
   try {
     const ok = await invoke("unlock_password", { password });
     if (!ok) {
-      errEl.textContent = "Wrong password.";
+      errEl.textContent = "Senha incorreta. Tente novamente.";
       pwd.value = "";
       pwd.focus();
     }
   } catch (e) {
-    errEl.textContent = String(e);
+    errEl.textContent = "Não foi possível desbloquear. Tente novamente.";
   } finally {
     busy = false;
     document.getElementById("unlock").disabled = false;
@@ -36,9 +36,9 @@ async function tryBiometric() {
   errEl.textContent = "";
   try {
     const ok = await invoke("unlock_biometric");
-    if (!ok) errEl.textContent = "Biometric authentication failed — enter your password.";
+    if (!ok) errEl.textContent = "Não foi possível confirmar a biometria. Digite sua senha.";
   } catch (e) {
-    errEl.textContent = String(e);
+    errEl.textContent = "Não foi possível desbloquear. Tente novamente.";
   } finally {
     busy = false;
     document.getElementById("unlock").disabled = false;
@@ -56,22 +56,22 @@ async function init() {
   document.getElementById("reset").addEventListener("click", async (e) => {
     e.preventDefault();
     const ok = await Dlg.confirm(
-      "This logs out ALL accounts and removes the app lock. You will need to " +
-      "re-scan the WhatsApp QR code. Your chats stay on your phone.",
-      { title: "Reset whatRust?", okLabel: "Reset", danger: true }
+      "Isso desconecta todas as contas deste aplicativo e remove o bloqueio. " +
+      "Você precisará vincular o WhatsApp novamente pelo QR Code. Suas conversas continuam no celular.",
+      { title: "Redefinir o whatRust?", okLabel: "Redefinir", danger: true }
     );
     if (!ok) return;
     try {
       await invoke("reset_app_lock");
     } catch (err) {
-      errEl.textContent = String(err);
+      errEl.textContent = "Não foi possível redefinir o aplicativo. Tente novamente.";
     }
   });
 
   try {
     const s = await invoke("get_lock_status");
     if (s.biometric_enabled) {
-      bio.textContent = "Use " + (s.biometric_label || "biometrics");
+      bio.textContent = "Usar " + (s.biometric_label || "biometria");
       bio.hidden = false;
       tryBiometric(); // auto-prompt on load
     }

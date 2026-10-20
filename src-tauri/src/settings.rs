@@ -158,7 +158,9 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
         let flatpak_autostart_handled = flatpak_id()
             .map(|id| {
                 if let Err(e) = apply_flatpak_autostart(&id, s.autostart) {
-                    warnings.push(format!("autostart could not be updated: {e}"));
+                    warnings.push(format!(
+                        "Não foi possível atualizar a inicialização automática: {e}"
+                    ));
                 }
                 true
             })
@@ -179,7 +181,9 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
                     .and_then(|on| if on { autostart.disable() } else { Ok(()) })
             };
             if let Err(e) = result {
-                warnings.push(format!("autostart could not be updated: {e}"));
+                warnings.push(format!(
+                    "Não foi possível atualizar a inicialização automática: {e}"
+                ));
             }
         }
 
@@ -188,7 +192,9 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
         let _ = gs.unregister_all();
         if s.hotkey_enabled && !s.hotkey.trim().is_empty() {
             if let Err(e) = gs.register(s.hotkey.as_str()) {
-                warnings.push(format!("shortcut not registered (it may be in use): {e}"));
+                warnings.push(format!(
+                    "Não foi possível registrar o atalho (ele pode estar em uso): {e}"
+                ));
             }
         }
         if warnings.is_empty() {

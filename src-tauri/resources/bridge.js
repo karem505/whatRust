@@ -445,7 +445,7 @@
       var style = document.createElement("style");
       style.textContent = [
         ":host{all:initial}",
-        ".stack{position:fixed;left:16px;bottom:16px;z-index:2147483647;display:flex;flex-direction:column;gap:8px;",
+        ".stack{position:fixed;left:16px;bottom:16px;z-index:2147483647;display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 32px);overflow-y:auto;",
         "font:14px/1.35 system-ui,-apple-system,'Segoe UI',Roboto,Ubuntu,sans-serif;max-width:min(380px,calc(100vw - 32px))}",
         ".toast{display:flex;align-items:center;gap:12px;padding:10px 10px 10px 14px;border-radius:10px;",
         "background:#233138;color:#e9edef;box-shadow:0 4px 18px rgba(0,0,0,.35)}",
@@ -483,10 +483,10 @@
       text.className = "text";
       var title = document.createElement("div");
       title.className = "title";
-      title.textContent = d.ok ? "Downloaded" : "Download failed";
+      title.textContent = d.ok ? "Download concluído" : "Falha no download";
       var name = document.createElement("div");
       name.className = "name";
-      name.textContent = d.ok ? String(d.name || "") : "The file could not be downloaded.";
+      name.textContent = d.ok ? String(d.name || "") : "Não foi possível baixar o arquivo.";
       if (d.ok) name.title = String(d.name || "");
       text.appendChild(title);
       text.appendChild(name);
@@ -502,18 +502,18 @@
       };
       if (d.ok && typeof d.id === "number") {
         if (d.canOpen) {
-          toast.appendChild(dl.button("Open", "", function () {
+          toast.appendChild(dl.button("Abrir", "", function () {
             invoke("open_download", { id: d.id });
             close();
           }));
         }
-        toast.appendChild(dl.button("Show in folder", "", function () {
+        toast.appendChild(dl.button("Mostrar na pasta", "", function () {
           invoke("reveal_download", { id: d.id });
           close();
         }));
       }
       var x = dl.button("\u00d7", "close", close);
-      x.setAttribute("aria-label", "Dismiss");
+      x.setAttribute("aria-label", "Fechar aviso");
       toast.appendChild(x);
       // Hovering keeps it up; leaving restarts the countdown.
       toast.addEventListener("mouseenter", function () { if (timer) clearTimeout(timer); });
@@ -570,7 +570,7 @@
       try { invoke("dlog", { msg: String(m).slice(0, 280) }); } catch (e) {}
     };
     drop.attachFailed = function () {
-      nativeNotify("whatRust", "Could not attach dropped files. Use the attach (+) button and try again.");
+      nativeNotify("whatRust", "Não foi possível anexar os arquivos. Use o botão de anexo (+) e tente novamente.");
     };
     // Decode one base64 stanza to bytes. Modern WebKit (18.4+) has
     // Uint8Array.fromBase64 — ~10x faster than atob + a char loop on multi-MB

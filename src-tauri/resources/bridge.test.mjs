@@ -398,7 +398,7 @@ async function testDecodeFailureNotifies() {
   await sleep(30);
   assert(mediaInput.batches.length === 0, "failed decode is never injected");
   assert(
-    invocations.some((x) => x.cmd === "notify" && /Could not attach/.test(x.args.body)),
+    invocations.some((x) => x.cmd === "notify" && /Não foi possível anexar/.test(x.args.body)),
     "native failure notification is sent"
   );
 }
@@ -537,10 +537,10 @@ async function testDownloadToastOffersOpenAndShowInFolder() {
   const [toast] = toastsIn(document);
   assert(!!toast, "one toast in the page");
   const texts = toast.all().map((e) => e.textContent);
-  assert(texts.includes("Downloaded") && texts.includes(name), "title and file name, as plain text");
+  assert(texts.includes("Download concluído") && texts.includes(name), "title and file name, as plain text");
   const labels = buttonsOf(toast).map((b) => b.textContent);
-  assert(labels.includes("Open") && labels.includes("Show in folder"), `buttons: ${labels}`);
-  buttonsOf(toast).find((b) => b.textContent === "Open").click();
+  assert(labels.includes("Abrir") && labels.includes("Mostrar na pasta"), `buttons: ${labels}`);
+  buttonsOf(toast).find((b) => b.textContent === "Abrir").click();
   const call = invocations.find((x) => x.cmd === "open_download");
   assert(call && call.args.id === 4 && Object.keys(call.args).length === 1, "Open sends just the id");
   assert(toastsIn(document).length === 0, "the toast closes after a choice");
@@ -552,14 +552,14 @@ async function testRiskyDownloadsAndFailures() {
   w.__whatrustDownloadDone({ ok: true, id: 9, name: "setup.exe", canOpen: false });
   const [toast] = toastsIn(document);
   const labels = buttonsOf(toast).map((b) => b.textContent);
-  assert(!labels.includes("Open"), "no Open button for a program");
-  buttonsOf(toast).find((b) => b.textContent === "Show in folder").click();
+  assert(!labels.includes("Abrir"), "no Open button for a program");
+  buttonsOf(toast).find((b) => b.textContent === "Mostrar na pasta").click();
   assert(invocations.some((x) => x.cmd === "reveal_download" && x.args.id === 9), "Show in folder sends the id");
   w.__whatrustDownloadDone({ ok: false });
   const [failed] = toastsIn(document);
   assert(failed && /failed/.test(failed.className), "failure toast");
-  assert(failed.all().some((e) => e.textContent === "Download failed"), "failure says so");
-  assert(buttonsOf(failed).every((b) => b.textContent !== "Open"), "nothing to open after a failure");
+  assert(failed.all().some((e) => e.textContent === "Falha no download"), "failure says so");
+  assert(buttonsOf(failed).every((b) => b.textContent !== "Abrir"), "nothing to open after a failure");
   for (let i = 0; i < 5; i++) w.__whatrustDownloadDone({ ok: true, id: 20 + i, name: i + ".jpg", canOpen: true });
   assert(toastsIn(document).length === 3, "at most three toasts stack up");
 }

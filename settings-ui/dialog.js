@@ -44,6 +44,7 @@
       // Keep focus inside the dialog: it is modal in intent, and a Tab that
       // escapes it lands on controls the dialog is covering.
       var f = open.focusable;
+      if (f.length === 1) { e.preventDefault(); f[0].focus(); return; }
       if (f.length < 2) return;
       var first = f[0];
       var last = f[f.length - 1];
@@ -90,7 +91,7 @@
     var actions = el("div", "dlg-actions");
     var cancel = null;
     if (kind !== "alert") {
-      cancel = el("button", "dlg-secondary", opts.cancelLabel || "Cancel");
+      cancel = el("button", "dlg-secondary", opts.cancelLabel || "Cancelar");
       cancel.type = "button";
       actions.appendChild(cancel);
     }
@@ -108,7 +109,7 @@
         // Never trim a password: leading or trailing whitespace is part of it.
         var v = opts.password ? input.value : input.value.trim();
         if (opts.required !== false && !v) {
-          error.textContent = opts.requiredMessage || "This cannot be empty.";
+          error.textContent = opts.requiredMessage || "Este campo não pode ficar vazio.";
           error.hidden = false;
           input.focus();
           return;
