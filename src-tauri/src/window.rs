@@ -1226,16 +1226,41 @@ pub fn toggle_active(app: &AppHandle) {
 
 /// Opens (or focuses) the local settings window.
 pub fn open_settings_window(app: &AppHandle) {
+    // Tray/menu callbacks can deadlock WebView2 when they construct a window
+    // synchronously. Serialize construction on a blocking worker instead.
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        static CREATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = CREATE.lock().unwrap_or_else(|e| e.into_inner());
+        open_settings_window_inner(&app);
+    });
+}
+
+fn open_settings_window_inner(app: &AppHandle) {
+    if !crate::lock::is_unlocked(app) {
+        crate::lock::show_lock_window(app);
+        return;
+    }
     if let Some(w) = app.get_webview_window("settings") {
         let _ = w.show();
         let _ = w.set_focus();
         return;
     }
-    let _ = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("index.html".into()))
+    let built = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("index.html".into()))
         .title("whatRust — Settings")
         .inner_size(440.0, 680.0)
         .resizable(false)
         .build();
+    if let Ok(window) = built {
+        // A lock request can win while the settings webview is queued.
+        if crate::lock::is_unlocked(app) {
+            let _ = window.show();
+            let _ = window.set_focus();
+        } else {
+            let _ = window.destroy();
+            crate::lock::show_lock_window(app);
+        }
+    }
 }
 
 #[cfg(test)]
