@@ -59,7 +59,7 @@
     bar.append(accountButton,gear);root.append(style,bar,menu);draw();
   }
   function resolvedTheme(){
-    var header=host&&host.closest("header"),c=header&&getComputedStyle(header).color;
+    var candidate=(!host||!host.isConnected)&&anchor();var header=(host&&host.closest("header"))||(candidate&&candidate.header),c=header&&getComputedStyle(header).color;
     var rgb=c&&c.match(/[\d.]+/g);
     if(rgb&&rgb.length>=3)return .2126*+rgb[0]+.7152*+rgb[1]+.0722*+rgb[2]>140?"dark":"light";
     return matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";

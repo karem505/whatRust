@@ -217,6 +217,20 @@ pub fn layout(app: &AppHandle, parent: &str) {
             size: tauri::PhysicalSize::new(size.width.max(1), height).into(),
         });
         if shell {
+            let theme = active
+                .as_ref()
+                .and_then(|label| {
+                    app.state::<crate::integration::Integration>()
+                        .0
+                        .lock()
+                        .unwrap()
+                        .get(label)
+                        .and_then(|a| a.theme.clone())
+                })
+                .unwrap_or_else(|| "system".into());
+            if let Ok(json) = serde_json::to_string(&theme) {
+                let _=v.eval(format!("if(document.documentElement&&document.documentElement.dataset.theme!=={json})document.documentElement.dataset.theme={json}"));
+            }
             let panel_open = state(app).panel_parent.lock().unwrap().as_deref() == Some(parent);
             if !panel_open && (active.is_none() || offset > 0) {
                 let _ = v.show();
