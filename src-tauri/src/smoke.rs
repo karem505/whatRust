@@ -238,6 +238,7 @@ pub fn start(app: &AppHandle) {
             let host = app.get_webview(&label).unwrap().window();
             host.minimize().map_err(|e| e.to_string())?;
             result.push(json!({"test":"minimized_account_is_not_foreground","pass":wait_until(||host.is_minimized().unwrap_or(false))&&!crate::sessions::account_focused(&app,&label)}));
+            result.push(json!({"test":"minimized_document_is_hidden","pass":wait_until(||eval(&app,&label,"document.hidden").ok().as_deref()==Some("true"))}));
             let context=eval(&app,&label,"JSON.stringify({hidden:document.hidden,focused:document.hasFocus(),preferNative:window.__whatrustPreferNative,permission:Notification.permission})")?;
             crate::dlog::log(&format!("smoke: minimized browser context {context}"));
             for (test, hide) in [
@@ -246,6 +247,7 @@ pub fn start(app: &AppHandle) {
             ] {
                 if hide {
                     host.hide().map_err(|e| e.to_string())?;
+                    crate::sessions::layout(&app, host.label());
                 }
                 let previous = app
                     .state::<crate::notify::Recent>()
@@ -290,6 +292,7 @@ pub fn start(app: &AppHandle) {
             result.push(json!({"test":"page_constructor_respects_notifications_disabled","pass":wait_until(||app.state::<crate::notify::Recent>().records().iter().any(|n|n.source==crate::notify::Source::WebView2&&n.reason.as_deref()==Some("notifications_disabled")))}));
             crate::settings::save(&app, &s).map_err(|e| e.to_string())?;
             crate::sessions::activate(&app, &label);
+            result.push(json!({"test":"restored_document_is_visible","pass":wait_until(||eval(&app,&label,"!document.hidden").ok().as_deref()==Some("true"))}));
             let panel = app.get_webview("settings").ok_or("missing local panel")?;
             crate::dlog::log("smoke: password_validation");
             result.push(json!({"test":"password_validation","pass":crate::commands::set_app_lock_password(panel.clone(),app.clone(),"abc".into(),"abc".into()).is_err()&&crate::commands::set_app_lock_password(panel.clone(),app.clone(),"test-pass".into(),"mismatch".into()).is_err()}));

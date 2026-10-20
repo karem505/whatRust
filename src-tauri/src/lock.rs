@@ -76,6 +76,8 @@ fn lock_on_main(app: &AppHandle) {
     for (label, w) in app.windows() {
         if should_hide(&label) && w.is_visible().unwrap_or(false) {
             let _ = w.hide();
+            #[cfg(windows)]
+            crate::sessions::layout(app, &label);
             hidden.push(label);
         }
     }
@@ -111,6 +113,8 @@ fn unlock_on_main(app: &AppHandle) {
         for label in hidden {
             if let Some(w) = app.get_window(&label) {
                 let _ = w.show();
+                #[cfg(windows)]
+                crate::sessions::layout(app, &label);
             }
         }
     }

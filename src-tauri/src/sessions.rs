@@ -52,7 +52,9 @@ pub fn initialize(app: &AppHandle, hidden: bool) -> tauri::Result<Window> {
             if let Some(label) = state(&a).main_active.lock().unwrap().clone() {
                 *a.state::<ActiveAccount>().lock().unwrap() = label;
             }
+            layout(&a, "main");
         }
+        tauri::WindowEvent::Focused(false) => layout(&a, "main"),
         tauri::WindowEvent::CloseRequested { api, .. } => {
             if crate::settings::load(&a).close_to_tray {
                 api.prevent_close();
@@ -62,6 +64,7 @@ pub fn initialize(app: &AppHandle, hidden: bool) -> tauri::Result<Window> {
                 }
                 if let Some(w) = a.get_window("main") {
                     let _ = w.hide();
+                    layout(&a, "main");
                 }
             } else {
                 a.exit(0);
@@ -200,9 +203,39 @@ pub fn layout(app: &AppHandle, parent: &str) {
     let Some(w) = app.get_window(parent) else {
         return;
     };
+    // Child WebViews do not automatically inherit the native parent's hidden
+    // or minimized state. Without this, document.hidden stays false and the
+    // open chat may suppress its own desktop notification.
+    let minimized = w.is_minimized().unwrap_or(false);
+    let visible = w.is_visible().unwrap_or(false) && !minimized && crate::lock::is_unlocked(app);
+    let active = selected(app, parent);
+    let panel_open = state(app).panel_parent.lock().unwrap().as_deref() == Some(parent);
+    for (label, view) in app.webviews() {
+        if view.window().label() != parent {
+            continue;
+        }
+        if !visible {
+            let _ = view.hide();
+        } else if label.starts_with("wa-") {
+            if !panel_open && active.as_deref() == Some(label.as_str()) {
+                let _ = view.show();
+            } else {
+                let _ = view.hide();
+            }
+        } else if label == "settings" {
+            if panel_open {
+                let _ = view.show();
+            } else {
+                let _ = view.hide();
+            }
+        }
+    }
+    // Keep the last usable viewport while minimized; don't turn it into 1x1.
+    if minimized {
+        return;
+    }
     let Ok(size) = w.inner_size() else { return };
     let scale = w.scale_factor().unwrap_or(1.0);
-    let active = selected(app, parent);
     let top = if parent == "main"
         && active
             .as_ref()
@@ -246,8 +279,7 @@ pub fn layout(app: &AppHandle, parent: &str) {
             if let Ok(json) = serde_json::to_string(&theme) {
                 let _=v.eval(format!("if(document.documentElement&&document.documentElement.dataset.theme!=={json})document.documentElement.dataset.theme={json}"));
             }
-            let panel_open = state(app).panel_parent.lock().unwrap().as_deref() == Some(parent);
-            if !panel_open && (active.is_none() || offset > 0) {
+            if visible && !panel_open && (active.is_none() || offset > 0) {
                 let _ = v.show();
             } else {
                 let _ = v.hide();
@@ -330,7 +362,9 @@ pub fn detach(app: &AppHandle, id: &str) -> Result<(), String> {
         }
         tauri::WindowEvent::Focused(true) => {
             *a.state::<ActiveAccount>().lock().unwrap() = l.clone();
+            layout(&a, &p);
         }
+        tauri::WindowEvent::Focused(false) => layout(&a, &p),
         tauri::WindowEvent::CloseRequested { api, .. } => {
             api.prevent_close();
             let a = a.clone();
@@ -503,6 +537,7 @@ pub fn toggle(app: &AppHandle) {
                 crate::lock::lock_now(app);
             } else {
                 let _ = w.hide();
+                layout(app, w.label());
             }
         } else {
             activate(app, &label);
