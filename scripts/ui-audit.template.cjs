@@ -12,7 +12,13 @@ async(page)=>{
   await page.emulateMedia({colorScheme:scheme});await page.setViewportSize({width,height});
   for(const name of names){await page.getByRole('link',{name,exact:true}).click();check('panel_'+scheme+'_'+width+'_'+name,await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth&&Array.from(document.querySelectorAll('.prefs input,.prefs select,.prefs button')).filter(e=>e.getClientRects().length).every(e=>{const r=e.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth+1;})));}
   await page.getByRole('link',{name:'Contas',exact:true}).click();
-  const trigger=page.getByRole('button',{name:'Opções de Matheus',exact:true});await trigger.click();
+  const trigger=page.getByRole('button',{name:'Opções de Matheus',exact:true});
+  await trigger.hover();
+  await page.waitForTimeout(160);
+  check('account_menu_hover_'+scheme+'_'+width,await trigger.evaluate(e=>getComputedStyle(e).backgroundColor!=='rgba(0, 0, 0, 0)'));
+  await trigger.click();
+  await page.waitForFunction(()=>document.querySelector('[aria-label="Opções de Matheus"]').getAttribute('aria-expanded')==='true');
+  check('account_menu_open_feedback_'+scheme+'_'+width,await trigger.evaluate(e=>getComputedStyle(e).backgroundColor!=='rgba(0, 0, 0, 0)'));
   check('menu_anchored_'+scheme+'_'+width,await page.evaluate(()=>{const b=document.querySelector('[aria-label="Opções de Matheus"]').getBoundingClientRect(),m=document.getElementById('account-actions').getBoundingClientRect();const gap=Math.min(Math.abs(m.top-b.bottom-6),Math.abs(b.top-m.bottom-6));return m.left>=12&&m.right<=innerWidth-12+1&&m.top>=12&&m.bottom<=innerHeight-12+1&&Math.abs(m.right-b.right)<=1&&gap<=1;}));
   await page.keyboard.press('End');check('menu_keyboard_'+scheme+'_'+width,await page.evaluate(()=>document.activeElement===document.querySelector('#account-actions button:last-child')));
   await page.keyboard.press('Escape');check('menu_focus_restore_'+scheme+'_'+width,await trigger.evaluate(e=>document.activeElement===e));

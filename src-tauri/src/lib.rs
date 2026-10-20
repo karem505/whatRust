@@ -74,9 +74,10 @@ pub fn run() {
                     // A whatsapp:// (or wa.me) link handed to a second launch by
                     // the OS scheme handler (issue #23): open it in the running copy.
                     links::open_from_outside(app, &link);
-                } else if args.iter().any(|a| a == "--show")
-                    || !args.iter().any(|a| a == "--minimized")
-                {
+                } else if !settings::start_hidden(
+                    cfg!(windows) && settings::load(app).start_minimized,
+                    &args,
+                ) {
                     window::show_main(app);
                 }
             },
@@ -132,7 +133,11 @@ pub fn run() {
             )
             .plugin(tauri_plugin_autostart::init(
                 tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-                Some(vec!["--minimized"]),
+                Some(vec![if cfg!(windows) {
+                    "--autostart"
+                } else {
+                    "--minimized"
+                }]),
             ));
     }
 

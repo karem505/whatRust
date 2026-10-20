@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "whatRust",
-  "version": "0.6.9-local.8",
+  "version": "0.6.9-local.10",
   "identifier": "com.karem.whatrust",
   "build": {
     "frontendDist": "../settings-ui"

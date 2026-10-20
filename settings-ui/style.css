@@ -3,6 +3,7 @@
   color-scheme: light dark;
   --bg: #fff; --card: #fff; --panel: #f7f8fa; --fg: #0a0a0a; --dim: #626262;
   --green: #1daa61; --on-green: #0a0a0a; --border: #e9ebeb;
+  --control-hover: #00000014; --control-active: #00000024;
   --line: #e9ebeb; --hover: #f1f2f2; --switch-off: #b8bdbb;
   --danger: #c52c3a; --warn: #996600;
 }
@@ -11,6 +12,7 @@
     color-scheme: dark;
     --bg: #161717; --card: #232626; --panel: #1d1f1f; --fg: #fafafa; --dim: #a1a5a5;
     --green: #21c063; --on-green: #0a0a0a; --border: #2c3030;
+    --control-hover: #ffffff14; --control-active: #ffffff24;
     --line: #2c3030; --hover: #2a2d2d; --switch-off: #626767;
     --danger: #ff707a; --warn: #e3b341;
   }
@@ -19,6 +21,7 @@
     color-scheme: dark;
     --bg: #161717; --card: #232626; --panel: #1d1f1f; --fg: #fafafa; --dim: #a1a5a5;
     --green: #21c063; --on-green: #0a0a0a; --border: #2c3030;
+    --control-hover: #ffffff14; --control-active: #ffffff24;
     --line: #2c3030; --hover: #2a2d2d; --switch-off: #626767;
     --danger: #ff707a; --warn: #e3b341;
 }
@@ -77,7 +80,10 @@ select option { background: var(--bg); color: var(--fg); }
 .account-open { display: flex; flex: 1; min-width: 0; align-items: flex-start; flex-direction: column; gap: 5px; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; }
 .acct-name { font-size: 16px; max-width: 100%; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .acct-subtitle { font-size: 13px; color: var(--dim); font-weight: 400; }
-.account-more { font-size: 26px; line-height: 1; width: 36px; height: 36px; border-radius: 50%; padding: 0; color: var(--dim); background: transparent; }
+.account-more { display: grid; place-items: center; flex: 0 0 40px; font-size: 26px; line-height: 1; width: 40px; height: 40px; border-radius: 50%; padding: 0; color: var(--dim); background: transparent; transition: background-color .12s, color .12s; }
+.account-more:hover:not(:disabled), .account-more:focus-visible, .account-more[aria-expanded="true"] { background: var(--control-hover); color: var(--fg); filter: none; }
+.account-more:active:not(:disabled) { background: var(--control-active); }
+@media(prefers-reduced-motion:reduce) { .account-more { transition:none; } }
 .acct-unread { background: var(--green); color: var(--on-green); font-size: 12px; padding: 2px 7px; border-radius: 10px; }
 .account-actions { position: fixed; inset: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--fg); box-shadow: 0 2px 12px #0004; padding: 6px 0; width: 245px; max-width:calc(100vw - 24px); margin: 0; max-height: calc(100vh - 24px);overflow-y:auto;overscroll-behavior:contain; }
 .account-actions button { display: block; width: 100%; border-radius: 0; background: transparent; color: inherit; text-align: left; font-size: 14px; font-weight: 400; padding: 12px 22px; }

@@ -17,6 +17,11 @@ function selectNearestZoom(value) {
 async function load() {
   const s = await invoke("get_settings");
   document.getElementById("menu_bar_icon_row").hidden = !IS_MAC;
+  if (/Win/.test(navigator.platform || navigator.userAgent)) {
+    const startupRow = document.getElementById("start_minimized").closest("label");
+    startupRow.querySelector(".row-title").textContent = "Iniciar minimizado com o Windows";
+    startupRow.querySelector(".row-subtitle").textContent = "Vale apenas ao entrar no Windows. Ao abrir pelo atalho, a janela sempre aparece.";
+  }
   for (const f of BOOLS) {
     const el = document.getElementById(f);
     if (el) el.checked = !!s[f];

@@ -39,7 +39,21 @@ impl Default for Settings {
 }
 
 pub fn start_hidden(preference: bool, args: &[String]) -> bool {
-    !args.iter().any(|a| a == "--show") && (preference || args.iter().any(|a| a == "--minimized"))
+    if args.iter().any(|a| a == "--show") {
+        return false;
+    }
+    if cfg!(windows) {
+        // A manual launch from Start or a desktop shortcut has no startup flag
+        // and should always show the window. Apply the preference only to OS
+        // startup. Accept --minimized for older Run entries, but still respect
+        // the saved preference; new entries use the explicit flag below.
+        preference
+            && args
+                .iter()
+                .any(|a| a == "--autostart" || a == "--minimized")
+    } else {
+        preference || args.iter().any(|a| a == "--minimized")
+    }
 }
 
 /// Zoom bounds. The settings UI only offers four presets inside this range; the
@@ -320,13 +334,29 @@ mod tests {
     #[test]
     fn explicit_foreground_launch_overrides_background_preference() {
         let args = |items: &[&str]| items.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert!(super::start_hidden(true, &args(&[])));
-        assert!(super::start_hidden(false, &args(&["--minimized"])));
+        assert_eq!(super::start_hidden(true, &args(&[])), !cfg!(windows));
+        assert_eq!(
+            super::start_hidden(false, &args(&["--minimized"])),
+            !cfg!(windows)
+        );
         assert!(!super::start_hidden(true, &args(&["--show"])));
         assert!(!super::start_hidden(
             true,
             &args(&["--show", "--minimized"])
         ));
         assert!(!super::start_hidden(false, &args(&[])));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn start_minimized_only_affects_system_autostart() {
+        assert!(!super::start_hidden(true, &[]));
+        assert!(super::start_hidden(true, &["--autostart".into()]));
+        assert!(!super::start_hidden(false, &["--autostart".into()]));
+        assert!(!super::start_hidden(false, &["--minimized".into()]));
+        assert!(!super::start_hidden(
+            true,
+            &["--autostart".into(), "--show".into()]
+        ));
     }
 }

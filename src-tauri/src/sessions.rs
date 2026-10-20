@@ -474,7 +474,7 @@ pub fn detach(app: &AppHandle, id: &str) -> Result<(), String> {
             let a = a.clone();
             let id = account.clone();
             tauri::async_runtime::spawn_blocking(move || {
-                let _ = attach(&a, &id);
+                let _ = attach_after_window_close(&a, &id);
             });
         }
         _ => {}
@@ -485,15 +485,29 @@ pub fn detach(app: &AppHandle, id: &str) -> Result<(), String> {
 }
 
 pub fn attach(app: &AppHandle, id: &str) -> Result<(), String> {
+    attach_inner(app, id, true)
+}
+
+/// Closing a detached window returns its live WebView to the main window while
+/// preserving the account that was already selected there. Explicitly choosing
+/// “Reintegrar à janela” still activates the returned account via [`attach`].
+fn attach_after_window_close(app: &AppHandle, id: &str) -> Result<(), String> {
+    attach_inner(app, id, false)
+}
+
+fn attach_inner(app: &AppHandle, id: &str, activate_returned_account: bool) -> Result<(), String> {
     let _health = crate::ui_health::enter("attach account");
     crate::lock::require_unlocked(app)?;
     let label = accounts::window_label(id);
     let v = app.get_webview(&label).ok_or("Conta não está aberta")?;
     let old = v.window();
     if old.label() == "main" {
-        activate(app, &label);
+        if activate_returned_account {
+            activate(app, &label);
+        }
         return Ok(());
     }
+    let selected_before_close = state(app).main_active.lock().unwrap().clone();
     if let Some(panel) = app.get_webview("settings") {
         if panel.window().label() == old.label() {
             set_view_visible(app, &panel, false);
@@ -507,8 +521,63 @@ pub fn attach(app: &AppHandle, id: &str) -> Result<(), String> {
     reparent_on_ui(app, &v, &initialize(app, true).map_err(|e| e.to_string())?)?;
     state(app).menus_hidden.lock().unwrap().remove(old.label());
     let _ = old.destroy();
-    activate(app, &label);
+    if activate_returned_account {
+        activate(app, &label);
+    } else {
+        restore_main_after_detached_close(app, &label, selected_before_close);
+    }
     Ok(())
+}
+
+fn restore_main_after_detached_close(
+    app: &AppHandle,
+    returned_label: &str,
+    previously_selected: Option<String>,
+) {
+    let on_main = |label: &str| {
+        app.get_webview(label)
+            .is_some_and(|view| view.window().label() == "main")
+    };
+    let selected = previously_selected
+        .filter(|label| label != returned_label && on_main(label))
+        .or_else(|| {
+            accounts::load(app)
+                .accounts
+                .into_iter()
+                .find_map(|account| {
+                    let label = accounts::window_label(&account.id);
+                    (label != returned_label && on_main(&label)).then_some(label)
+                })
+        })
+        .unwrap_or_else(|| returned_label.to_string());
+
+    *state(app).main_active.lock().unwrap() = Some(selected.clone());
+    *app.state::<ActiveAccount>().lock().unwrap() = selected.clone();
+    sync_menu(app, "main");
+    if let (Some(window), Some(view)) = (app.get_window("main"), app.get_webview(&selected)) {
+        let name = accounts::id_from_label(&selected)
+            .and_then(|id| {
+                accounts::load(app)
+                    .accounts
+                    .into_iter()
+                    .find(|a| a.id == id)
+            })
+            .map(|account| account.name)
+            .unwrap_or_else(|| "WhatsApp".into());
+        let _ = window.set_title(&format!("whatRust — {name}"));
+        let _ = window.show();
+        let _ = window.unminimize();
+        layout(app, "main");
+        let _ = window.set_focus();
+        if state(app).panel_parent.lock().unwrap().as_deref() == Some("main") {
+            if let Some(panel) = app.get_webview("settings") {
+                let _ = panel.set_focus();
+            }
+        } else {
+            let _ = view.set_focus();
+        }
+    }
+    crate::integration::broadcast(app);
 }
 
 fn choose_remaining(app: &AppHandle, exclude: Option<&str>) {

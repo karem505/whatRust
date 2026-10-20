@@ -127,6 +127,27 @@ pub fn start(app: &AppHandle) {
             crate::sessions::attach(&app, &a.id)?;
             crate::dlog::log("smoke: reattach_preserves_view");
             result.push(json!({"test":"reattach_preserves_view","pass":app.get_webview(&label).unwrap().window().label()=="main"&&eval(&app,&label,"window.__whatrustSmokeToken==='same-live-view'")?=="true"}));
+            let second_label = crate::accounts::window_label(&b.id);
+            crate::sessions::activate(&app, &label);
+            eval(
+                &app,
+                &second_label,
+                "window.__whatrustCloseSmokeToken='preserve-close-view'",
+            )?;
+            crate::sessions::detach(&app, &b.id)?;
+            app.get_window(&format!("detached-{}", b.id))
+                .ok_or("missing detached window")?
+                .close()
+                .map_err(|e| e.to_string())?;
+            let returned_to_main_without_stealing_selection = wait_until(|| {
+                crate::sessions::selected(&app, "main").as_deref() == Some(label.as_str())
+                    && app
+                        .get_webview(&second_label)
+                        .is_some_and(|view| view.window().label() == "main")
+                    && visible(&app, &label).unwrap_or(false)
+                    && !visible(&app, &second_label).unwrap_or(true)
+            });
+            result.push(json!({"test":"closing_detached_window_preserves_main_account","pass":returned_to_main_without_stealing_selection&&eval(&app,&second_label,"window.__whatrustCloseSmokeToken==='preserve-close-view'")?=="true"}));
             for cycle in 0..12 {
                 crate::sessions::schedule_layout(&app, "main");
                 crate::sessions::detach(&app, &b.id)?;
