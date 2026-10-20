@@ -64,6 +64,10 @@ async (page) => {
   check('unsafe_narrow_header_uses_recovery',await page.locator('#__whatrust_controls').count()===0&&await page.evaluate(()=>window.calls.filter(c=>c.cmd==='report_integration').at(-1).args.mounted===false));
   await page.evaluate(()=>document.getElementById('list').style.width='');await page.waitForTimeout(40);await page.clock.runFor(300);
   check('safe_width_restores_controls_once',await page.locator('#actions>#__whatrust_controls').count()===1);
+  await page.evaluate(()=>{window.__mountMutations=0;window.__probe=new MutationObserver(rs=>{for(const r of rs)for(const n of [...r.addedNodes,...r.removedNodes])if(n.id==='__whatrust_controls')window.__mountMutations++;});window.__probe.observe(document.getElementById('app'),{subtree:true,childList:true});document.getElementById('list').style.width='280px';});
+  await page.waitForTimeout(40);await page.clock.runFor(1600);
+  check('unsafe_header_does_not_retry_own_mutations',await page.evaluate(()=>window.__mountMutations<=4));
+  await page.evaluate(()=>{window.__probe.disconnect();document.getElementById('list').style.width='';});await page.waitForTimeout(40);await page.clock.runFor(300);
   check('reports_whatsapp_dark_theme',await page.evaluate(()=>window.calls.filter(c=>c.cmd==='report_integration').at(-1).args.theme==='dark'));
   await page.evaluate(()=>document.body.style.color='rgb(10,10,10)');await page.clock.runFor(300);
   check('reports_whatsapp_light_theme_change',await page.evaluate(()=>window.calls.filter(c=>c.cmd==='report_integration').at(-1).args.theme==='light'));

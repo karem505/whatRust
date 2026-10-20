@@ -111,6 +111,9 @@
     }else if(host.isConnected)host.remove();
     report(!!target,messageRows().length>0);
     scanMessages();
+    // Consume our own insertion/removal records after processing this layout.
+    // Otherwise an unsuitable header causes append/remove retries every 200ms.
+    if(observer)observer.takeRecords();
   }
   function schedule(){if(scheduled)return;scheduled=setTimeout(function(){scheduled=0;mount();},200);}
   // Adapter contract: only mounted message IDs/direction and explicit mute state.
