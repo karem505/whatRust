@@ -113,3 +113,5 @@ O arquivo de diagnóstico anterior é preservado em `whatrust.previous.log`. Um 
 A página final NSIS e `/R` passam `--show`. Esse argumento sobrepõe somente a preferência de iniciar oculto; não dispensa a senha quando há bloqueio ao iniciar. Autostart com `--minimized` continua oculto. O template está fixado no Tauri CLI 2.12.3, com origem, hash e licenças em `src-tauri/windows`; apenas as duas chamadas de execução são modificadas.
 
 A regressão nativa inclui 12 ciclos de criar/encerrar avisos enquanto troca conta, abre/fecha painel e altera não lidas; chegada bloqueada; remoção de histórico Windows; reabertura exigindo senha; não repetição de eventos atrasados; e início explícito visível com preferência persistida de segundo plano. Todos os testes usam contas e arquivos sintéticos.
+
+Os testes unitários desativam o arquivo de log instalado. As regressões nativas continuam usando seu próprio relatório/log isolado, evitando misturar arquivos sintéticos com evidência do aplicativo real.

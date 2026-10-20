@@ -18,6 +18,9 @@ use std::sync::Mutex;
 static LOCK: Mutex<()> = Mutex::new(());
 
 fn log_path() -> Option<PathBuf> {
+    if cfg!(test) {
+        return None;
+    } // Unit fixtures must never pollute the installed app's log.
     if cfg!(debug_assertions) && std::env::var("WHATRUST_SMOKE").as_deref() == Ok("1") {
         return std::env::var_os("WHATRUST_SMOKE_REPORT")
             .map(PathBuf::from)
@@ -68,5 +71,13 @@ pub fn log(msg: &str) {
         .open(&p)
     {
         let _ = writeln!(f, "[{ts}] {msg}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn unit_fixtures_never_use_the_installed_log() {
+        assert!(super::log_path().is_none());
     }
 }
