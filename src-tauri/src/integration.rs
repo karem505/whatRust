@@ -11,6 +11,7 @@ pub struct Integration(pub Mutex<HashMap<String, Adapter>>);
 pub struct Adapter {
     pub mounted: bool,
     pub detector: bool,
+    pub theme: Option<String>,
     #[serde(skip)]
     pub last_signal: Option<Instant>,
     #[serde(skip)]
@@ -114,6 +115,7 @@ pub fn report_integration(
     app: AppHandle,
     mounted: bool,
     detector: bool,
+    theme: Option<String>,
 ) -> Result<(), String> {
     remote(&window)?;
     app.state::<Integration>()
@@ -125,6 +127,7 @@ pub fn report_integration(
         .clone_from(&Adapter {
             mounted,
             detector,
+            theme: theme.filter(|t| matches!(t.as_str(), "dark" | "light")),
             last_signal: None,
             signals: 0,
         });

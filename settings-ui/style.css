@@ -1,19 +1,28 @@
 /* Local management UI, matching WhatsApp desktop surfaces and spacing. */
 :root {
   color-scheme: light dark;
-  --bg: #fff; --card: #fff; --fg: #111b21; --dim: #667781;
-  --green: #008069; --on-green: #fff; --border: #e9edef;
-  --line: #e9edef; --hover: #f0f2f5; --switch-off: #b7bec2;
-  --danger: #c01c28; --warn: #996600;
+  --bg: #fff; --card: #fff; --panel: #f7f8fa; --fg: #0a0a0a; --dim: #626262;
+  --green: #1daa61; --on-green: #0a0a0a; --border: #e9ebeb;
+  --line: #e9ebeb; --hover: #f1f2f2; --switch-off: #b8bdbb;
+  --danger: #c52c3a; --warn: #996600;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #161717; --card: #161717; --fg: #e9edef; --dim: #aebac1;
-    --green: #00a884; --on-green: #111b21; --border: #303334;
-    --line: #303334; --hover: #252728; --switch-off: #596268;
-    --danger: #ff7b81; --warn: #e3b341;
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #161717; --card: #232626; --panel: #1d1f1f; --fg: #fafafa; --dim: #a1a5a5;
+    --green: #21c063; --on-green: #0a0a0a; --border: #2c3030;
+    --line: #2c3030; --hover: #2a2d2d; --switch-off: #626767;
+    --danger: #ff707a; --warn: #e3b341;
   }
 }
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #161717; --card: #232626; --panel: #1d1f1f; --fg: #fafafa; --dim: #a1a5a5;
+    --green: #21c063; --on-green: #0a0a0a; --border: #2c3030;
+    --line: #2c3030; --hover: #2a2d2d; --switch-off: #626767;
+    --danger: #ff707a; --warn: #e3b341;
+}
+:root[data-theme="light"] { color-scheme:light; }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body {
@@ -28,19 +37,19 @@ button:disabled { opacity: .45; cursor: default; }
 button.secondary { background: transparent; color: var(--green); }
 button:hover:not(:disabled) { filter: brightness(.95); }
 button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
-.app-header { padding: 18px 24px; min-height: 76px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border); }
+.app-header { padding: 12px 24px; min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border); }
 .app-header > div { display: flex; align-items: baseline; gap: 12px; }
-.app-header strong { font-size: 22px; font-weight: 600; }
+.app-header strong { font-size: 20px; font-weight: 600; }
 .app-header span { font-size: 12px; color: var(--dim); }
 .app-header button { color: var(--dim); font-weight: 400; }
 .settings-layout { display: flex; flex: 1; min-height: 0; overflow: hidden; }
-.settings-nav { flex: 0 0 280px; padding: 16px 0; display: flex; flex-direction: column; border-right: 1px solid var(--border); }
-.settings-nav a { display: flex; align-items: center; gap: 24px; padding: 17px 24px; font-size: 15px; color: inherit; text-decoration: none; }
+.settings-nav { flex: 0 0 300px; padding: 12px 8px; display: flex; flex-direction: column; border-right: 1px solid var(--border); }
+.settings-nav a { display: flex; align-items: center; gap: 24px; padding: 16px 20px; border-radius:8px; min-height:56px; font-size: 15px; color: inherit; text-decoration: none; }
 .settings-nav a:hover, .settings-nav a[aria-current=page] { background: var(--hover); }
 .settings-nav svg { width: 22px; height: 22px; stroke: var(--dim); fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
-.prefs { flex: 1; min-width: 0; overflow-y: auto; padding: 30px 40px; scroll-behavior: smooth; }
+.prefs { background:var(--panel); flex: 1; min-width: 0; overflow-y: auto; padding: 30px 40px; scroll-behavior: smooth; }
 .group { max-width: 740px; margin: 0 auto; }
-.group-title { font-size: 21px; font-weight: 500; margin: 0 0 24px; }
+.group-title { font-size: 22px; font-weight: 600; margin: 0 0 24px; }
 .group-note { font-size: 13px; line-height: 1.55; margin: 16px 0; color: var(--dim); }
 .group-note code { font: inherit; background: var(--hover); padding: 2px 4px; }
 .group-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; }
@@ -62,19 +71,20 @@ select option { background: var(--bg); color: var(--fg); }
 .switch::before { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s; }
 .switch:checked { background: var(--green); }
 .switch:checked::before { transform: translateX(16px); }
-.account-row { display: flex; align-items: center; min-height: 88px; gap: 15px; padding: 14px 0; }
+.account-row { border-radius:8px; display: flex; align-items: center; min-height: 88px; gap: 15px; padding: 14px 0; }
+.account-row:hover { background:var(--hover); }
 .account-avatar { height: 48px; width: 48px; border-radius: 50%; background: var(--hover); color: var(--dim); display: grid; place-items: center; font-size: 17px; flex: 0 0 48px; }
 .account-open { display: flex; flex: 1; min-width: 0; align-items: flex-start; flex-direction: column; gap: 5px; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; }
 .acct-name { font-size: 16px; max-width: 100%; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .acct-subtitle { font-size: 13px; color: var(--dim); font-weight: 400; }
 .account-more { font-size: 26px; line-height: 1; width: 36px; height: 36px; border-radius: 50%; padding: 0; color: var(--dim); background: transparent; }
-.acct-unread { background: #25d366; color: #111b21; font-size: 12px; padding: 2px 7px; border-radius: 10px; }
-.account-actions { position: fixed; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); box-shadow: 0 3px 18px #0004; padding: 6px 0; width: 245px; margin: 0; max-height: calc(100vh - 24px); overflow-y: auto; }
+.acct-unread { background: var(--green); color: var(--on-green); font-size: 12px; padding: 2px 7px; border-radius: 10px; }
+.account-actions { position: fixed; border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--fg); box-shadow: 0 2px 12px #0004; padding: 6px 0; width: 245px; margin: 0; max-height: calc(100vh - 24px); overflow-y: auto; }
 .account-actions button { display: block; width: 100%; border-radius: 0; background: transparent; color: inherit; text-align: left; font-size: 14px; font-weight: 400; padding: 12px 22px; }
 .account-actions button:hover, .account-actions button:focus-visible { background: var(--hover); }
 .account-actions .danger { color: var(--danger); }
 .add-row { display: flex; gap: 10px; margin-top: 20px; }
-.add-row input { min-width: 0; flex: 1; background: var(--hover); border: 0; padding: 12px 14px; }
+.add-row input { border-radius:24px; min-width: 0; flex: 1; background: var(--hover); border: 0; padding: 12px 14px; }
 .hotkey-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .hotkey-row input { min-width: 0; width: 190px; }
 .recording { outline: 2px dashed var(--green); }
@@ -90,3 +100,12 @@ select option { background: var(--bg); color: var(--fg); }
   .account-row { gap: 10px; } .account-avatar { width: 40px; height: 40px; flex-basis: 40px; } .group-title { font-size: 19px; }
 }
 @media(max-width:480px) { .app-header span { display: none; } }
+
+/* Same icon hit area as the WhatsApp toolbar. */
+.back-button { display:inline-flex;align-items:center;gap:10px;min-height:40px;padding:8px 12px!important;color:var(--fg)!important; }
+.back-button svg { width:24px;height:24px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;flex:none; }
+.back-button:hover { background:var(--hover); }
+.footer { background:var(--panel); }
+@media(max-width:640px){.settings-nav{padding:12px 4px;}.settings-nav a{padding:16px;}.back-button span{display:none;}.back-button{width:40px;padding:8px!important;}}
+
+.back-button span { font-size:14px;color:inherit; }

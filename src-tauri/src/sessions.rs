@@ -400,6 +400,18 @@ pub fn open_panel(app: &AppHandle, parent: Option<&str>) -> tauri::Result<()> {
         })
         .map(Ok)
         .unwrap_or_else(|| initialize(app, false))?;
+    let theme = selected(app, owner.label())
+        .and_then(|label| {
+            app.state::<crate::integration::Integration>()
+                .0
+                .lock()
+                .unwrap()
+                .get(&label)
+                .and_then(|a| a.theme.clone())
+        })
+        .unwrap_or_else(|| "system".into());
+    let encoded_theme = serde_json::to_string(&theme).expect("theme string");
+    let theme_script = format!("document.documentElement.dataset.theme={encoded_theme}");
     let panel = if let Some(v) = app.get_webview("settings") {
         if v.window().label() != owner.label() {
             v.reparent(&owner)?;
@@ -408,12 +420,14 @@ pub fn open_panel(app: &AppHandle, parent: Option<&str>) -> tauri::Result<()> {
     } else {
         owner.add_child(
             WebviewBuilder::new("settings", WebviewUrl::App("index.html".into()))
+                .initialization_script(format!(r#"document.addEventListener("DOMContentLoaded",function(){{{theme_script}}},{{once:true}})"#))
                 .data_directory(app.path().app_data_dir()?.join("management"))
                 .on_navigation(crate::integration::local_url),
             tauri::LogicalPosition::new(0., 0.),
             tauri::LogicalSize::new(800., 600.),
         )?
     };
+    let _ = panel.eval(theme_script);
     for (l, v) in app.webviews() {
         if l.starts_with("wa-") && v.window().label() == owner.label() {
             let _ = v.hide();

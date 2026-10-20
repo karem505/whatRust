@@ -206,8 +206,8 @@ function wireLock() {
     const current = await Dlg.prompt("", {
       title: "Senha atual",
       password: true,
-      okLabel: "Continue",
-      requiredMessage: "Enter your current password.",
+      okLabel: "Continuar",
+      requiredMessage: "Informe sua senha atual.",
     });
     if (current === null) return;
     const next = await Dlg.prompt("Pelo menos 4 caracteres.", {
@@ -229,7 +229,7 @@ function wireLock() {
       password: true,
       okLabel: "Disable",
       danger: true,
-      requiredMessage: "Enter your current password.",
+      requiredMessage: "Informe sua senha atual.",
     });
     if (current === null) return;
     try {

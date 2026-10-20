@@ -33,11 +33,39 @@ async (page) => {
   check('missing_header_activates_recovery',await page.evaluate(()=>window.calls.some(c=>c.cmd==='report_integration'&&c.args.mounted===false)));
   await page.evaluate(()=>{const h=document.createElement('header');h.innerHTML='<h1>WhatsApp</h1>';document.getElementById('app').prepend(h);});await page.clock.runFor(300);
   check('header_replacement_remounts_once',await page.locator('#__whatrust_controls').count()===1);
-  await page.getByRole('button',{name:'Matheus · 2',exact:true}).click();
+  await page.getByRole('button',{name:'Trocar conta: Matheus · 2 conversas não lidas',exact:true}).click();
   await page.evaluate(()=>window.__whatrustState({accounts:[{id:'default',name:'Matheus',unread:3}],current_id:'default',native_notifications:true}));
   check('live_unread_update_preserves_menu_focus',await page.locator('#__whatrust_controls').evaluate(host=>host.shadowRoot.activeElement?.dataset.item==='default'));
   await page.keyboard.press('Escape');
-  check('escape_restores_focus',await page.locator('#__whatrust_controls').evaluate(host=>host.shadowRoot.activeElement?.title==='Trocar conta do WhatsApp'));
+  check('escape_restores_focus',await page.locator('#__whatrust_controls').evaluate(host=>host.shadowRoot.activeElement?.title==='Conta: Matheus — Trocar conta'));
   for(const width of [560,900,1920]){await page.setViewportSize({width,height:800});const box=await page.locator('#__whatrust_controls').boundingBox();check('header_fits_'+width,box.x>=0&&box.x+box.width<=width);}
+  // Regression from the real WhatsApp DOM: the 64px navigation rail is
+  // itself a header, before two nested list headers and a full-width action row.
+  await page.evaluate(()=>{
+    document.body.innerHTML=`<style>
+      #app{display:flex;width:100vw;height:100vh}#app>#rail{box-sizing:border-box;width:64px;height:100vh;display:flex;align-items:center;flex-direction:column;flex:none}
+      #list{width:clamp(340px,30vw,768px);flex:none}#outer,#inner{width:100%;height:64px;box-sizing:border-box}
+      #inner{display:flex;align-items:center;padding:0 20px}#actions{display:flex;align-items:center;width:100%;height:40px}
+      #actions h1{font:700 20px system-ui;flex:1;margin:0}#native{display:flex;flex:none}#native button{width:40px;height:40px}
+      #side{width:100%;height:600px}#main{flex:1;padding:0}
+      </style><div id="app"><header id="rail"><button>Chats</button><button>Status</button></header><section id="list"><header id="outer"><header id="inner"><div id="actions"><h1>WhatsApp</h1><span id="native"><button aria-label="Menu original">⋮</button><button aria-label="Nova conversa">+</button></span></div></header></header><div id="side"></div></section><div id="main"><header style="height:64px">Conversa</header></div></div>`;
+  });await page.clock.runFor(300);
+  check('rejects_vertical_navigation_header',await page.locator('#actions>#__whatrust_controls').count()===1);
+  for(const width of [560,900,1920]){
+    await page.setViewportSize({width,height:800});await page.waitForTimeout(30);await page.clock.runFor(300);
+    const fit=await page.locator('#__whatrust_controls').evaluate(host=>{
+      const r=host.getBoundingClientRect(),header=host.closest('header').getBoundingClientRect();
+      const buttons=Array.from(host.shadowRoot.querySelectorAll('.bar>button')).map(e=>e.getBoundingClientRect());
+      const native=Array.from(document.querySelectorAll('#native button')).map(e=>e.getBoundingClientRect());
+      return r.left>=header.left&&r.right<=header.right+1&&r.bottom<=header.bottom+1&&buttons.every(b=>b.width>=40&&b.height>=40)&&native.every(b=>b.right<=r.left||b.left>=r.right);
+    });if(!fit)throw Error('header geometry '+JSON.stringify(await page.locator('#__whatrust_controls').evaluate(h=>({host:h.getBoundingClientRect().toJSON(),head:h.closest('header').getBoundingClientRect().toJSON(),buttons:Array.from(h.shadowRoot.querySelectorAll('.bar>button')).map(e=>e.getBoundingClientRect().toJSON()),native:Array.from(document.querySelectorAll('#native button')).map(e=>e.getBoundingClientRect().toJSON())}))));check('realistic_header_controls_fit_'+width,fit);
+  }
+  await page.evaluate(()=>document.getElementById('list').style.width='180px');await page.waitForTimeout(40);await page.clock.runFor(300);
+  check('unsafe_narrow_header_uses_recovery',await page.locator('#__whatrust_controls').count()===0&&await page.evaluate(()=>window.calls.filter(c=>c.cmd==='report_integration').at(-1).args.mounted===false));
+  await page.evaluate(()=>document.getElementById('list').style.width='');await page.waitForTimeout(40);await page.clock.runFor(300);
+  check('safe_width_restores_controls_once',await page.locator('#actions>#__whatrust_controls').count()===1);
+  check('reports_whatsapp_dark_theme',await page.evaluate(()=>window.calls.filter(c=>c.cmd==='report_integration').at(-1).args.theme==='dark'));
+  await page.evaluate(()=>document.body.style.color='rgb(10,10,10)');await page.clock.runFor(300);
+  check('reports_whatsapp_light_theme_change',await page.evaluate(()=>window.calls.filter(c=>c.cmd==='report_integration').at(-1).args.theme==='light'));
   return {passed:true,checks};
 }

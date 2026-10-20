@@ -42,7 +42,7 @@ Os comandos Cargo são executados em `src-tauri`; os demais, na raiz do checkout
 
 ## Entrega e limites
 
-O instalador NSIS é em português, para o usuário atual, com menu Iniciar e executável GUI sem console. A versão desta entrega é `0.6.9-local.2`, acima da versão 0.6.8 anteriormente instalada.
+O instalador NSIS é em português, para o usuário atual, com menu Iniciar e executável GUI sem console. A versão desta entrega é `0.6.9-local.3`, acima da versão 0.6.8 anteriormente instalada.
 
 Os testes automatizados não substituem receber mensagens reais no aplicativo instalado, conferir conversas silenciadas em cada layout suportado, testar chamadas/microfone e confirmar arquivos arrastados/baixados com suas contas. Quando faltam sinais confiáveis, o detector adicional permanece conservador. Esses cenários devem constar como pendentes no recibo de entrega quando não executados.
 
@@ -59,3 +59,11 @@ As contas Windows agora nascem como WebViews filhas, sem uma janela temporária.
 Na primeira execução, o perfil `default` abre a página oficial de vinculação do WhatsApp; um perfil cadastrado não significa uma sessão autenticada. Uma configuração explicitamente vazia recebe um perfil inicial, sem apagar nem modificar outros diretórios. QR Code e login por telefone permanecem no WhatsApp. Não se lê estado privado de autenticação.
 
 A regressão nativa alterna integração/recuperação via IPC real, confere o tamanho físico até o rodapé, redimensiona repetidamente e abre o painel antes de vincular contas. Os cenários usam perfis isolados sem login e não desconectam contas do usuário.
+
+## Controles e estilo (local.3)
+
+A inspeção do WhatsApp real encontrou uma barra de navegação vertical implementada como `header` com 64 px de largura antes do cabeçalho da lista. O adaptador agora verifica geometria, relação com `#side`, orientação horizontal e espaço livre. Cabeçalhos aninhados usam a linha interna de ações. Os botões próprios têm 40 px e SVGs de 24 px; não encolhem nem alteram CSS do WhatsApp. Se não couberem, usa-se o acesso nativo de recuperação. `ResizeObserver` acompanha somente a lateral relevante e a observação de tema fica limitada à raiz e ao corpo.
+
+O menu de contas abre próximo ao botão, respeita os limites da janela e fecha por Esc ou clique externo. O tema claro/escuro resolvido pelo adaptador é transmitido apenas como um valor validado (`light`/`dark`) e aplicado à visualização local quando ela abre. Isso alinha painel, menus, diálogos e controles mesmo quando WhatsApp e Windows usam temas diferentes. A identidade do whatRust permanece indicada no painel.
+
+As regressões incluem navegação vertical antes do cabeçalho correto, cabeçalhos aninhados, ações originais ocupando a largura, telas estreitas, recuperação e mudança de tema. O recebimento real de mensagens continua dependendo de validação pelo usuário.
