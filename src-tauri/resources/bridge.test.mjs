@@ -152,6 +152,9 @@ function makeHarness(options = {}) {
   };
   const window = {
     location: { origin: "https://web.whatsapp.com" },
+    Notification: options.nativeNotification,
+    __WHATRUST_WINDOWS__: !!options.windows,
+    __whatrustPreferNative: !!options.preferNative,
     addEventListener() {},
     __TAURI__: {
       core: {
@@ -585,7 +588,19 @@ async function testUnreadReportsSayWhenThePageHasSettled() {
   assert(first && first.args.settled === false, "the first report after load is not settled");
 }
 
+async function testWindowsNativePreferenceAndFallback() {
+  let nativeCalls=0;
+  const healthy=makeHarness({windows:true,preferNative:true,nativeNotification:class {constructor(){nativeCalls++;}}});
+  new healthy.window.Notification("one",{body:"same"});new healthy.window.Notification("two",{body:"same"});
+  assert(nativeCalls===2,"healthy native route owns delivery");
+  assert(!healthy.invocations.some(x=>x.cmd==="notify"),"page route does not duplicate native delivery");
+  const failed=makeHarness({windows:true,preferNative:true,nativeNotification:class {constructor(){throw Error("permission");}}});
+  new failed.window.Notification("same",{body:"same"});new failed.window.Notification("same",{body:"same"});
+  assert(failed.invocations.filter(x=>x.cmd==="notify").length===2,"native rejection falls back without dropping distinct repeated text");
+}
+
 const tests = [
+  testWindowsNativePreferenceAndFallback,
   testUnreadReportsSayWhenThePageHasSettled,
   testNotificationPathIsLoggedOnceWithoutContent,
   testDownloadToastOffersOpenAndShowInFolder,

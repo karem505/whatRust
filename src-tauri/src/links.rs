@@ -87,14 +87,14 @@ pub fn open_from_outside(app: &AppHandle, raw: &str) {
     crate::window::show_main(app);
 }
 
-fn active_account_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
+fn active_account_window(app: &AppHandle) -> Option<tauri::Webview> {
     if let Some(active) = app.try_state::<crate::accounts::ActiveAccount>() {
         let label = active.lock().unwrap().clone();
-        if let Some(w) = app.get_webview_window(&label) {
+        if let Some(w) = app.get_webview(&label) {
             return Some(w);
         }
     }
-    app.webview_windows()
+    app.webviews()
         .into_iter()
         .find(|(label, _)| label.starts_with("wa-"))
         .map(|(_, w)| w)

@@ -5,12 +5,17 @@ mod biometric;
 mod commands;
 mod dlog;
 mod downloads;
+mod integration;
 mod links;
 mod lock;
 mod notif_icon;
 mod notify;
 mod opener;
+#[cfg(windows)]
+mod sessions;
 mod settings;
+#[cfg(all(windows, debug_assertions))]
+mod smoke;
 mod tray;
 mod unread;
 mod window;
@@ -40,6 +45,12 @@ pub fn run() {
         std::env::set_var("JSC_useSharedArrayBuffer", "1");
     }
 
+    let smoke_mode =
+        cfg!(debug_assertions) && std::env::var("WHATRUST_SMOKE").as_deref() == Ok("1");
+    let mut context = tauri::generate_context!();
+    if smoke_mode {
+        context.config_mut().identifier = "com.karem.whatrust.smoke".into();
+    }
     let mut builder = tauri::Builder::default();
 
     // single-instance MUST be registered first.
@@ -78,7 +89,9 @@ pub fn run() {
             single_instance
         };
 
-        builder = builder.plugin(single_instance.build());
+        if !smoke_mode {
+            builder = builder.plugin(single_instance.build());
+        }
     }
 
     builder = builder.plugin(tauri_plugin_notification::init());
@@ -113,12 +126,27 @@ pub fn run() {
             ));
     }
 
+    #[cfg(windows)]
+    let builder = builder.manage(sessions::Sessions::default());
+
     builder
         .manage(accounts::UnreadMap::default())
         .manage(downloads::Downloads::default())
         .manage(notify::Recent::default())
+        .manage(integration::Integration::default())
         .manage(accounts::ActiveAccount::new("wa-default".into()))
         .invoke_handler(tauri::generate_handler![
+            integration::integration_state,
+            integration::report_integration,
+            integration::report_message_signal,
+            integration::open_app_panel,
+            integration::close_app_panel,
+            integration::detach_account,
+            integration::attach_account,
+            integration::reorder_accounts,
+            integration::notification_diagnostics,
+            integration::test_notification,
+            integration::open_notification_settings,
             commands::notify,
             commands::set_unread,
             commands::dlog,
@@ -146,7 +174,7 @@ pub fn run() {
             commands::unlock_biometric,
             commands::reset_app_lock,
         ])
-        .setup(|app| {
+        .setup(move |app| {
             let handle = app.handle();
 
             // Start a fresh diagnostic log for this launch (issue #3): the only
@@ -166,6 +194,12 @@ pub fn run() {
             // Load accounts (seeds a single `default` on first run / corrupt file).
             let mut f = accounts::load(handle);
             dlog::log("startup: account configuration loaded");
+            if smoke_mode {
+                if f.accounts.len() == 1 {
+                    accounts::add(&mut f, "Conta de teste B");
+                }
+                accounts::save(handle, &f)?;
+            }
 
             // Backfill a persisted store_uuid for any non-default account missing one
             // (older state predating multi-account). Save only if something changed.
@@ -253,9 +287,13 @@ pub fn run() {
                 });
             }
 
+            #[cfg(all(windows, debug_assertions))]
+            if smoke_mode {
+                smoke::start(handle);
+            }
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building whatRust")
         .run(|_app_handle, _event| {
             // macOS delivers scheme links (whatsapp://…, issue #23) as an Apple

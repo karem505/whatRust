@@ -18,6 +18,11 @@ use std::sync::Mutex;
 static LOCK: Mutex<()> = Mutex::new(());
 
 fn log_path() -> Option<PathBuf> {
+    if cfg!(debug_assertions) && std::env::var("WHATRUST_SMOKE").as_deref() == Ok("1") {
+        return std::env::var_os("WHATRUST_SMOKE_REPORT")
+            .map(PathBuf::from)
+            .map(|p| p.with_extension("log"));
+    }
     #[cfg(windows)]
     let base: Option<PathBuf> = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
     #[cfg(not(windows))]

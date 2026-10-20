@@ -1,0 +1,13 @@
+{
+  "identifier": "shell-local",
+  "description": "Local recovery controls only; no password or account mutation permissions.",
+  "webviews": [
+    "shell-*"
+  ],
+  "permissions": [
+    "allow-list-accounts",
+    "allow-open-account",
+    "allow-open-app-panel",
+    "allow-close-app-panel"
+  ]
+}

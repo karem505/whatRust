@@ -8,6 +8,17 @@ fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
             // WhatsApp page (bridge.js)
+            "integration_state",
+            "report_integration",
+            "report_message_signal",
+            "open_app_panel",
+            "close_app_panel",
+            "detach_account",
+            "attach_account",
+            "reorder_accounts",
+            "notification_diagnostics",
+            "test_notification",
+            "open_notification_settings",
             "notify",
             "set_unread",
             "dlog",

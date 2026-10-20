@@ -60,11 +60,23 @@ fn safari_ua(macos_major: u64) -> String {
 const BRIDGE_JS: &str = include_str!("../resources/bridge.js");
 const APP_ICON: &[u8] = include_bytes!("../icons/128x128.png");
 
+/// Platform routing keeps the existing non-Windows account-window flow.
+pub fn open_account_window(app: &AppHandle, account: &Account, hidden: bool) -> tauri::Result<()> {
+    #[cfg(windows)]
+    {
+        crate::sessions::open_account(app, account, hidden)
+    }
+    #[cfg(not(windows))]
+    {
+        build_account_window(app, account, hidden).map(|_| ())
+    }
+}
+
 /// Open (or focus, if it already exists) the window for `account`. The label is
 /// `wa-<id>`; everything the single-account window carried is preserved (user agent,
 /// `bridge.js`, app icon, sizes, close-to-tray), plus per-account session isolation
 /// for non-default accounts.
-pub fn open_account_window(
+pub(crate) fn build_account_window(
     app: &AppHandle,
     account: &Account,
     start_hidden: bool,
@@ -85,6 +97,12 @@ pub fn open_account_window(
         .min_inner_size(560.0, 480.0)
         .icon(icon)?
         .user_agent(&user_agent())
+        .initialization_script(if cfg!(windows) {
+            "window.__WHATRUST_WINDOWS__ = true;"
+        } else {
+            ""
+        })
+        .initialization_script(include_str!("../resources/integration.js"))
         .initialization_script(BRIDGE_JS)
         // Drag-and-drop is done by capturing the OS drop in Rust and streaming the file
         // into the page (see `register_drop_handler` + bridge.js `__whatrustDropFeed`).
@@ -166,6 +184,9 @@ pub fn open_account_window(
                         .is_ok();
                     // Nobody is looking at the window (hidden to the tray, or in
                     // the background): say it with a system notification too.
+                    #[cfg(windows)]
+                    let focused = crate::sessions::account_focused(app, webview.label());
+                    #[cfg(not(windows))]
                     let focused = webview.window().is_focused().unwrap_or(false);
                     if !shown || !focused {
                         if success {
@@ -255,16 +276,18 @@ fn choose_download_destination(
     for (slot, unit) in buffer.iter_mut().zip(suggested_name.encode_utf16()) {
         *slot = unit;
     }
-    let filter: Vec<u16> = "All files\0*.*\0\0".encode_utf16().collect();
-    let title: Vec<u16> = "Save downloaded file\0".encode_utf16().collect();
-    let mut dialog = OPENFILENAMEW::default();
-    dialog.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
-    dialog.hwndOwner = owner.unwrap_or_default();
-    dialog.lpstrFilter = PCWSTR(filter.as_ptr());
-    dialog.lpstrFile = PWSTR(buffer.as_mut_ptr());
-    dialog.nMaxFile = buffer.len() as u32;
-    dialog.lpstrTitle = PCWSTR(title.as_ptr());
-    dialog.Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    let filter: Vec<u16> = "Todos os arquivos\0*.*\0\0".encode_utf16().collect();
+    let title: Vec<u16> = "Salvar arquivo\0".encode_utf16().collect();
+    let mut dialog = OPENFILENAMEW {
+        lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
+        hwndOwner: owner.unwrap_or_default(),
+        lpstrFilter: PCWSTR(filter.as_ptr()),
+        lpstrFile: PWSTR(buffer.as_mut_ptr()),
+        nMaxFile: buffer.len() as u32,
+        lpstrTitle: PCWSTR(title.as_ptr()),
+        Flags: OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR,
+        ..Default::default()
+    };
     if !unsafe { GetSaveFileNameW(&mut dialog) }.as_bool() {
         return None;
     }
@@ -297,7 +320,7 @@ fn route_new_window(app: &AppHandle, label: &str, url: tauri::Url) {
     match new_window_route(&url) {
         NewWindowRoute::InApp(target) => {
             crate::dlog::log("links: WhatsApp link clicked, opening in-app");
-            if let Some(w) = app.get_webview_window(label) {
+            if let Some(w) = app.get_webview(label) {
                 let _ = w.navigate(target);
             }
         }
@@ -324,8 +347,8 @@ fn apply_zoom(win: &WebviewWindow, zoom: f64) {
 /// setting takes effect immediately instead of at the next launch.
 pub fn apply_zoom_all(app: &AppHandle, zoom: f64) {
     for a in accounts::load(app).accounts {
-        if let Some(w) = app.get_webview_window(&accounts::window_label(&a.id)) {
-            apply_zoom(&w, zoom);
+        if let Some(w) = app.get_webview(&accounts::window_label(&a.id)) {
+            let _ = w.set_zoom(crate::settings::sanitize_zoom(zoom));
         }
     }
 }
@@ -1101,6 +1124,51 @@ fn enable_webview_media(win: &WebviewWindow) {
     }
 }
 
+#[cfg(windows)]
+struct NativeNotification {
+    notification: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Notification,
+    shown: bool,
+    clicked: bool,
+    closed: bool,
+}
+#[cfg(windows)]
+thread_local! { static NATIVE_NOTIFICATIONS: std::cell::RefCell<std::collections::HashMap<String, NativeNotification>> = std::cell::RefCell::new(std::collections::HashMap::new()); }
+#[cfg(windows)]
+pub fn native_report(app: &AppHandle, id: &str, action: &str) {
+    let id = id.to_string();
+    let action = action.to_string();
+    let _ = app.run_on_main_thread(move || {
+        NATIVE_NOTIFICATIONS.with(|items| {
+            let mut items = items.borrow_mut();
+            if action == "discard" {
+                items.remove(&id);
+                return;
+            }
+            if let Some(n) = items.get_mut(&id) {
+                unsafe {
+                    if action == "shown" && !n.shown && n.notification.ReportShown().is_ok() {
+                        n.shown = true;
+                    }
+                    if action == "clicked" {
+                        n.clicked = true;
+                    }
+                    if action == "closed" {
+                        n.closed = true;
+                    }
+                    if n.shown && n.clicked {
+                        let _ = n.notification.ReportClicked();
+                        n.clicked = false;
+                    }
+                    if n.shown && n.closed {
+                        let _ = n.notification.ReportClosed();
+                        items.remove(&id);
+                    }
+                }
+            }
+        })
+    });
+}
+
 /// Windows (WebView2): auto-allow microphone/camera permission requests so WhatsApp
 /// voice messages and calls work without a prompt (and can't be wedged by a prior "Block").
 ///
@@ -1155,6 +1223,8 @@ fn enable_media_windows(webview: tauri::webview::PlatformWebview, app: AppHandle
             crate::dlog::log("webview2: NotificationReceived unavailable (runtime too old)");
             return;
         };
+        let native_label = label.clone();
+        let native_app = app.clone();
         let handler = NotificationReceivedEventHandler::create(Box::new(
             move |_wv: Option<ICoreWebView2>,
                   args: Option<ICoreWebView2NotificationReceivedEventArgs>|
@@ -1171,21 +1241,56 @@ fn enable_media_windows(webview: tauri::webview::PlatformWebview, app: AppHandle
                 );
                 // Ours to show: WebView2 draws nothing itself.
                 args.SetHandled(true)?;
-                let _ = notification.ReportShown();
-                crate::notify::from_account(
+                let identity = crate::notify::event_id();
+                let close_app = app.clone();
+                let close_identity = identity.clone();
+                let close = webview2_com::NotificationCloseRequestedEventHandler::create(Box::new(
+                    move |_, _| {
+                        crate::notify::cancel_native(&close_app, &close_identity);
+                        Ok(())
+                    },
+                ));
+                let mut close_token = 0;
+                let _ = notification.add_CloseRequested(&close, &mut close_token);
+                NATIVE_NOTIFICATIONS.with(|items| {
+                    let mut items = items.borrow_mut();
+                    if items.len() >= 256 {
+                        if let Some(key) = items.keys().next().cloned() {
+                            items.remove(&key);
+                        }
+                    }
+                    items.insert(
+                        identity.clone(),
+                        NativeNotification {
+                            notification,
+                            shown: false,
+                            clicked: false,
+                            closed: false,
+                        },
+                    );
+                });
+                crate::notify::from_event(
                     &app,
-                    &label,
+                    &native_label,
                     &title,
                     &body,
                     None,
                     crate::notify::Source::WebView2,
+                    &identity,
+                    false,
+                    None,
                 );
                 Ok(())
             },
         ));
         let mut token: i64 = 0;
         match core24.add_NotificationReceived(&handler, &mut token) {
-            Ok(()) => crate::dlog::log("webview2: NotificationReceived handler installed"),
+            Ok(()) => {
+                native_app
+                    .state::<crate::notify::Recent>()
+                    .set_native(&label, true);
+                crate::dlog::log("webview2: NotificationReceived handler installed");
+            }
             Err(e) => crate::dlog::log(&format!("webview2: NotificationReceived failed: {e}")),
         }
     }
@@ -1193,6 +1298,16 @@ fn enable_media_windows(webview: tauri::webview::PlatformWebview, app: AppHandle
 
 /// Show + unminimize + focus an account window by its `wa-<id>` label.
 pub fn show_account(app: &AppHandle, label: &str) {
+    #[cfg(windows)]
+    {
+        crate::sessions::activate(app, label);
+    }
+    #[cfg(not(windows))]
+    show_account_legacy(app, label);
+}
+
+#[cfg(not(windows))]
+fn show_account_legacy(app: &AppHandle, label: &str) {
     if !crate::lock::is_unlocked(app) {
         crate::lock::show_lock_window(app);
         return;
@@ -1215,14 +1330,14 @@ pub fn show_active(app: &AppHandle) {
     }
     if let Some(active) = app.try_state::<ActiveAccount>() {
         let label = active.lock().unwrap().clone();
-        if app.get_webview_window(&label).is_some() {
+        if app.get_webview(&label).is_some() {
             show_account(app, &label);
             return;
         }
     }
     // Fall back to any account window.
     if let Some(label) = app
-        .webview_windows()
+        .webviews()
         .keys()
         .find(|l| l.starts_with("wa-"))
         .cloned()
@@ -1244,6 +1359,7 @@ pub fn show_main(app: &AppHandle) {
 }
 
 /// What a toggle should do given the active window's visibility.
+#[cfg(any(not(windows), test))]
 #[derive(Debug, PartialEq, Eq)]
 pub enum ToggleAct {
     Hide,
@@ -1252,6 +1368,7 @@ pub enum ToggleAct {
 
 /// Pure toggle decision: a visible active window is hidden; anything else (a hidden
 /// window, or no active window at all → `None`) is shown.
+#[cfg(any(not(windows), test))]
 pub fn toggle_decision(active_visible: Option<bool>) -> ToggleAct {
     match active_visible {
         Some(true) => ToggleAct::Hide,
@@ -1266,6 +1383,16 @@ pub fn toggle_decision(active_visible: Option<bool>) -> ToggleAct {
 /// while locked. The "hide" path only triggers when an account window is visible,
 /// which cannot happen while locked.
 pub fn toggle_active(app: &AppHandle) {
+    #[cfg(windows)]
+    {
+        crate::sessions::toggle(app);
+    }
+    #[cfg(not(windows))]
+    toggle_active_legacy(app);
+}
+
+#[cfg(not(windows))]
+fn toggle_active_legacy(app: &AppHandle) {
     let label = app
         .try_state::<ActiveAccount>()
         .map(|a| a.lock().unwrap().clone());
@@ -1298,6 +1425,18 @@ pub fn open_settings_window(app: &AppHandle) {
 }
 
 fn open_settings_window_inner(app: &AppHandle) {
+    #[cfg(windows)]
+    {
+        if let Err(e) = crate::sessions::open_panel(app, None) {
+            crate::dlog::log(&format!("panel: {e}"));
+        }
+    }
+    #[cfg(not(windows))]
+    open_settings_legacy(app);
+}
+
+#[cfg(not(windows))]
+fn open_settings_legacy(app: &AppHandle) {
     if !crate::lock::is_unlocked(app) {
         crate::lock::show_lock_window(app);
         return;

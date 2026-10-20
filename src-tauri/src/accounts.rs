@@ -124,6 +124,21 @@ pub fn rename(f: &mut AccountsFile, id: &str, name: &str) -> Result<(), String> 
     Ok(())
 }
 
+/// Exact permutation only: no omitted or repeated accounts.
+pub fn reorder(f: &mut AccountsFile, ids: &[String]) -> Result<(), String> {
+    let unique: std::collections::HashSet<_> = ids.iter().collect();
+    if ids.len() != f.accounts.len()
+        || unique.len() != ids.len()
+        || ids.iter().any(|id| !f.accounts.iter().any(|a| &a.id == id))
+    {
+        return Err("A ordem deve conter todas as contas uma única vez".into());
+    }
+    for a in &mut f.accounts {
+        a.order = ids.iter().position(|id| id == &a.id).unwrap() as u32;
+    }
+    Ok(())
+}
+
 /// Sum of unread across all accounts.
 pub fn aggregate_unread(map: &HashMap<String, u32>) -> u32 {
     map.values().copied().sum()
@@ -236,6 +251,18 @@ pub fn gen_store_uuid() -> [u8; 16] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reorder_requires_an_exact_permutation_without_changing_profiles() {
+        let mut f = AccountsFile::default();
+        let other = add(&mut f, "B");
+        let before = f.clone();
+        assert!(reorder(&mut f, &["default".into(), "default".into()]).is_err());
+        assert_eq!(f, before);
+        reorder(&mut f, &[other.id.clone(), "default".into()]).unwrap();
+        assert_eq!(startup_account(&f).unwrap().id, other.id);
+        assert_eq!(f.accounts[1].store_uuid, before.accounts[1].store_uuid);
+    }
 
     #[test]
     fn startup_preference_survives_roundtrip_without_changing_profile_identity() {

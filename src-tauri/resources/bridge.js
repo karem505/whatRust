@@ -22,6 +22,7 @@
   // A small, keyboard-accessible account switcher owned by whatRust. It exposes
   // only account names/unread counts and a request to focus an existing account.
   function mountAccountSwitcher() {
+    if (window.__WHATRUST_WINDOWS__) return;
     if (!document.body || document.getElementById("__whatrust_accounts")) return;
     // Join the WhatsApp header's normal layout, so the control never covers
     // the navigation icons or conversations. Wait until the header is mounted.
@@ -149,7 +150,7 @@
       if (now - recentNotif[k] > DEDUP_MS) delete recentNotif[k]; // prune stale keys
     }
     var key = title + " " + body;
-    if (recentNotif[key] && now - recentNotif[key] <= DEDUP_MS) return false;
+    if (!window.__WHATRUST_WINDOWS__ && recentNotif[key] && now - recentNotif[key] <= DEDUP_MS) return false;
     recentNotif[key] = now;
     var scheme = typeof icon === "string" && (/^(blob|data|https):/.exec(icon) || [])[1];
     if (!scheme) {
@@ -285,7 +286,9 @@
 
   // 2) Notification override — forward to a native OS notification via Rust.
   try {
+    var OriginalNotification = window.Notification;
     function ShimNotification(title, options) {
+      if (window.__whatrustPreferNative && typeof OriginalNotification === "function") { try { return new OriginalNotification(title, options); } catch (e) { notePath("native constructor refused; page fallback"); } }
       options = options || {};
       this.title = title;
       this.body = options.body || "";
@@ -349,7 +352,10 @@
   try {
     var SWR = window.ServiceWorkerRegistration;
     if (SWR && SWR.prototype && typeof SWR.prototype.showNotification === "function") {
+      var originalShowNotification = SWR.prototype.showNotification;
+      var originalGetNotifications = SWR.prototype.getNotifications;
       SWR.prototype.showNotification = function (title, options) {
+        if (window.__whatrustPreferNative) return originalShowNotification.call(this, title, options).catch(function(){options=options||{};nativeNotify(title,options.body,options.icon);});
         options = options || {};
         notePath("page registration.showNotification()");
         // Route through nativeNotify so the service-worker path shares the same de-dup
@@ -360,6 +366,7 @@
       };
       if (typeof SWR.prototype.getNotifications === "function") {
         SWR.prototype.getNotifications = function () {
+          if (window.__whatrustPreferNative) return originalGetNotifications.apply(this, arguments);
           return Promise.resolve([]);
         };
       }

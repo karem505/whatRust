@@ -20,7 +20,11 @@ impl LockState {
 /// Whether a window label should be hidden behind the lock screen. Pure, unit-tested.
 /// The lock window itself is never hidden; everything user-facing (`wa-*` + settings) is.
 pub fn should_hide(label: &str) -> bool {
-    label != "lock" && (label.starts_with("wa-") || label == "settings")
+    label != "lock"
+        && (label.starts_with("wa-")
+            || label == "settings"
+            || label == "main"
+            || label.starts_with("detached-"))
 }
 
 /// Pure predicate behind the lock-window IPC guard.
@@ -28,8 +32,8 @@ pub fn is_lock_label(label: &str) -> bool {
     label == "lock"
 }
 
-pub fn is_lock_window(window: &tauri::Window) -> bool {
-    is_lock_label(window.label())
+pub fn is_lock_window(window: &tauri::Webview) -> bool {
+    is_lock_label(window.label()) && crate::integration::trusted_local(window)
 }
 
 /// Read the current unlocked flag. Defaults to `true` (unlocked) when the state is
@@ -64,7 +68,7 @@ pub fn lock_now(app: &AppHandle) {
     }
     *state.unlocked.lock().unwrap() = false;
     let mut hidden = Vec::new();
-    for (label, w) in app.webview_windows() {
+    for (label, w) in app.windows() {
         if should_hide(&label) && w.is_visible().unwrap_or(false) {
             let _ = w.hide();
             hidden.push(label);
@@ -90,9 +94,13 @@ pub fn unlock(app: &AppHandle) {
         crate::window::show_active(app);
     } else {
         for label in hidden {
-            crate::window::show_account(app, &label);
+            if let Some(w) = app.get_window(&label) {
+                let _ = w.show();
+            }
         }
     }
+    #[cfg(windows)]
+    crate::sessions::restore_pending(app);
 }
 
 /// Create-or-show the dedicated lock window. `content_protected` blocks screen

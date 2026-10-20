@@ -65,7 +65,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
                 "reload" => {
                     if let Some(active) = app.try_state::<crate::accounts::ActiveAccount>() {
                         let label = active.lock().unwrap().clone();
-                        if let Some(w) = app.get_webview_window(&label) {
+                        if let Some(w) = app.get_webview(&label) {
                             let _ = w.eval("window.location.reload()");
                         }
                     }

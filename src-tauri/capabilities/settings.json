@@ -2,7 +2,6 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "settings-local",
   "description": "Local IPC for the settings window: settings, accounts and app-lock management.",
-  "windows": ["settings"],
   "permissions": [
     "core:default",
     "allow-get-settings",
@@ -19,6 +18,17 @@
     "allow-disable-app-lock",
     "allow-set-app-lock-options",
     "allow-set-biometric-enabled",
-    "allow-lock-app"
+    "allow-lock-app",
+    "allow-open-app-panel",
+    "allow-close-app-panel",
+    "allow-detach-account",
+    "allow-attach-account",
+    "allow-reorder-accounts",
+    "allow-notification-diagnostics",
+    "allow-test-notification",
+    "allow-open-notification-settings"
+  ],
+  "webviews": [
+    "settings"
   ]
 }

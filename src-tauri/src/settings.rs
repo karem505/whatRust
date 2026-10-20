@@ -9,6 +9,9 @@ pub struct Settings {
     pub hotkey_enabled: bool,
     pub hotkey: String,
     pub notifications: bool,
+    pub notify_when_focused: bool,
+    pub notify_active_chat: bool,
+    pub respect_muted: bool,
     /// Display zoom for the WhatsApp webview, 1.0 = the site's own sizing.
     pub zoom: f64,
     /// macOS only (issue #44): show the icon in the menu bar. With it off, the
@@ -26,6 +29,9 @@ impl Default for Settings {
             hotkey_enabled: true,
             hotkey: "CmdOrCtrl+Shift+W".to_string(),
             notifications: true,
+            notify_when_focused: true,
+            notify_active_chat: true,
+            respect_muted: true,
             zoom: 1.0,
             menu_bar_icon: true,
         }
@@ -204,6 +210,13 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     use super::{flatpak_autostart_entry, is_valid_flatpak_id};
+
+    #[test]
+    fn old_settings_enable_new_notification_preferences() {
+        let s: Settings = serde_json::from_str(r#"{"notifications":false}"#).unwrap();
+        assert!(!s.notifications);
+        assert!(s.notify_when_focused && s.notify_active_chat && s.respect_muted);
+    }
 
     #[cfg(target_os = "linux")]
     #[test]

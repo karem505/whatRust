@@ -1,5 +1,5 @@
 const invoke = window.__TAURI__.core.invoke;
-const BOOLS = ["close_to_tray", "start_minimized", "autostart", "notifications", "hotkey_enabled", "menu_bar_icon"];
+const BOOLS = ["close_to_tray", "start_minimized", "autostart", "notifications", "hotkey_enabled", "menu_bar_icon", "notify_when_focused", "notify_active_chat", "respect_muted"];
 // The menu-bar icon can only be hidden on macOS, where the Dock icon still
 // brings the window back (issue #44).
 const IS_MAC = /Mac/.test(navigator.platform || navigator.userAgent);
@@ -38,10 +38,10 @@ async function save() {
   try {
     const warn = await invoke("set_settings", { settings: s });
     if (warn) {
-      note.textContent = "Saved with warning: " + warn;
+      note.textContent = "Salvo com observação: " + warn;
       setTimeout(() => (note.textContent = ""), 6000);
     } else {
-      note.textContent = "Saved ✓";
+      note.textContent = "Alterações salvas ✓";
       setTimeout(() => (note.textContent = ""), 1500);
     }
   } catch (e) {
@@ -58,7 +58,7 @@ async function accountAction(action) {
   document.querySelectorAll('#accounts-list button, .add-row input, .add-row button, #startup_account')
     .forEach(el => { el.disabled = true; });
   const note = document.getElementById('accounts-note');
-  note.textContent = 'Working…';
+  note.textContent = 'Aguarde…';
   try {
     await action();
     note.textContent = '';
@@ -73,73 +73,43 @@ async function accountAction(action) {
   }
 }
 
+function accountMenu(a, accounts, anchor) {
+  document.getElementById("account-actions")?.remove();
+  const menu = document.createElement("div"); menu.id="account-actions";menu.className="account-actions";
+  const nativePopover=typeof menu.showPopover==="function";
+  if(nativePopover)menu.setAttribute("popover", "auto");
+  else {menu.style.position="fixed";menu.style.zIndex="9999";menu.showPopover=()=>{menu.style.display="block";menu.dataset.open="true";};menu.hidePopover=()=>{menu.style.display="none";menu.dataset.open="false";anchor.focus();};}menu.setAttribute("role", "menu");menu.setAttribute("aria-label", "Ações de " + a.name);
+  const actions = [
+    ["Abrir conta", () => accountAction(() => invoke("open_account", {id:a.id}))],
+    ...( /Win/.test(navigator.platform || navigator.userAgent) ? [[a.detached ? "Reintegrar à janela" : "Abrir em janela separada", () => accountAction(() => invoke(a.detached?"attach_account":"detach_account",{id:a.id}))]] : []),
+    ["Usar ao iniciar",()=>accountAction(()=>invoke("set_default_account",{id:a.id}))],
+    ["Renomear",async()=>{const name=await Dlg.prompt("",{title:"Renomear conta",value:a.name,okLabel:"Renomear",requiredMessage:"Informe um nome."});if(name!==null&&name!==a.name)await accountAction(()=>invoke("rename_account",{id:a.id,name}));}],
+  ];
+  const index=accounts.findIndex(x=>x.id===a.id);
+  for(const [delta,label] of [[-1,"Mover para cima"],[1,"Mover para baixo"]]) {
+    if(index+delta<0||index+delta>=accounts.length)continue;
+    actions.push([label,()=>accountAction(()=>{const ids=accounts.map(x=>x.id);[ids[index],ids[index+delta]]=[ids[index+delta],ids[index]];return invoke("reorder_accounts",{ids});})]);
+  }
+  if(accounts.length>1)actions.push(["Remover conta",async()=>{if(await Dlg.confirm("A sessão local desta conta será apagada. Para usá-la novamente, você precisará ler o QR code.",{title:`Remover "${a.name}"?`,okLabel:"Remover",danger:true}))await accountAction(()=>invoke("remove_account",{id:a.id}));}]);
+  for(const [label,action] of actions){const button=document.createElement("button");button.type="button";button.textContent=label;button.setAttribute("role","menuitem");if(label==="Remover conta")button.className="danger";button.onclick=()=>{menu.hidePopover();menu.dataset.open="false";action();};menu.appendChild(button);}
+  document.body.appendChild(menu);const rect=anchor.getBoundingClientRect();menu.style.top=Math.max(12,Math.min(rect.bottom+4,innerHeight-menu.childElementCount*42-16))+"px";menu.style.right=Math.max(12,innerWidth-rect.right)+"px";menu.showPopover();menu.dataset.open="true";menu.querySelector("button").focus();
+  menu.addEventListener("keydown",e=>{if(e.key==="Escape"&&!nativePopover){e.preventDefault();menu.hidePopover();return;}const buttons=[...menu.querySelectorAll("button")],at=buttons.indexOf(document.activeElement);if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();buttons[(at+(e.key==="ArrowDown"?1:-1)+buttons.length)%buttons.length].focus();}});
+  menu.addEventListener("toggle",e=>{menu.dataset.open=String(e.newState==="open");anchor.setAttribute("aria-expanded",String(e.newState==="open"));if(e.newState==="closed")anchor.focus();});
+}
 function renderAccounts(accounts) {
-  const list = document.getElementById("accounts-list");
-  list.textContent = "";
-  const canRemove = accounts.length > 1;
-  const startup = document.getElementById('startup_account');
-  startup.textContent = '';
-
-  for (const a of accounts) {
-    const row = document.createElement("div");
-    row.className = "account-row";
-
-    const name = document.createElement("span");
-    name.className = "acct-name";
-    name.textContent = a.name;
-    row.appendChild(name);
-    const option = document.createElement('option');
-    option.value = a.id;
-    option.textContent = a.name;
-    option.selected = a.is_default;
-    startup.appendChild(option);
-
-    if (a.unread > 0) {
-      const badge = document.createElement("span");
-      badge.className = "acct-unread";
-      badge.textContent = String(a.unread);
-      row.appendChild(badge);
-    }
-
-    const openBtn = document.createElement("button");
-    openBtn.className = "secondary";
-    openBtn.textContent = "Open";
-    openBtn.addEventListener("click", async () => {
-      await accountAction(() => invoke("open_account", { id: a.id }));
-    });
-    row.appendChild(openBtn);
-
-    const renameBtn = document.createElement("button");
-    renameBtn.className = "secondary";
-    renameBtn.textContent = "Rename";
-    renameBtn.addEventListener("click", async () => {
-      const next = await Dlg.prompt("", {
-        title: "Rename account",
-        value: a.name,
-        okLabel: "Rename",
-        requiredMessage: "An account needs a name.",
-      });
-      if (next === null || next === a.name) return;
-      await accountAction(() => invoke("rename_account", { id: a.id, name: next }));
-    });
-    row.appendChild(renameBtn);
-
-    const removeBtn = document.createElement("button");
-    removeBtn.className = "secondary";
-    removeBtn.textContent = "Remove";
-    removeBtn.disabled = !canRemove;
-    removeBtn.addEventListener("click", async () => {
-      const ok = await Dlg.confirm(`Its local session will be deleted, and you will need to scan the QR code again to use this number.`, {
-        title: `Remove "${a.name}"?`,
-        okLabel: "Remove",
-        danger: true,
-      });
-      if (!ok) return;
-      await accountAction(() => invoke("remove_account", { id: a.id }));
-    });
-    row.appendChild(removeBtn);
-
-    list.appendChild(row);
+  const list=document.getElementById("accounts-list"),startup=document.getElementById("startup_account");
+  if(document.getElementById("account-actions")?.dataset.open==="true")return;
+  list.replaceChildren();startup.replaceChildren();
+  for(const a of accounts){
+    const option=document.createElement("option");option.value=a.id;option.textContent=a.name;option.selected=a.is_default;startup.appendChild(option);
+    const row=document.createElement("div");row.className="account-row";
+    const avatar=document.createElement("span");avatar.className="account-avatar";avatar.setAttribute("aria-hidden","true");avatar.textContent=a.name.trim().split(/\s+/).slice(0,2).map(x=>x[0]).join("").toUpperCase();
+    const open=document.createElement("button");open.type="button";open.className="account-open";open.setAttribute("aria-label","Abrir "+a.name);
+    const name=document.createElement("span");name.className="acct-name";name.textContent=a.name;
+    const info=document.createElement("span");info.className="acct-subtitle";info.textContent=a.detached?"Em janela separada":a.is_default?"Conta ao iniciar":"WhatsApp";open.append(name,info);open.onclick=()=>accountAction(()=>invoke("open_account",{id:a.id}));
+    row.append(avatar,open);
+    if(a.unread){const badge=document.createElement("span");badge.className="acct-unread";badge.textContent=a.unread;badge.title=a.unread+" conversas não lidas";row.appendChild(badge);}
+    const more=document.createElement("button");more.type="button";more.className="account-more";more.textContent="⋮";more.setAttribute("aria-label","Opções de "+a.name);more.setAttribute("aria-haspopup","menu");more.onclick=()=>accountMenu(a,accounts,more);row.appendChild(more);list.appendChild(row);
   }
 }
 
@@ -148,7 +118,7 @@ async function loadAccounts() {
     const accounts = await invoke("list_accounts");
     renderAccounts(accounts);
   } catch (e) {
-    document.getElementById('accounts-note').textContent = 'Could not load accounts: ' + String(e);
+    document.getElementById('accounts-note').textContent = 'Não foi possível carregar as contas: ' + String(e);
   }
 }
 
@@ -199,7 +169,7 @@ async function loadLock() {
   if (s.enabled) {
     const row = document.getElementById("biometric_row");
     row.hidden = !s.biometric_available;
-    document.getElementById("biometric_label").textContent = "Use " + s.biometric_label;
+    document.getElementById("biometric_label").textContent = "Usar " + s.biometric_label;
     document.getElementById("biometric_enabled").checked = s.biometric_enabled;
     document.getElementById("lock_on_launch").checked = s.lock_on_launch;
     document.getElementById("lock_on_hide").checked = s.lock_on_hide;
@@ -225,23 +195,23 @@ function wireLock() {
       document.getElementById("lock_pw1").value = "";
       document.getElementById("lock_pw2").value = "";
       await loadLock();
-    } catch (e) { await Dlg.alert(String(e), { title: "Could not enable the lock" }); }
+    } catch (e) { await Dlg.alert(String(e), { title: "Não foi possível ativar o bloqueio" }); }
   });
 
   document.getElementById("lock_now").addEventListener("click", async () => {
-    try { await invoke("lock_app"); } catch (e) { await Dlg.alert(String(e), { title: "Could not lock" }); }
+    try { await invoke("lock_app"); } catch (e) { await Dlg.alert(String(e), { title: "Não foi possível bloquear" }); }
   });
 
   document.getElementById("change_pw").addEventListener("click", async () => {
     const current = await Dlg.prompt("", {
-      title: "Current password",
+      title: "Senha atual",
       password: true,
       okLabel: "Continue",
       requiredMessage: "Enter your current password.",
     });
     if (current === null) return;
-    const next = await Dlg.prompt("At least 4 characters.", {
-      title: "New password",
+    const next = await Dlg.prompt("Pelo menos 4 caracteres.", {
+      title: "Nova senha",
       password: true,
       okLabel: "Change",
       requiredMessage: "Enter a new password.",
@@ -249,13 +219,13 @@ function wireLock() {
     if (next === null) return;
     try {
       await invoke("change_app_lock_password", { current, new: next, confirm: next });
-      await Dlg.alert("Your app-lock password has been changed.", { title: "Password changed" });
-    } catch (e) { await Dlg.alert(String(e), { title: "Could not change the password" }); }
+      await Dlg.alert("Sua senha de bloqueio foi alterada.", { title: "Senha alterada" });
+    } catch (e) { await Dlg.alert(String(e), { title: "Não foi possível alterar a senha" }); }
   });
 
   document.getElementById("disable_lock").addEventListener("click", async () => {
-    const current = await Dlg.prompt("Enter your current password to turn the app lock off.", {
-      title: "Disable app lock",
+    const current = await Dlg.prompt("Informe sua senha atual para desativar o bloqueio.", {
+      title: "Desativar bloqueio",
       password: true,
       okLabel: "Disable",
       danger: true,
@@ -265,7 +235,7 @@ function wireLock() {
     try {
       await invoke("disable_app_lock", { current });
       await loadLock();
-    } catch (e) { await Dlg.alert(String(e), { title: "Could not disable the lock" }); }
+    } catch (e) { await Dlg.alert(String(e), { title: "Não foi possível desativar o bloqueio" }); }
   });
 
   document.getElementById("biometric_enabled").addEventListener("change", async (e) => {
@@ -273,12 +243,12 @@ function wireLock() {
       await invoke("set_biometric_enabled", { enabled: e.target.checked });
     } catch (err) {
       e.target.checked = !e.target.checked; // revert on failure
-      await Dlg.alert(String(err), { title: "Could not change biometric unlock" });
+      await Dlg.alert(String(err), { title: "Não foi possível alterar a biometria" });
     }
     await loadLock();
   });
 
-  const reportLockOptionFailure = (e) => Dlg.alert(String(e), { title: "Could not save" });
+  const reportLockOptionFailure = (e) => Dlg.alert(String(e), { title: "Não foi possível salvar" });
   for (const id of ["lock_on_launch", "lock_on_hide"]) {
     document.getElementById(id).addEventListener("change", () => saveLockOptions().catch(reportLockOptionFailure));
   }
@@ -303,7 +273,7 @@ function stopRecording(restore) {
   window.removeEventListener("keydown", onRecordKeydown, true);
   window.removeEventListener("blur", onRecordBlur, true);
   const btn = document.getElementById("record_hotkey");
-  btn.textContent = "Record";
+  btn.textContent = "Gravar";
   btn.classList.remove("recording");
   if (restore) document.getElementById("hotkey").value = hotkeyPrev;
 }
@@ -317,9 +287,9 @@ function onRecordKeydown(e) {
   if (e.key === "Escape") { setHotkeyHint(""); stopRecording(true); return; }
   const mods = { ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, meta: e.metaKey };
   const accel = window.HotkeyFmt.comboToAccelerator(mods, e.code);
-  if (accel === null) { setHotkeyHint("Unsupported key — try another."); return; }
+  if (accel === null) { setHotkeyHint("Tecla não suportada. Tente outra."); return; }
   if (!window.HotkeyFmt.isValidCombo(mods, e.code)) {
-    setHotkeyHint("Add a modifier (Ctrl / Alt / Shift).");
+    setHotkeyHint("Inclua Ctrl, Alt ou Shift.");
     return;
   }
   document.getElementById("hotkey").value = accel;
@@ -332,7 +302,7 @@ function toggleRecording() {
   recordingHotkey = true;
   hotkeyPrev = document.getElementById("hotkey").value;
   const btn = document.getElementById("record_hotkey");
-  btn.textContent = "Press keys… (Esc to cancel)";
+  btn.textContent = "Pressione as teclas… (Esc cancela)";
   btn.classList.add("recording");
   setHotkeyHint("");
   window.addEventListener("keydown", onRecordKeydown, true);

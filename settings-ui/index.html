@@ -1,54 +1,54 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>whatRust — Settings</title>
+    <title>whatRust — Configurações</title>
     <link rel="stylesheet" href="style.css" />
     <link rel="stylesheet" href="dialog.css" />
   </head>
   <body>
+    <header class="app-header"><div><strong>Configurações</strong><span>whatRust</span></div><button id="back-to-chat" type="button" class="secondary" hidden>← Voltar</button></header>
+    <div class="settings-layout"><nav class="settings-nav" aria-label="Configurações"><a href="#sec-contas">Contas</a><a href="#sec-notificacoes">Notificações</a><a href="#sec-aparencia">Aparência</a><a href="#sec-seguranca">Segurança</a><a href="#sec-sistema">Inicialização</a><a href="#sec-atalhos">Atalhos</a><a href="#sec-diagnostico">Diagnóstico</a></nav>
     <!-- Preferences laid out the way GNOME/Libadwaita does it (issue #21): titled
          groups of boxed-list rows, a title + subtitle on the left and the control
          on the right. Element ids are what main.js uses; keep them stable. -->
     <main class="prefs">
-      <section class="group">
-        <h2 class="group-title">Accounts</h2>
+      <section class="group" id="sec-contas">
+        <h2 class="group-title">Contas</h2>
         <label class="row startup-row">
-          <span class="row-text"><span class="row-title">Account to open at startup</span></span>
-          <select id="startup_account" aria-label="Account to open at startup"></select>
+          <span class="row-text"><span class="row-title">Conta ao iniciar</span></span>
+          <select id="startup_account" aria-label="Conta ao iniciar"></select>
         </label>
         <div id="accounts-list" class="boxed-list"></div>
         <div class="add-row">
-          <input type="text" id="new_account_name" placeholder="New account name" aria-label="New account name" />
-          <button id="add_account">Add</button>
+          <input type="text" id="new_account_name" placeholder="Nome da nova conta" aria-label="Nome da nova conta" />
+          <button id="add_account">Adicionar</button>
         </div>
-        <p id="macos-note" class="macos-note" hidden>Multiple accounts require macOS 14 or newer.</p>
+        <p id="macos-note" class="macos-note" hidden>Múltiplas contas exigem macOS 14 ou superior.</p>
         <p id="accounts-note" class="group-note" role="status" aria-live="polite"></p>
       </section>
+      <section class="group" id="sec-notificacoes"><h2 class="group-title">Notificações</h2><div class="boxed-list">
+<label class="row"><span class="row-text"><span class="row-title">Receber notificações</span><span class="row-subtitle">Ativa os avisos de mensagens do whatRust.</span></span><input type="checkbox" class="switch" id="notifications"></label><label class="row"><span class="row-text"><span class="row-title">Avisar com o aplicativo aberto</span><span class="row-subtitle">Receber avisos mesmo com a janela em primeiro plano.</span></span><input type="checkbox" class="switch" id="notify_when_focused"></label><label class="row"><span class="row-text"><span class="row-title">Avisar na conversa que estou lendo</span><span class="row-subtitle">Também avisar mensagens novas na conversa aberta.</span></span><input type="checkbox" class="switch" id="notify_active_chat"></label><label class="row"><span class="row-text"><span class="row-title">Respeitar conversas silenciadas</span><span class="row-subtitle">Quando o silenciamento não puder ser confirmado, o detector adicional permanece silencioso.</span></span><input type="checkbox" class="switch" id="respect_muted"></label></div><p class="group-note">O detector adicional só usa mensagens novas identificáveis. Conversas silenciadas, histórico e estados desconhecidos não geram avisos adicionais.</p></section>
 
-      <section class="group">
-        <h2 class="group-title">Behavior</h2>
+      <section class="group" id="sec-sistema">
+        <h2 class="group-title">Comportamento</h2>
         <div class="boxed-list">
           <label class="row">
-            <span class="row-text"><span class="row-title">Close to tray</span>
-              <span class="row-subtitle">Keep running in the background when the window is closed</span></span>
+            <span class="row-text"><span class="row-title">Continuar em segundo plano ao fechar</span>
+              <span class="row-subtitle">Mantém suas contas conectadas ao fechar a janela</span></span>
             <input type="checkbox" class="switch" id="close_to_tray" />
           </label>
           <label class="row">
-            <span class="row-text"><span class="row-title">Start minimized</span>
-              <span class="row-subtitle">Open in the tray instead of a window</span></span>
+            <span class="row-text"><span class="row-title">Iniciar minimizado</span>
+              <span class="row-subtitle">Iniciar sem abrir a janela principal</span></span>
             <input type="checkbox" class="switch" id="start_minimized" />
           </label>
           <label class="row">
-            <span class="row-text"><span class="row-title">Launch at startup</span></span>
+            <span class="row-text"><span class="row-title">Iniciar com o sistema</span></span>
             <input type="checkbox" class="switch" id="autostart" />
           </label>
-          <label class="row">
-            <span class="row-text"><span class="row-title">Notifications</span>
-              <span class="row-subtitle">Show new messages as system notifications</span></span>
-            <input type="checkbox" class="switch" id="notifications" />
-          </label>
+
           <label class="row" id="menu_bar_icon_row" hidden>
             <span class="row-text"><span class="row-title">Show menu bar icon</span>
               <span class="row-subtitle">When off, click the Dock icon to bring whatRust back</span></span>
@@ -57,100 +57,106 @@
         </div>
       </section>
 
-      <section class="group">
-        <h2 class="group-title">Appearance</h2>
+      <section class="group" id="sec-aparencia">
+        <h2 class="group-title">Aparência</h2>
         <div class="boxed-list">
           <label class="row">
-            <span class="row-text"><span class="row-title">Display size</span>
-              <span class="row-subtitle">Scales the whole WhatsApp page. Smaller leaves more room for the conversation on a high-DPI display.</span></span>
+            <span class="row-text"><span class="row-title">Tamanho da interface</span>
+              <span class="row-subtitle">Ajusta o tamanho do WhatsApp sem alterar as outras contas.</span></span>
             <select id="zoom">
-              <option value="0.75">Smaller</option>
-              <option value="0.85">Small</option>
-              <option value="1">Default</option>
-              <option value="1.15">Big</option>
+              <option value="0.75">Muito pequeno</option>
+              <option value="0.85">Pequeno</option>
+              <option value="1">Padrão</option>
+              <option value="1.15">Grande</option>
             </select>
           </label>
         </div>
       </section>
 
-      <section class="group">
-        <h2 class="group-title">Keyboard Shortcut</h2>
+      <section class="group" id="sec-atalhos">
+        <h2 class="group-title">Atalhos</h2>
         <div class="boxed-list">
           <label class="row">
-            <span class="row-text"><span class="row-title">Show/hide shortcut</span>
-              <span class="row-subtitle">A global key combination that toggles the window</span></span>
+            <span class="row-text"><span class="row-title">Atalho para mostrar ou ocultar</span>
+              <span class="row-subtitle">Uma combinação de teclas para mostrar ou ocultar o aplicativo</span></span>
             <input type="checkbox" class="switch" id="hotkey_enabled" />
           </label>
           <div class="row">
-            <span class="row-text"><span class="row-title">Shortcut</span></span>
+            <span class="row-text"><span class="row-title">Atalho</span></span>
             <div class="hotkey-row">
-              <input type="text" id="hotkey" placeholder="CmdOrCtrl+Shift+W" aria-label="Shortcut" />
-              <button type="button" id="record_hotkey" class="secondary">Record</button>
+              <input type="text" id="hotkey" placeholder="CmdOrCtrl+Shift+W" aria-label="Atalho" />
+              <button type="button" id="record_hotkey" class="secondary">Gravar</button>
             </div>
           </div>
         </div>
         <p id="hotkey_hint" class="hotkey-hint" hidden></p>
-        <p class="group-note">On Linux/Wayland the in-app shortcut can't fire (the desktop blocks global key grabs). Bind <code>whatrust --toggle</code> in your system keyboard settings instead — see the README.</p>
+        <p class="group-note">No Linux/Wayland, configure <code>whatrust --toggle</code> nos atalhos do sistema.</p>
       </section>
 
-      <section class="group">
-        <h2 class="group-title">App Lock</h2>
+      <section class="group" id="sec-seguranca">
+        <h2 class="group-title">Segurança</h2>
 
         <div id="lock-disabled">
           <div class="boxed-list">
             <label class="row entry-row">
-              <span class="row-title">Password</span>
-              <input type="password" id="lock_pw1" autocomplete="new-password" placeholder="At least 4 characters" />
+              <span class="row-title">Senha</span>
+              <input type="password" id="lock_pw1" autocomplete="new-password" placeholder="Pelo menos 4 caracteres" />
             </label>
             <label class="row entry-row">
-              <span class="row-title">Confirm</span>
+              <span class="row-title">Confirmar</span>
               <input type="password" id="lock_pw2" autocomplete="new-password" />
             </label>
           </div>
           <div class="group-actions">
-            <button id="enable_lock">Enable app lock</button>
+            <button id="enable_lock">Ativar bloqueio</button>
           </div>
         </div>
 
         <div id="lock-enabled" hidden>
           <div class="boxed-list">
             <label class="row" id="biometric_row" hidden>
-              <span class="row-text"><span class="row-title" id="biometric_label">Use biometric</span></span>
+              <span class="row-text"><span class="row-title" id="biometric_label">Usar biometria</span></span>
               <input type="checkbox" class="switch" id="biometric_enabled" />
             </label>
             <label class="row">
-              <span class="row-text"><span class="row-title">Lock on launch</span></span>
+              <span class="row-text"><span class="row-title">Bloquear ao iniciar</span></span>
               <input type="checkbox" class="switch" id="lock_on_launch" />
             </label>
             <label class="row">
-              <span class="row-text"><span class="row-title">Lock when hidden to tray</span></span>
+              <span class="row-text"><span class="row-title">Bloquear ao ocultar</span></span>
               <input type="checkbox" class="switch" id="lock_on_hide" />
             </label>
             <label class="row">
-              <span class="row-text"><span class="row-title">Auto-lock when idle</span>
-                <span class="row-subtitle">Minutes, 0 = off</span></span>
+              <span class="row-text"><span class="row-title">Bloquear por inatividade</span>
+                <span class="row-subtitle">Minutos; 0 desativa</span></span>
               <input type="number" id="idle_min" min="0" step="1" value="0" />
             </label>
           </div>
           <div class="group-actions">
-            <button id="lock_now">Lock now</button>
-            <button id="change_pw" class="secondary">Change password…</button>
-            <button id="disable_lock" class="secondary">Disable…</button>
+            <button id="lock_now">Bloquear agora</button>
+            <button id="change_pw" class="secondary">Alterar senha…</button>
+            <button id="disable_lock" class="secondary">Desativar…</button>
           </div>
         </div>
 
-        <p class="group-note">App lock controls who can open whatRust's windows. It does
-          <strong>not</strong> encrypt your data on disk.</p>
+        <p class="group-note">O bloqueio protege o acesso às janelas do whatRust. Ele
+          <strong>não</strong> criptografa os dados no disco.</p>
       </section>
-    </main>
+      <section class="group" id="sec-diagnostico"><h2 class="group-title">Diagnóstico de notificações</h2>
+      <div class="boxed-list"><div class="row"><span class="row-text"><span class="row-title">Verificar avisos do Windows</span><span class="row-subtitle">O teste confirma o envio; confira se o Windows exibe o banner.</span></span><button id="test-notification" type="button">Testar</button></div><div class="row"><span class="row-text">Permissões e Não perturbe</span><button id="windows-notifications" class="secondary" type="button">Abrir no Windows</button></div></div>
+      <p id="diagnostic-note" class="group-note" role="status"></p><div id="route-status" class="boxed-list"></div>
+      <h3>Atividade desta sessão</h3><p class="group-note">Somente horário, conta e resultado. Não armazena o texto das mensagens.</p><div id="notification-history" class="boxed-list"></div>
+      </section>
+    </main></div>
 
     <footer class="footer">
       <span id="note" class="note" role="status" aria-live="polite"></span>
-      <button id="save">Save</button>
+      <button id="save">Salvar</button>
     </footer>
 
     <script src="dialog.js"></script>
     <script src="hotkey.js"></script>
     <script src="main.js"></script>
+    <script src="panel.js"></script>
   </body>
 </html>
