@@ -1,4 +1,5 @@
 use crate::accounts::{self, Account, ActiveAccount};
+use tauri::utils::config::BackgroundThrottlingPolicy;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 /// Recent desktop Chrome UA (Linux, Windows). WhatsApp Web rejects the default
@@ -176,6 +177,13 @@ pub fn open_account_window(
             }
             true
         })
+        // Keep the page running while the window is hidden or minimized:
+        // WebKit's default for an inactive WKWebView is to suspend it, which
+        // drops WhatsApp's WebSocket after a few minutes in the tray (and in
+        // menu-bar mode, between panels). `Throttle` still clamps timers to
+        // keep battery use down, but the page and its socket stay alive.
+        // No-op before macOS 14, where the OS offers no such policy.
+        .background_throttling(BackgroundThrottlingPolicy::Throttle)
         .visible(!start_hidden);
 
     // Windows (issue #31): WebView2 is Chromium and delivers OS file drops to the
@@ -902,12 +910,19 @@ fn ensure_download_destination(
 fn register_focus_listener(app: &AppHandle, win: &WebviewWindow) {
     let app_handle = app.clone();
     let label = win.label().to_string();
-    win.on_window_event(move |event| {
-        if let tauri::WindowEvent::Focused(true) = event {
+    win.on_window_event(move |event| match event {
+        tauri::WindowEvent::Focused(true) => {
             if let Some(active) = app_handle.try_state::<ActiveAccount>() {
                 *active.lock().unwrap() = label.clone();
             }
         }
+        // Menu-bar mode: losing focus dismisses a presented panel; the
+        // webview keeps running while hidden (see `background_throttling`).
+        #[cfg(target_os = "macos")]
+        tauri::WindowEvent::Focused(false) => {
+            crate::menubar::on_focus_lost(&app_handle, &label);
+        }
+        _ => {}
     });
 }
 
@@ -1135,7 +1150,16 @@ fn enable_media_windows(webview: tauri::webview::PlatformWebview, app: AppHandle
 }
 
 /// Show + unminimize + focus an account window by its `wa-<id>` label.
+/// On macOS a restyled window first gets its standard presentation back, and in
+/// menu-bar-only mode it opens as a panel.
 pub fn show_account(app: &AppHandle, label: &str) {
+    #[cfg(target_os = "macos")]
+    if crate::menubar::enabled(app) {
+        crate::menubar::reveal(app, Some(label), None);
+        return;
+    }
+    #[cfg(target_os = "macos")]
+    crate::menubar::restore_window(app, label);
     if let Some(w) = app.get_webview_window(label) {
         let _ = w.show();
         let _ = w.unminimize();
@@ -1150,6 +1174,12 @@ pub fn show_active(app: &AppHandle) {
     // account window. Covers tray click, global shortcut, single-instance, macOS Reopen.
     if !crate::lock::is_unlocked(app) {
         crate::lock::show_lock_window(app);
+        return;
+    }
+    // Menu-bar mode: the panel is the app.
+    #[cfg(target_os = "macos")]
+    if crate::menubar::enabled(app) {
+        crate::menubar::reveal(app, None, None);
         return;
     }
     if let Some(active) = app.try_state::<ActiveAccount>() {
@@ -1205,6 +1235,12 @@ pub fn toggle_decision(active_visible: Option<bool>) -> ToggleAct {
 /// while locked. The "hide" path only triggers when an account window is visible,
 /// which cannot happen while locked.
 pub fn toggle_active(app: &AppHandle) {
+    // Menu-bar mode: the shortcut toggles the panel.
+    #[cfg(target_os = "macos")]
+    if crate::menubar::enabled(app) {
+        crate::menubar::toggle(app);
+        return;
+    }
     let label = app
         .try_state::<ActiveAccount>()
         .map(|a| a.lock().unwrap().clone());

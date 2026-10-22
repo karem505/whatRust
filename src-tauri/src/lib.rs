@@ -7,6 +7,8 @@ mod dlog;
 mod downloads;
 mod links;
 mod lock;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+mod menubar;
 mod notif_icon;
 mod notify;
 mod opener;
@@ -82,10 +84,14 @@ pub fn run() {
             .plugin(
                 // Restore size/position, but NOT visibility — otherwise the plugin
                 // force-shows the window on launch and defeats start-minimized / --minimized.
+                // Decorations are never persisted either: windows are always
+                // decorated, so a saved value can only be the menu-bar panel's
+                // transient borderless state leaking into the next launch.
                 tauri_plugin_window_state::Builder::default()
                     .with_state_flags(
                         tauri_plugin_window_state::StateFlags::all()
-                            & !tauri_plugin_window_state::StateFlags::VISIBLE,
+                            & !tauri_plugin_window_state::StateFlags::VISIBLE
+                            & !tauri_plugin_window_state::StateFlags::DECORATIONS,
                     )
                     .build(),
             )
@@ -137,6 +143,14 @@ pub fn run() {
             commands::reset_app_lock,
         ])
         .setup(|app| {
+            // Menu-bar-only on macOS: load settings early (the rest of setup needs them
+            // below) so the Dock icon can be dropped before the app starts presenting.
+            let s = settings::load(app.handle());
+            #[cfg(target_os = "macos")]
+            if s.menubar_only {
+                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            }
+
             let handle = app.handle();
 
             // Start a fresh diagnostic log for this launch (issue #3): the only
@@ -149,7 +163,6 @@ pub fn run() {
             // before any account window can fire a notification. See aumid.rs.
             aumid::register(handle);
 
-            let s = settings::load(handle);
             let args: Vec<String> = std::env::args().collect();
             let start_hidden = s.start_minimized || args.iter().any(|a| a == "--minimized");
 
@@ -176,8 +189,22 @@ pub fn run() {
             let open_hidden = start_hidden || lock_on_launch;
 
             // Open every account window so each one receives messages/notifications.
+            // In menu-bar-only mode they start hidden: the inactive-scheduling
+            // policy keeps every account connected while hidden, and the tray
+            // opens them as panels.
+            #[cfg(target_os = "macos")]
+            let open_hidden = open_hidden || s.menubar_only;
             for a in &f.accounts {
                 window::open_account_window(handle, a, open_hidden)?;
+            }
+            #[cfg(target_os = "macos")]
+            {
+                // Seed the mode tracker before the settings::apply below, so
+                // the launch state does not read as a live toggle.
+                menubar::note_mode(s.menubar_only);
+                if s.menubar_only {
+                    menubar::enter_only(handle);
+                }
             }
 
             tray::setup(handle)?;
@@ -223,6 +250,13 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building whatRust")
         .run(|_app_handle, _event| {
+            // Give restyled panels their real geometry back before the exit
+            // saves window state. The tray Quit path does the same.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::ExitRequested { .. } = &_event {
+                menubar::restore_all(_app_handle);
+            }
+
             // macOS delivers scheme links (whatsapp://…, issue #23) as an Apple
             // event rather than a command-line argument, at launch or later.
             #[cfg(target_os = "macos")]
@@ -237,6 +271,9 @@ pub fn run() {
 
             // macOS: clicking the dock icon after hide-to-tray re-shows the window
             // (otherwise the app is only reachable via the menu-bar tray icon).
+            // A dismissed menu-bar panel is hidden like any other window, so
+            // `has_visible_windows` alone decides; `show_main` handles the
+            // menu-bar case by revealing the panel.
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen {
                 has_visible_windows,

@@ -39,6 +39,24 @@ const ICON_UNREAD: &[u8] = include_bytes!("../icons/tray-unread.png");
 /// `NSImage.isTemplate` is macOS-only; the flag is ignored elsewhere.
 const ICON_IS_TEMPLATE: bool = cfg!(target_os = "macos");
 
+/// Scale factor for converting a tray-event rect into physical px.
+#[cfg(target_os = "macos")]
+fn app_scale(app: &AppHandle) -> f64 {
+    let label = app
+        .try_state::<crate::accounts::ActiveAccount>()
+        .and_then(|a| a.lock().ok().map(|g| g.clone()));
+    if let Some(w) = label.as_deref().and_then(|l| app.get_webview_window(l)) {
+        if let Ok(s) = w.scale_factor() {
+            return s;
+        }
+    }
+    app.webview_windows()
+        .values()
+        .next()
+        .and_then(|w| w.scale_factor().ok())
+        .unwrap_or(1.0)
+}
+
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     // Placeholder menu; rebuild_menu fills in the per-account items at startup.
     let menu = MenuBuilder::new(app).build()?;
@@ -57,6 +75,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
                 return;
             }
             if let Some(acct_id) = id.strip_prefix("acct:") {
+                // In menu-bar-only mode show_account opens it as a panel.
                 crate::window::show_account(app, &accounts::window_label(acct_id));
                 return;
             }
@@ -71,7 +90,12 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
                     }
                 }
                 "lock" => crate::lock::lock_now(app),
-                "quit" => app.exit(0),
+                "quit" => {
+                    // Restore panel geometry before window state is saved.
+                    #[cfg(target_os = "macos")]
+                    crate::menubar::restore_all(app);
+                    app.exit(0)
+                }
                 _ => {}
             }
         })
@@ -81,8 +105,25 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
                 ..
-            } = event
+            } = &event
             {
+                // macOS, menu-bar mode on: the tray icon toggles the
+                // panel, anchored under this icon.
+                #[cfg(target_os = "macos")]
+                if crate::menubar::enabled(tray.app_handle()) {
+                    if let TrayIconEvent::Click { rect, .. } = event {
+                        // The rect is a logical-or-physical enum; the active
+                        // window's scale factor resolves it to physical px.
+                        let scale = app_scale(tray.app_handle());
+                        let pos = rect.position.to_physical::<f64>(scale);
+                        let size = rect.size.to_physical::<f64>(scale);
+                        crate::menubar::tray_click(
+                            tray.app_handle(),
+                            Some((pos.x, pos.y, size.width, size.height)),
+                        );
+                    }
+                    return;
+                }
                 crate::window::show_active(tray.app_handle());
             }
         })

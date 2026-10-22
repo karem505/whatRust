@@ -44,10 +44,15 @@
               <span class="row-subtitle">Show new messages as system notifications</span></span>
             <input type="checkbox" class="switch" id="notifications" />
           </label>
-          <label class="row" id="menu_bar_icon_row" hidden>
+          <label class="row mac-only" id="menu_bar_icon_row" hidden>
             <span class="row-text"><span class="row-title">Show menu bar icon</span>
-              <span class="row-subtitle">When off, click the Dock icon to bring whatRust back</span></span>
+              <span class="row-subtitle" id="menu_bar_icon_subtitle">When off, click the Dock icon to bring whatRust back</span></span>
             <input type="checkbox" class="switch" id="menu_bar_icon" />
+          </label>
+          <label class="row mac-only" hidden>
+            <span class="row-text"><span class="row-title">Menu bar only</span>
+              <span class="row-subtitle" id="menubar_only_subtitle">No Dock icon or main window — every account stays connected for notifications, each opens as its own panel from the tray</span></span>
+            <input type="checkbox" class="switch" id="menubar_only" />
           </label>
         </div>
       </section>
