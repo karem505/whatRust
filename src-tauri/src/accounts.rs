@@ -160,6 +160,7 @@ pub fn id_from_label(label: &str) -> Option<&str> {
 }
 
 /// The on-disk profile directory for an account (Linux/Windows data_directory).
+#[cfg(not(target_os = "macos"))]
 pub fn profile_dir(app: &AppHandle, id: &str) -> tauri::Result<PathBuf> {
     Ok(app.path().app_data_dir()?.join("profiles").join(id))
 }

@@ -112,20 +112,20 @@ fn the_whatsapp_page_reaches_its_bridge_commands_in_every_account() {
 /// labels would silently kill notifications for every account not spelled out.
 #[test]
 fn the_remote_capability_matches_every_wa_label_the_page_may_load_in() {
-    // (a) straight from the manifest: `windows` must stay a `wa-*` glob, not a
+    // (a) straight from the manifest: `webviews` must stay a `wa-*` glob, not a
     // list of concrete labels, so any account the app opens is covered.
     let manifest = concat!(env!("CARGO_MANIFEST_DIR"), "/capabilities/main-remote.json");
     let capability: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(manifest).unwrap()).unwrap();
-    let windows = capability["windows"]
+    let webviews = capability["webviews"]
         .as_array()
-        .expect("main-remote.json must list `windows`");
+        .expect("main-remote.json must list `webviews`");
     assert!(
-        windows
+        webviews
             .iter()
             .filter_map(|w| w.as_str())
             .any(|w| w.starts_with("wa-") && w.ends_with('*')),
-        "the `windows` field must keep a `wa-*` glob: {windows:?}"
+        "the `webviews` field must keep a `wa-*` glob: {webviews:?}"
     );
 
     // (b) through the ACL, with labels beyond the ones the other tests use.
