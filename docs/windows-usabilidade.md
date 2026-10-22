@@ -33,6 +33,7 @@ node src-tauri/resources/bridge.test.mjs
 node --test src-tauri/resources/notifications.test.mjs
 node settings-ui/comboToAccelerator.test.mjs
 node settings-ui/dialog.test.mjs
+node settings-ui/i18n.test.mjs
 .\scripts\test-adapter.ps1
 .\scripts\test-ui.ps1
 .\scripts\test-shell.ps1
@@ -44,9 +45,13 @@ Os comandos Cargo são executados em `src-tauri`; os demais, na raiz do checkout
 
 ## Entrega e limites
 
-O instalador NSIS é em português, para o usuário atual, com menu Iniciar e executável GUI sem console. A versão desta entrega é `0.6.9-local.8`, acima da versão 0.6.8 anteriormente instalada.
+O instalador NSIS é em português, para o usuário atual, com menu Iniciar e executável GUI sem console. A versão desta entrega é `0.6.9`, acima da versão 0.6.8 anteriormente instalada.
 
 Os testes automatizados não substituem receber mensagens reais no aplicativo instalado, conferir conversas silenciadas em cada layout suportado, testar chamadas/microfone e confirmar arquivos arrastados/baixados com suas contas. Quando faltam sinais confiáveis, o detector adicional permanece conservador. Esses cenários devem constar como pendentes no recibo de entrega quando não executados.
+
+## Idioma
+
+O português do Brasil é o padrão. Em Configurações > Aparência > Idioma é possível trocar para English; a troca vale na hora e fica em `settings.json` (`language`). O texto-fonte do código é em português e `src-tauri/src/i18n.rs` (Rust) e `settings-ui/i18n.js` (páginas locais) trazem a tabela em inglês. Textos sem tradução aparecem em português. Os testes `cargo test` e `node settings-ui/i18n.test.mjs` falham quando um texto novo fica sem entrada em inglês. As páginas do instalador NSIS continuam em português.
 
 ## Recuperação
 
