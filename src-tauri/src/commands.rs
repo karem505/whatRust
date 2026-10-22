@@ -95,6 +95,8 @@ pub fn set_unread(
         return;
     }
     let count = crate::unread::parse_unread(&title);
+    // A menu-bar panel carries its account's own `wa-<id>` label, so the
+    // count is attributed to that account.
     let Some(id) = accounts::id_from_label(window.label()) else {
         return;
     };
@@ -116,7 +118,8 @@ pub fn set_unread(
     // A new unread chat while the window is in the background: make sure the
     // user hears about it even when WhatsApp raises its own notification where
     // whatRust can't see it (issue #3). Covered by a real notification, this
-    // stays silent; see notify::unread_increased.
+    // stays silent; see notify::unread_increased. A dismissed menu-bar panel
+    // is a hidden window, so `is_visible()` already says nobody is watching.
     let focused = window.window().is_focused().unwrap_or(false)
         && window.window().is_visible().unwrap_or(false);
     if !cfg!(windows)
@@ -126,13 +129,31 @@ pub fn set_unread(
     }
 }
 
+#[derive(Debug, serde::Serialize)]
+pub struct SettingsView {
+    /// Flattened, so the UI reads the settings fields directly off the response.
+    #[serde(flatten)]
+    pub settings: Settings,
+    /// The OS this build targets ("macos" | "linux" | "windows").
+    /// The settings UI shows the platform-only rows only on macOS.
+    pub platform: &'static str,
+    /// Whether menu-bar-only mode works on this machine (macOS 14+; see
+    /// `menubar::supported`). The UI disables the switch elsewhere rather
+    /// than letting the user opt into a mode that would drop the session.
+    pub menubar_supported: bool,
+}
+
 #[tauri::command]
-pub fn get_settings(window: tauri::Webview, app: tauri::AppHandle) -> Result<Settings, String> {
+pub fn get_settings(window: tauri::Webview, app: tauri::AppHandle) -> Result<SettingsView, String> {
     if is_remote(&window) {
         return Err("forbidden".into());
     }
     lock::require_unlocked(&app)?;
-    Ok(crate::settings::load(&app))
+    Ok(SettingsView {
+        settings: crate::settings::load(&app),
+        platform: std::env::consts::OS,
+        menubar_supported: crate::menubar::supported(),
+    })
 }
 
 #[tauri::command]
@@ -304,7 +325,10 @@ pub async fn add_account(
     let acct = accounts::add(&mut f, name);
     accounts::save(&app, &f).map_err(|e| e.to_string())?;
 
-    if let Err(e) = crate::window::open_account_window(&app, &acct, false) {
+    // In menu-bar-only mode the window is created hidden and presented as a
+    // panel right after, so no full-size window flashes.
+    let start_hidden = crate::menubar::enabled(&app);
+    if let Err(e) = crate::window::open_account_window(&app, &acct, start_hidden) {
         // Don't leave an account behind that never got a window. The sequence
         // number stays consumed, so a retry gets a fresh profile id.
         f.accounts.retain(|a| a.id != acct.id);
@@ -318,6 +342,11 @@ pub async fn add_account(
     }
     crate::tray::rebuild_menu(&app);
     crate::integration::broadcast(&app);
+    // Opens the new account as a panel: also how the user reaches its QR login.
+    #[cfg(target_os = "macos")]
+    if start_hidden {
+        crate::window::show_account(&app, &accounts::window_label(&acct.id));
+    }
 
     let is_default = accounts::startup_account(&f).is_some_and(|startup| startup.id == acct.id);
     Ok(AccountView {
@@ -440,8 +469,11 @@ pub async fn open_account(
         return Err(trf("Conta não encontrada: {0}", &[&id]));
     };
     // Open the window if it was closed, then show + focus it.
+    // Hidden first in menu-bar-only mode: show_account presents it as a
+    // panel, and no full-size window flashes in between.
+    let start_hidden = crate::menubar::enabled(&app);
     if app.get_webview(&accounts::window_label(&acct.id)).is_none() {
-        crate::window::open_account_window(&app, acct, false).map_err(|e| e.to_string())?;
+        crate::window::open_account_window(&app, acct, start_hidden).map_err(|e| e.to_string())?;
     }
     crate::window::show_account(&app, &accounts::window_label(&acct.id));
     // Track as the active account.

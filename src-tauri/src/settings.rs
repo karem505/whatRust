@@ -13,6 +13,10 @@ pub struct Settings {
     pub notify_when_focused: bool,
     pub notify_active_chat: bool,
     pub respect_muted: bool,
+    /// macOS only: the app lives in the menu bar, no Dock icon and no
+    /// standard window. Every account stays connected in the background and
+    /// opens as a panel from the tray. Off by default. Ignored on other platforms.
+    pub menubar_only: bool,
     /// Display zoom for the WhatsApp webview, 1.0 = the site's own sizing.
     pub zoom: f64,
     /// macOS only (issue #44): show the icon in the menu bar. With it off, the
@@ -35,6 +39,7 @@ impl Default for Settings {
             notify_when_focused: true,
             notify_active_chat: true,
             respect_muted: true,
+            menubar_only: false,
             zoom: 1.0,
             menu_bar_icon: true,
             language: crate::i18n::PT_BR.to_string(),
@@ -82,6 +87,13 @@ impl Settings {
     pub fn sanitized(mut self) -> Self {
         self.zoom = sanitize_zoom(self.zoom);
         self.language = crate::i18n::sanitize_code(&self.language);
+        // Menu-bar-only mode needs WKWebView's inactive-scheduling policy
+        // (macOS 14+). Dropping the flag here means a settings file or an
+        // older build can never leave the app in a mode it cannot sustain.
+        #[cfg(target_os = "macos")]
+        if !crate::menubar::supported() {
+            self.menubar_only = false;
+        }
         self
     }
 }
@@ -169,9 +181,9 @@ pub fn save(app: &AppHandle, s: &Settings) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Apply side effects of settings (autostart + global shortcut). Returns any
-/// non-fatal side-effect failures as one warning string; persisted settings and
-/// zoom changes are still applied.
+/// Apply side effects of settings (autostart + global shortcut + the macOS menu bar).
+/// Returns any non-fatal side-effect failures as one warning string;
+/// persisted settings and zoom changes are still applied.
 pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
     // Zoom is a webview property, so it applies on every platform and takes
     // effect on the open account windows without a reload.
@@ -181,7 +193,51 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
         crate::i18n::refresh(app);
     }
     crate::window::apply_zoom_all(app, s.zoom);
+
+    // Menu-bar mode is only available where a hidden WKWebView keeps running
+    // (macOS 14+); elsewhere the setting is ignored rather than dropping every
+    // account's session the moment it is enabled.
+    #[cfg(target_os = "macos")]
+    let menubar_only = s.menubar_only && crate::menubar::supported();
+
+    // In menu-bar-only mode the tray icon is the app's only entry point, so
+    // it can never be hidden.
+    #[cfg(target_os = "macos")]
+    crate::tray::apply_visibility(app, s.menu_bar_icon || menubar_only);
+    #[cfg(not(target_os = "macos"))]
     crate::tray::apply_visibility(app, s.menu_bar_icon);
+
+    // macOS menu-bar mode: reconcile the live window set with the settings.
+    #[cfg(target_os = "macos")]
+    {
+        if menubar_only {
+            crate::menubar::enter_only(app);
+        } else if crate::menubar::leave_only(app) {
+            // Leaving menu-bar-only mode: reopen missing windows and show the
+            // active one, so the app is never left with no visible window.
+            for a in crate::accounts::load(app).accounts {
+                let label = crate::accounts::window_label(&a.id);
+                if app.get_webview_window(&label).is_none() {
+                    let _ = crate::window::open_account_window(app, &a, true);
+                }
+            }
+            crate::window::show_active(app);
+        }
+
+        // Menu-bar-only apps have no Dock presence.
+        let policy = if menubar_only {
+            tauri::ActivationPolicy::Accessory
+        } else {
+            tauri::ActivationPolicy::Regular
+        };
+        let h = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            let _ = h.set_activation_policy(policy);
+        });
+
+        // Hold the App Nap shield only while menu-bar-only mode is on.
+        crate::menubar::set_keep_alive(menubar_only);
+    }
 
     #[cfg(desktop)]
     {
@@ -287,6 +343,8 @@ mod tests {
         let s = Settings::default();
         assert!(s.close_to_tray);
         assert!(s.notifications);
+        // The menu-bar mode is opt-in.
+        assert!(!s.menubar_only);
         assert_eq!(s.hotkey, "CmdOrCtrl+Shift+W");
         assert!(!s.autostart);
         assert_eq!(s.zoom, 1.0);

@@ -1,5 +1,6 @@
 use crate::accounts::{self, Account, ActiveAccount};
 use crate::i18n::{tr, trf};
+use tauri::utils::config::BackgroundThrottlingPolicy;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 /// Recent desktop Chrome UA (Linux, Windows). WhatsApp Web rejects the default
@@ -78,6 +79,12 @@ macro_rules! account_webview {
     ($builder:expr, $app:ident, $label:ident) => {
         $builder
             .user_agent(&user_agent())
+            // Keep the page running while hidden or minimized: WebKit suspends an
+            // inactive WKWebView, which drops WhatsApp's socket after a few
+            // minutes in the tray (and between menu-bar panels). `Throttle`
+            // still clamps timers, but the page stays alive. Only macOS 14+
+            // honours it; elsewhere it is ignored.
+            .background_throttling(BackgroundThrottlingPolicy::Throttle)
             .initialization_script(crate::i18n::init_script())
             .initialization_script(if cfg!(windows) {
                 format!("window.__WHATRUST_WINDOWS__=true;window.__whatrustNotificationEpoch={};window.__whatrustLocked={};",$app.state::<crate::notify::Recent>().epoch(),!crate::lock::is_unlocked($app))
@@ -230,6 +237,13 @@ pub(crate) fn build_account_window(
         .icon(icon)?;
     let builder = account_webview!(builder, app, label).visible(!start_hidden);
 
+    // macOS: WKWebView can deliver Finder drops directly to WhatsApp's own drop
+    // zone. Tauri's handler consumes them before the page sees a drag event, then
+    // our bridge has to locate WhatsApp's changing/localized attachment controls.
+    // A QUEUED ack only confirms receipt of bytes; that injection can still fail
+    // silently without ever opening the attachment preview. Let WebKit deliver
+    // the original drag events and File objects, as it does in Safari.
+    //
     // Windows (issue #31): WebView2 is Chromium and delivers OS file drops to the
     // page natively, so WhatsApp's own drop zone works exactly as in Chrome. With
     // Tauri's handler enabled, wry instead turns WebView2's external drops OFF and
@@ -238,7 +252,7 @@ pub(crate) fn build_account_window(
     // later, so nothing got registered and every drop was silently swallowed.
     // Let WebView2 handle drops; `register_drop_handler` stays wired but inert
     // here, and the `file://` navigation guard above still applies.
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     let builder = builder.disable_drag_drop_handler();
 
     let builder = apply_isolation(builder, account, app);
@@ -423,8 +437,8 @@ const CHUNKS_PER_EVAL: usize = 2;
 ///
 /// On Linux the webview never delivers the drop into the page DOM, so Tauri's
 /// drag-drop handler (kept enabled in the builder) is our only source of the dropped
-/// paths — and because that handler consumes the drop, macOS drops arrive here too.
-/// (Windows disables the handler and lets WebView2 deliver drops to the page.) A dedicated FIFO worker per account window reads and
+/// paths. macOS and Windows disable the handler and let WKWebView/WebView2 deliver
+/// drops to the page directly. A dedicated FIFO worker per account window reads and
 /// streams drops off the UI thread in OS event order, so a later small drop cannot
 /// commit before an earlier large one. Messages reach the page-side
 /// `__whatrustDropFeed` (bridge.js) as begin/chunk/end operations keyed by a
@@ -1024,12 +1038,19 @@ fn ensure_download_destination(
 fn register_focus_listener(app: &AppHandle, win: &WebviewWindow) {
     let app_handle = app.clone();
     let label = win.label().to_string();
-    win.on_window_event(move |event| {
-        if let tauri::WindowEvent::Focused(true) = event {
+    win.on_window_event(move |event| match event {
+        tauri::WindowEvent::Focused(true) => {
             if let Some(active) = app_handle.try_state::<ActiveAccount>() {
                 *crate::lock::guard(&active) = label.clone();
             }
         }
+        // Menu-bar mode: losing focus dismisses a presented panel; the
+        // webview keeps running while hidden (see `background_throttling`).
+        #[cfg(target_os = "macos")]
+        tauri::WindowEvent::Focused(false) => {
+            crate::menubar::on_focus_lost(&app_handle, &label);
+        }
+        _ => {}
     });
 }
 
@@ -1366,6 +1387,8 @@ fn enable_media_windows(webview: tauri::webview::PlatformWebview, app: AppHandle
 }
 
 /// Show + unminimize + focus an account window by its `wa-<id>` label.
+/// On macOS a restyled window first gets its standard presentation back, and in
+/// menu-bar-only mode it opens as a panel.
 pub fn show_account(app: &AppHandle, label: &str) {
     #[cfg(windows)]
     {
@@ -1381,6 +1404,13 @@ fn show_account_legacy(app: &AppHandle, label: &str) {
         crate::lock::show_lock_window(app);
         return;
     }
+    #[cfg(target_os = "macos")]
+    if crate::menubar::enabled(app) {
+        crate::menubar::reveal(app, Some(label), None);
+        return;
+    }
+    #[cfg(target_os = "macos")]
+    crate::menubar::restore_window(app, label);
     if let Some(w) = app.get_webview_window(label) {
         let _ = w.show();
         let _ = w.unminimize();
@@ -1395,6 +1425,12 @@ pub fn show_active(app: &AppHandle) {
     // account window. Covers tray click, global shortcut, single-instance, macOS Reopen.
     if !crate::lock::is_unlocked(app) {
         crate::lock::show_lock_window(app);
+        return;
+    }
+    // Menu-bar mode: the panel is the app.
+    #[cfg(target_os = "macos")]
+    if crate::menubar::enabled(app) {
+        crate::menubar::reveal(app, None, None);
         return;
     }
     if let Some(active) = app.try_state::<ActiveAccount>() {
@@ -1462,6 +1498,12 @@ pub fn toggle_active(app: &AppHandle) {
 
 #[cfg(not(windows))]
 fn toggle_active_legacy(app: &AppHandle) {
+    // Menu-bar mode: the shortcut toggles the panel.
+    #[cfg(target_os = "macos")]
+    if crate::menubar::enabled(app) {
+        crate::menubar::toggle(app);
+        return;
+    }
     let label = app
         .try_state::<ActiveAccount>()
         .map(|a| crate::lock::guard(&a).clone());

@@ -552,10 +552,11 @@
   } catch (e) {}
 
   // 4) Drag-and-drop file injection.
-  //    The native webview never delivers an OS file drop into this page on any platform
-  //    (Tauri's drop handler consumes it), so Rust captures the drop (window.rs
+  //    On Linux the native webview does not reliably deliver OS file drops to the page,
+  //    so Rust captures the drop (window.rs
   //    `register_drop_handler`) and STREAMS the file bytes here through
   //    `__whatrustDropFeed` as begin/chunk/end/commit messages keyed by a drop id.
+  //    macOS and Windows use native webview drops and do not enter this pipeline.
   //    Chunks arrive BATCHED ({op:"chunk", parts:[b64,b64,...]}) because a
   //    synchronous WebKit eval handler that decodes every chunk inline would freeze
   //    the page's main thread for the whole transfer. Base64 stanzas are queued raw

@@ -177,7 +177,9 @@ fn lock_on_main(app: &AppHandle, prompt: bool) {
 }
 
 /// Unlock the app: mark unlocked, destroy the lock window, and restore the windows
-/// that were visible when we locked (or fall back to the active account).
+/// that were visible when we locked (or fall back to the active account). In
+/// menu-bar mode a dismissed panel was never visible, so unlocking leaves the
+/// app in its normal state: no window, the menu bar waits for the tray.
 pub fn unlock(app: &AppHandle) {
     // Password IPC may execute inside this very WebView's callback. Always
     // return from that callback before destroying its WebView2 controller.
@@ -201,9 +203,21 @@ fn unlock_on_main(app: &AppHandle) {
     }
     let hidden = std::mem::take(&mut *guard(&state.hidden));
     if hidden.is_empty() {
+        // A dismissed menu-bar panel (or a launch straight into locked
+        // menu-bar mode) must not pop open on unlock; the tray icon is the
+        // app's entry point there.
+        #[cfg(target_os = "macos")]
+        if crate::menubar::enabled(app) {
+            return;
+        }
         crate::window::show_active(app);
     } else {
         for label in hidden {
+            // A menu-bar window goes back to how it was: presented panel or dismissed.
+            #[cfg(target_os = "macos")]
+            if crate::menubar::restore_after_lock(app, &label) {
+                continue;
+            }
             if let Some(w) = app.get_window(&label) {
                 let _ = w.show();
                 #[cfg(windows)]

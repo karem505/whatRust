@@ -49,11 +49,15 @@
             <span class="row-text"><span class="row-title">Iniciar com o sistema</span></span>
             <input type="checkbox" class="switch" id="autostart" />
           </label>
-
-          <label class="row" id="menu_bar_icon_row" hidden>
+          <label class="row mac-only" id="menu_bar_icon_row" hidden>
             <span class="row-text"><span class="row-title">Mostrar ícone na barra de menus</span>
-              <span class="row-subtitle">Quando desativado, clique no ícone do Dock para abrir o whatRust</span></span>
+              <span class="row-subtitle" id="menu_bar_icon_subtitle">Quando desativado, clique no ícone do Dock para abrir o whatRust</span></span>
             <input type="checkbox" class="switch" id="menu_bar_icon" />
+          </label>
+          <label class="row mac-only" hidden>
+            <span class="row-text"><span class="row-title">Somente na barra de menus</span>
+              <span class="row-subtitle" id="menubar_only_subtitle">Sem ícone no Dock nem janela principal — todas as contas continuam conectadas para notificações e cada uma abre como painel pela bandeja</span></span>
+            <input type="checkbox" class="switch" id="menubar_only" />
           </label>
         </div>
       </section>

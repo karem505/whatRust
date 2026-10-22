@@ -107,6 +107,39 @@ fn the_whatsapp_page_reaches_its_bridge_commands_in_every_account() {
     }
 }
 
+/// The WhatsApp page loads in whatever `wa-<id>` window presents it, including the
+/// macOS menu-bar panel. A `main-remote` change that swaps the `wa-*` glob for concrete
+/// labels would silently kill notifications for every account not spelled out.
+#[test]
+fn the_remote_capability_matches_every_wa_label_the_page_may_load_in() {
+    // (a) straight from the manifest: `windows` must stay a `wa-*` glob, not a
+    // list of concrete labels, so any account the app opens is covered.
+    let manifest = concat!(env!("CARGO_MANIFEST_DIR"), "/capabilities/main-remote.json");
+    let capability: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(manifest).unwrap()).unwrap();
+    let windows = capability["windows"]
+        .as_array()
+        .expect("main-remote.json must list `windows`");
+    assert!(
+        windows
+            .iter()
+            .filter_map(|w| w.as_str())
+            .any(|w| w.starts_with("wa-") && w.ends_with('*')),
+        "the `windows` field must keep a `wa-*` glob: {windows:?}"
+    );
+
+    // (b) through the ACL, with labels beyond the ones the other tests use.
+    let app = app();
+    for label in ["wa-default", "wa-acct-42", "wa-2e6f9a1b7c4d"] {
+        for cmd in PAGE_COMMANDS {
+            assert!(
+                allowed(&app, label, PAGE, cmd),
+                "{label} must be allowed {cmd}"
+            );
+        }
+    }
+}
+
 #[test]
 fn the_whatsapp_page_cannot_reach_settings_or_lock_commands() {
     let app = app();

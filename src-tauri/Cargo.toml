@@ -61,8 +61,12 @@ tauri-winrt-notification = "0.7"
 # 0.3.2 in Cargo.lock via the dependency graph; the NSProcessInfo feature must be
 # explicit. Inert on Linux/Windows. NSString + NSError added for the Touch ID backend.
 objc2-foundation = { version = "0.3", features = ["NSProcessInfo", "NSString", "NSError"] }
+# CGRect/CGPoint/CGSize for the synchronous NSWindow frame restore in menubar.rs.
+objc2-core-foundation = "0.3.2"
 objc2-local-authentication = { version = "0.3.2", features = ["LAContext", "block2"] }
 objc2 = "0.6"
+# The macOS main queue, used by menubar.rs to order panel transitions after window geometry changes
+dispatch2 = "0.3.1"
 block2 = "0.6"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
