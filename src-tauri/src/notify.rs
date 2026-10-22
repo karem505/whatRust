@@ -439,7 +439,10 @@ pub fn show_for_account(app: &AppHandle, label: &str, title: &str, body: &str) {
     #[cfg(windows)]
     windows_toast(app, title, body, None, Some(label.into()), None);
     #[cfg(not(windows))]
-    show(app, title, body);
+    {
+        let _ = label;
+        show(app, title, body);
+    }
 }
 pub fn show_with_icon(app: &AppHandle, title: &str, body: &str, icon: Option<&Path>) {
     if !crate::lock::is_unlocked(app) {

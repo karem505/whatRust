@@ -210,7 +210,8 @@ mod imp {
             .accounts
             .into_iter()
             .find(|a| a.id == id)?;
-        crate::window::open_account_window(app, &account, true).ok()
+        crate::window::open_account_window(app, &account, true).ok()?;
+        app.get_webview_window(label)
     }
 
     /// Present `label` (default: the target account) as the panel under the

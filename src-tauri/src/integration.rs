@@ -221,22 +221,32 @@ pub async fn detach_account(window: Webview, app: AppHandle, id: String) -> Resu
     local(&window, &app)?;
     let _g = accounts::lock_mutations();
     #[cfg(windows)]
-    crate::sessions::detach(&app, &id)?;
+    {
+        crate::sessions::detach(&app, &id)?;
+        broadcast(&app);
+        Ok(())
+    }
     #[cfg(not(windows))]
-    return Err(tr("Disponível no Windows").into());
-    broadcast(&app);
-    Ok(())
+    {
+        let _ = id;
+        Err(tr("Disponível no Windows").into())
+    }
 }
 #[tauri::command]
 pub async fn attach_account(window: Webview, app: AppHandle, id: String) -> Result<(), String> {
     local(&window, &app)?;
     let _g = accounts::lock_mutations();
     #[cfg(windows)]
-    crate::sessions::attach(&app, &id)?;
+    {
+        crate::sessions::attach(&app, &id)?;
+        broadcast(&app);
+        Ok(())
+    }
     #[cfg(not(windows))]
-    return Err(tr("Disponível no Windows").into());
-    broadcast(&app);
-    Ok(())
+    {
+        let _ = id;
+        Err(tr("Disponível no Windows").into())
+    }
 }
 #[tauri::command]
 pub fn reorder_accounts(window: Webview, app: AppHandle, ids: Vec<String>) -> Result<(), String> {

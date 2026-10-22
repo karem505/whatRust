@@ -18,7 +18,9 @@
 //! The AUMID is read from the live Tauri config `identifier`, i.e. the exact
 //! value `notify.rs` passes to `Toast::new`, so the two can never drift apart.
 
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
+#[cfg(windows)]
+use tauri::Manager;
 
 /// No-op on every platform except Windows.
 #[allow(unused_variables)]
