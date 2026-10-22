@@ -247,7 +247,7 @@ pub fn run() {
             let startup_label =
                 accounts::startup_account(&f).map(|account| accounts::window_label(&account.id));
             if let Some(label) = &startup_label {
-                *handle.state::<accounts::ActiveAccount>().lock().unwrap() = label.clone();
+                *crate::lock::guard(&handle.state::<accounts::ActiveAccount>()) = label.clone();
             }
 
             // Build windows while Tauri is still on its UI thread. On Windows a

@@ -103,7 +103,7 @@ pub fn set_unread(
     // to avoid a deadlock.
     let (previous, total) = {
         let state = app.state::<UnreadMap>();
-        let mut map = state.lock().unwrap();
+        let mut map = crate::lock::guard(&state);
         let previous = map.insert(id.to_string(), count);
         (previous, accounts::aggregate_unread(&map))
     };
@@ -181,7 +181,7 @@ pub struct AccountView {
 fn account_views(app: &tauri::AppHandle) -> Vec<AccountView> {
     let f = accounts::load(app);
     let map = app.state::<UnreadMap>();
-    let map = map.lock().unwrap();
+    let map = crate::lock::guard(&map);
     let mut views: Vec<AccountView> = f
         .accounts
         .iter()
@@ -247,7 +247,7 @@ pub async fn switch_account(
     crate::window::show_account(&app, &accounts::window_label(&acct.id));
     #[cfg(not(windows))]
     if let Some(active) = app.try_state::<ActiveAccount>() {
-        *active.lock().unwrap() = accounts::window_label(&acct.id);
+        *crate::lock::guard(&active) = accounts::window_label(&acct.id);
     }
     Ok(())
 }
@@ -353,7 +353,7 @@ pub async fn remove_account(
     // Drop the per-account unread count.
     {
         let state = app.state::<UnreadMap>();
-        let mut map = state.lock().unwrap();
+        let mut map = crate::lock::guard(&state);
         map.remove(&removed.id);
     }
     accounts::delete_profile(&app, &removed.id);
@@ -374,7 +374,7 @@ pub async fn remove_account(
     // Recompute the aggregate badge and the menu.
     let total = {
         let state = app.state::<UnreadMap>();
-        let map = state.lock().unwrap();
+        let map = crate::lock::guard(&state);
         accounts::aggregate_unread(&map)
     };
     crate::tray::update_badge(&app, total);
@@ -442,7 +442,7 @@ pub async fn open_account(
     // Track as the active account.
     #[cfg(not(windows))]
     if let Some(active) = app.try_state::<ActiveAccount>() {
-        *active.lock().unwrap() = accounts::window_label(&acct.id);
+        *crate::lock::guard(&active) = accounts::window_label(&acct.id);
     }
     Ok(())
 }
@@ -450,6 +450,19 @@ pub async fn open_account(
 // ---------------------------------------------------------------------------
 // App-lock commands.
 // ---------------------------------------------------------------------------
+
+/// Argon2 is deliberately slow; keep it off the thread that pumps UI events.
+async fn hash_off_thread(password: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || applock::hash_password(&password))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+async fn verify_off_thread(password: String, phc: String) -> bool {
+    tauri::async_runtime::spawn_blocking(move || applock::verify_password(&password, &phc))
+        .await
+        .unwrap_or(false)
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LockStatus {
@@ -491,7 +504,7 @@ pub fn get_lock_status(
 /// Enable the lock by setting the first password. Errors if already enabled (use
 /// `change_app_lock_password`). Runs only from an unlocked, local window.
 #[tauri::command]
-pub fn set_app_lock_password(
+pub async fn set_app_lock_password(
     window: tauri::Webview,
     app: tauri::AppHandle,
     new: String,
@@ -505,13 +518,8 @@ pub fn set_app_lock_password(
     if c.is_active() {
         return Err("O bloqueio já está ativado.".into());
     }
-    if new != confirm {
-        return Err("As senhas não coincidem.".into());
-    }
-    if new.chars().count() < 4 {
-        return Err("A senha deve ter pelo menos 4 caracteres.".into());
-    }
-    c.password_phc = Some(applock::hash_password(&new)?);
+    lock::validate_new_password(&new, &confirm)?;
+    c.password_phc = Some(hash_off_thread(new).await?);
     c.enabled = true;
     applock::save(&app, &c).map_err(|e| e.to_string())?;
     crate::tray::rebuild_menu(&app);
@@ -520,7 +528,7 @@ pub fn set_app_lock_password(
 }
 
 #[tauri::command]
-pub fn change_app_lock_password(
+pub async fn change_app_lock_password(
     window: tauri::Webview,
     app: tauri::AppHandle,
     current: String,
@@ -536,21 +544,16 @@ pub fn change_app_lock_password(
         .password_phc
         .clone()
         .ok_or("O bloqueio não está ativado.")?;
-    if !applock::verify_password(&current, &phc) {
+    if !verify_off_thread(current, phc).await {
         return Err("A senha atual está incorreta.".into());
     }
-    if new != confirm {
-        return Err("As senhas não coincidem.".into());
-    }
-    if new.chars().count() < 4 {
-        return Err("A senha deve ter pelo menos 4 caracteres.".into());
-    }
-    c.password_phc = Some(applock::hash_password(&new)?);
+    lock::validate_new_password(&new, &confirm)?;
+    c.password_phc = Some(hash_off_thread(new).await?);
     applock::save(&app, &c).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn disable_app_lock(
+pub async fn disable_app_lock(
     window: tauri::Webview,
     app: tauri::AppHandle,
     current: String,
@@ -564,7 +567,7 @@ pub fn disable_app_lock(
         .password_phc
         .clone()
         .ok_or("O bloqueio não está ativado.")?;
-    if !applock::verify_password(&current, &phc) {
+    if !verify_off_thread(current, phc).await {
         return Err("A senha atual está incorreta.".into());
     }
     c = AppLockConfig::default(); // fully reset: disabled, no hash, no biometric, default triggers
@@ -638,8 +641,9 @@ pub async fn lock_app(window: tauri::Webview, app: tauri::AppHandle) -> Result<(
 }
 
 /// Unlock with the password. Lock-window only; works while locked (no require_unlocked).
+/// Wrong guesses are rate-limited, and the Argon2 check runs off the UI thread.
 #[tauri::command]
-pub fn unlock_password(
+pub async fn unlock_password(
     window: tauri::Webview,
     app: tauri::AppHandle,
     password: String,
@@ -649,16 +653,30 @@ pub fn unlock_password(
     }
     let c = applock::load(&app);
     let Some(phc) = c.password_phc else {
-        // No lock configured — treat as already unlocked.
+        // No lock configured: treat as already unlocked.
         lock::unlock(&app);
         return Ok(true);
     };
-    if applock::verify_password(&password, &phc) {
-        lock::unlock(&app);
-        Ok(true)
-    } else {
-        Ok(false)
+    {
+        let t = lock::guard(&lock::THROTTLE);
+        if let Some(Err(secs)) = t.as_ref().map(|t| t.check(std::time::Instant::now())) {
+            return Err(format!("Muitas tentativas. Tente de novo em {secs}s."));
+        }
     }
+    let ok = verify_off_thread(password, phc).await;
+    {
+        let mut t = lock::guard(&lock::THROTTLE);
+        let t = t.get_or_insert_with(Default::default);
+        if ok {
+            t.record_success();
+        } else {
+            t.record_failure(std::time::Instant::now());
+        }
+    }
+    if ok {
+        lock::unlock(&app);
+    }
+    Ok(ok)
 }
 
 /// Unlock with biometric. Lock-window only; works while locked.
@@ -681,9 +699,16 @@ pub fn unlock_biometric(window: tauri::Webview, app: tauri::AppHandle) -> Result
 /// Forgot-password reset: wipe ALL account sessions + the app-lock config, then
 /// relaunch fresh (logged out, lock disabled). Lock-window only.
 #[tauri::command]
-pub fn reset_app_lock(window: tauri::Webview, app: tauri::AppHandle) -> Result<(), String> {
+pub fn reset_app_lock(
+    window: tauri::Webview,
+    app: tauri::AppHandle,
+    confirmed: bool,
+) -> Result<(), String> {
     if !lock::is_lock_window(&window) {
         return Err("forbidden".into());
+    }
+    if !confirmed {
+        return Err("A redefinição precisa ser confirmada.".into());
     }
     crate::applock::request_reset(&app)?;
     app.restart();

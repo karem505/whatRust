@@ -344,24 +344,24 @@ pub fn start(app: &AppHandle) {
             result.push(json!({"test":"notification_close_with_account_panel_navigation_12_cycles","pass":true}));
             let panel = app.get_webview("settings").ok_or("missing local panel")?;
             crate::dlog::log("smoke: password_validation");
-            result.push(json!({"test":"password_validation","pass":crate::commands::set_app_lock_password(panel.clone(),app.clone(),"abc".into(),"abc".into()).is_err()&&crate::commands::set_app_lock_password(panel.clone(),app.clone(),"test-pass".into(),"mismatch".into()).is_err()}));
-            crate::commands::set_app_lock_password(
+            result.push(json!({"test":"password_validation","pass":tauri::async_runtime::block_on(crate::commands::set_app_lock_password(panel.clone(),app.clone(),"abc".into(),"abc".into())).is_err()&&tauri::async_runtime::block_on(crate::commands::set_app_lock_password(panel.clone(),app.clone(),"test-pass".into(),"mismatch".into())).is_err()}));
+            tauri::async_runtime::block_on(crate::commands::set_app_lock_password(
                 panel.clone(),
                 app.clone(),
                 "smoke-old".into(),
                 "smoke-old".into(),
-            )?;
+            ))?;
             crate::dlog::log("smoke: password_stored_as_argon2id");
             result.push(json!({"test":"password_stored_as_argon2id","pass":crate::applock::load(&app).password_phc.is_some_and(|p|p.starts_with("$argon2id$")&&!p.contains("smoke-old"))}));
             crate::dlog::log("smoke: password_change_requires_current");
-            result.push(json!({"test":"password_change_requires_current","pass":crate::commands::change_app_lock_password(panel.clone(),app.clone(),"wrong".into(),"smoke-new".into(),"smoke-new".into()).is_err()}));
-            crate::commands::change_app_lock_password(
+            result.push(json!({"test":"password_change_requires_current","pass":tauri::async_runtime::block_on(crate::commands::change_app_lock_password(panel.clone(),app.clone(),"wrong".into(),"smoke-new".into(),"smoke-new".into())).is_err()}));
+            tauri::async_runtime::block_on(crate::commands::change_app_lock_password(
                 panel.clone(),
                 app.clone(),
                 "smoke-old".into(),
                 "smoke-new".into(),
                 "smoke-new".into(),
-            )?;
+            ))?;
             crate::commands::set_app_lock_options(panel.clone(), app.clone(), true, true, 120)?;
             let config = crate::applock::load(&app);
             crate::dlog::log("smoke: lock_preferences_persist");
@@ -391,7 +391,7 @@ pub fn start(app: &AppHandle) {
             }
             let lock_view = app.get_webview("lock").ok_or("missing lock view")?;
             result.push(json!({"test":"disabled_biometric_cannot_unlock","pass":crate::commands::unlock_biometric(lock_view,app.clone()).is_err()&&!crate::lock::is_unlocked(&app)}));
-            result.push(json!({"test":"remote_cannot_unlock","pass":crate::commands::unlock_password(app.get_webview(&label).unwrap(),app.clone(),"smoke-new".into()).is_err()&&!crate::lock::is_unlocked(&app)}));
+            result.push(json!({"test":"remote_cannot_unlock","pass":tauri::async_runtime::block_on(crate::commands::unlock_password(app.get_webview(&label).unwrap(),app.clone(),"smoke-new".into())).is_err()&&!crate::lock::is_unlocked(&app)}));
             eval(&app,"lock","document.getElementById('password').value='wrong';document.getElementById('unlock').click();true")?;
             let wrong = wait_until(|| {
                 eval(
@@ -482,8 +482,12 @@ pub fn start(app: &AppHandle) {
             );
             result.push(json!({"test":"stale_page_icon_notification_not_replayed_after_unlock","pass":app.state::<crate::notify::Recent>().records().first().is_some_and(|n|n.status=="suppressed"&&n.reason.as_deref()==Some("locked"))}));
             crate::dlog::log("smoke: disable_lock_requires_current_password");
-            result.push(json!({"test":"disable_lock_requires_current_password","pass":crate::commands::disable_app_lock(panel.clone(),app.clone(),"wrong".into()).is_err()}));
-            crate::commands::disable_app_lock(panel, app.clone(), "smoke-new".into())?;
+            result.push(json!({"test":"disable_lock_requires_current_password","pass":tauri::async_runtime::block_on(crate::commands::disable_app_lock(panel.clone(),app.clone(),"wrong".into())).is_err()}));
+            tauri::async_runtime::block_on(crate::commands::disable_app_lock(
+                panel,
+                app.clone(),
+                "smoke-new".into(),
+            ))?;
             crate::dlog::log("smoke: disable_clears_hash_and_biometrics");
             result.push(json!({"test":"disable_clears_hash_and_biometrics","pass":crate::applock::load(&app)==crate::applock::AppLockConfig::default()}));
 

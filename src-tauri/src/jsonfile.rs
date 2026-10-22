@@ -34,7 +34,9 @@ pub fn backup_path(path: &Path) -> PathBuf {
 
 fn parse<T: DeserializeOwned>(path: &Path) -> Option<T> {
     let bytes = std::fs::read(path).ok()?;
-    serde_json::from_slice(&bytes).ok()
+    // Notepad and PowerShell 5 save UTF-8 with a BOM, which serde_json rejects.
+    let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes);
+    serde_json::from_slice(bytes).ok()
 }
 
 pub fn read<T: DeserializeOwned>(path: &Path) -> Loaded<T> {
@@ -160,6 +162,13 @@ mod tests {
         save(&p, &V { n: 3 }).unwrap();
         assert_eq!(read::<V>(&p), Loaded::Ok(V { n: 3 }));
         assert_eq!(parse::<V>(&backup_path(&p)), Some(V { n: 1 }));
+    }
+
+    #[test]
+    fn utf8_bom_is_tolerated() {
+        let p = scratch("bom");
+        std::fs::write(&p, b"\xEF\xBB\xBF{\"n\": 7}").unwrap();
+        assert_eq!(read::<V>(&p), Loaded::Ok(V { n: 7 }));
     }
 
     #[test]

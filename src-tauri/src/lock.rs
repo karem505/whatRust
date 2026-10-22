@@ -1,7 +1,8 @@
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Mutex,
+    Mutex, MutexGuard,
 };
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// Runtime lock state. `unlocked == false` means the app is locked.
@@ -20,6 +21,67 @@ impl LockState {
             prompt_requested: AtomicBool::new(false),
         }
     }
+}
+
+/// Lock a mutex, recovering the data if another thread panicked while holding
+/// it. Release builds use `panic = "abort"`, so a poisoned lock must never turn
+/// into a second crash.
+pub fn guard<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Delay after `failures` consecutive wrong passwords: free for the first
+/// three, then 2s doubling up to a minute.
+pub fn throttle_delay(failures: u32) -> Duration {
+    if failures < 3 {
+        return Duration::ZERO;
+    }
+    Duration::from_secs((1u64 << (failures - 2).min(6)).min(60))
+}
+
+/// Brute-force limiter for the lock screen. Lives in memory only: restarting the
+/// app resets it, which still leaves each attempt costing an Argon2 hash.
+#[derive(Default)]
+pub struct UnlockThrottle {
+    failures: u32,
+    blocked_until: Option<Instant>,
+}
+
+impl UnlockThrottle {
+    /// `Err(seconds_left)` while attempts are blocked.
+    pub fn check(&self, now: Instant) -> Result<(), u64> {
+        match self.blocked_until {
+            Some(t) if t > now => Err((t - now).as_secs() + 1),
+            _ => Ok(()),
+        }
+    }
+
+    pub fn record_failure(&mut self, now: Instant) {
+        self.failures = self.failures.saturating_add(1);
+        let d = throttle_delay(self.failures);
+        self.blocked_until = (!d.is_zero()).then(|| now + d);
+    }
+
+    pub fn record_success(&mut self) {
+        *self = Self::default();
+    }
+}
+
+pub static THROTTLE: Mutex<Option<UnlockThrottle>> = Mutex::new(None);
+
+pub const MIN_PASSWORD_LEN: usize = 6;
+
+/// Shared validation for choosing a new app-lock password.
+pub fn validate_new_password(new: &str, confirm: &str) -> Result<(), String> {
+    if new != confirm {
+        return Err("As senhas não coincidem.".into());
+    }
+    if new.chars().count() < MIN_PASSWORD_LEN {
+        return Err(format!(
+            "A senha deve ter pelo menos {MIN_PASSWORD_LEN} caracteres."
+        ));
+    }
+    Ok(())
 }
 
 /// Whether a window label should be hidden behind the lock screen. Pure, unit-tested.
@@ -45,7 +107,7 @@ pub fn is_lock_window(window: &tauri::Webview) -> bool {
 /// not yet managed, so nothing is accidentally gated before setup runs.
 pub fn is_unlocked(app: &AppHandle) -> bool {
     app.try_state::<LockState>()
-        .map(|s| *s.unlocked.lock().unwrap())
+        .map(|s| *guard(&s.unlocked))
         .unwrap_or(true)
 }
 
@@ -83,13 +145,18 @@ fn lock_on_main(app: &AppHandle, prompt: bool) {
     }
     // Idempotent: if already locked, just ensure the lock screen is up — do NOT
     // re-hide windows or clobber the recorded `hidden` list (which unlock restores).
-    if !*state.unlocked.lock().unwrap() {
-        if prompt {
-            show_lock_window(app);
+    {
+        // Test-and-set under one guard so two racing callers cannot both hide.
+        let mut unlocked = guard(&state.unlocked);
+        if !*unlocked {
+            drop(unlocked);
+            if prompt {
+                show_lock_window(app);
+            }
+            return;
         }
-        return;
+        *unlocked = false;
     }
-    *state.unlocked.lock().unwrap() = false;
     crate::notify::on_lock(app);
     crate::integration::broadcast(app);
     let mut hidden = Vec::new();
@@ -101,7 +168,7 @@ fn lock_on_main(app: &AppHandle, prompt: bool) {
             hidden.push(label);
         }
     }
-    *state.hidden.lock().unwrap() = hidden;
+    *guard(&state.hidden) = hidden;
     if prompt {
         show_lock_window(app);
     }
@@ -126,11 +193,11 @@ fn unlock_on_main(app: &AppHandle) {
     };
     state.prompt_requested.store(false, Ordering::SeqCst);
     crate::notify::on_unlock(app);
-    *state.unlocked.lock().unwrap() = true;
+    *guard(&state.unlocked) = true;
     if let Some(w) = app.get_webview_window("lock") {
         let _ = w.destroy();
     }
-    let hidden = std::mem::take(&mut *state.hidden.lock().unwrap());
+    let hidden = std::mem::take(&mut *guard(&state.hidden));
     if hidden.is_empty() {
         crate::window::show_active(app);
     } else {
@@ -224,6 +291,37 @@ mod tests {
     fn should_hide_never_hides_the_lock_window() {
         assert!(!should_hide("lock"));
         assert!(!should_hide("some-future-internal-panel"));
+    }
+
+    #[test]
+    fn throttle_delay_grows_then_caps() {
+        assert_eq!(throttle_delay(0), Duration::ZERO);
+        assert_eq!(throttle_delay(2), Duration::ZERO);
+        assert_eq!(throttle_delay(3), Duration::from_secs(2));
+        assert_eq!(throttle_delay(4), Duration::from_secs(4));
+        assert_eq!(throttle_delay(50), Duration::from_secs(60));
+    }
+
+    #[test]
+    fn throttle_blocks_after_repeated_failures_and_resets() {
+        let t0 = Instant::now();
+        let mut t = UnlockThrottle::default();
+        for _ in 0..2 {
+            t.record_failure(t0);
+            assert!(t.check(t0).is_ok());
+        }
+        t.record_failure(t0);
+        assert!(t.check(t0).is_err());
+        assert!(t.check(t0 + Duration::from_secs(5)).is_ok());
+        t.record_success();
+        assert!(t.check(t0).is_ok());
+    }
+
+    #[test]
+    fn password_validation() {
+        assert!(validate_new_password("abcdef", "abcdef").is_ok());
+        assert!(validate_new_password("abcdef", "abcdeg").is_err());
+        assert!(validate_new_password("abc", "abc").is_err());
     }
 
     #[test]

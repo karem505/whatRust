@@ -25,6 +25,19 @@ $out = Join-Path $env:TEMP $asset.name
 Write-Host "Downloading $($asset.name)..."
 Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $out -UseBasicParsing
 
+# GitHub publishes a SHA-256 digest for each release asset; refuse a mismatch.
+$expected = if ($asset.digest -match '^sha256:(?<h>[0-9a-fA-F]{64})$') { $Matches.h } else { $null }
+$actual = (Get-FileHash -Algorithm SHA256 -Path $out).Hash
+if ($expected) {
+  if ($actual -ne $expected) {
+    Remove-Item -Force $out
+    throw "Checksum mismatch for $($asset.name): expected $expected, got $actual. Aborting."
+  }
+  Write-Host "SHA-256 verified: $actual"
+} else {
+  Write-Warning "GitHub published no digest for this asset; SHA-256 is $actual. Compare it with the release notes before trusting the installer."
+}
+
 Write-Host "Launching installer..."
 if ($asset.name -match '\.msi$') {
   Start-Process msiexec.exe -ArgumentList "/i `"$out`"" -Wait

@@ -64,7 +64,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
                 "accounts" | "settings" => crate::window::open_settings_window(app),
                 "reload" => {
                     if let Some(active) = app.try_state::<crate::accounts::ActiveAccount>() {
-                        let label = active.lock().unwrap().clone();
+                        let label = crate::lock::guard(&active).clone();
                         if let Some(w) = app.get_webview(&label) {
                             let _ = w.eval("window.location.reload()");
                         }
@@ -105,7 +105,7 @@ pub fn rebuild_menu(app: &AppHandle) {
     // static items (update_badge / other paths may re-lock the map).
     let counts: std::collections::HashMap<String, u32> = {
         let state = app.state::<UnreadMap>();
-        let map = state.lock().unwrap();
+        let map = crate::lock::guard(&state);
         map.clone()
     };
 

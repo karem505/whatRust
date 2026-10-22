@@ -89,7 +89,7 @@ pub fn open_from_outside(app: &AppHandle, raw: &str) {
 
 fn active_account_window(app: &AppHandle) -> Option<tauri::Webview> {
     if let Some(active) = app.try_state::<crate::accounts::ActiveAccount>() {
-        let label = active.lock().unwrap().clone();
+        let label = crate::lock::guard(&active).clone();
         if let Some(w) = app.get_webview(&label) {
             return Some(w);
         }

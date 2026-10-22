@@ -26,7 +26,7 @@ fn state(app: &AppHandle) -> tauri::State<'_, Sessions> {
 fn set_view_visible(app: &AppHandle, view: &tauri::Webview, visible: bool) {
     let changed = {
         let s = state(app);
-        let mut map = s.view_visibility.lock().unwrap();
+        let mut map = crate::lock::guard(&s.view_visibility);
         map.insert(view.label().into(), visible) != Some(visible)
     };
     // Release the cache lock before COM: showing can generate native events.
@@ -65,14 +65,14 @@ pub fn schedule_layout(app: &AppHandle, parent: &str) {
     tauri::async_runtime::spawn_blocking(move || {
         let ui = handle.clone();
         let _ = handle.run_on_main_thread(move || {
-            state(&ui).pending_layout.lock().unwrap().remove(&parent);
+            crate::lock::guard(&state(&ui).pending_layout).remove(&parent);
             layout(&ui, &parent);
         });
     });
 }
 fn forget_view_geometry(app: &AppHandle, label: &str) {
-    state(app).applied_bounds.lock().unwrap().remove(label);
-    state(app).view_visibility.lock().unwrap().remove(label);
+    crate::lock::guard(&state(app).applied_bounds).remove(label);
+    crate::lock::guard(&state(app).view_visibility).remove(label);
 }
 
 fn reparent_on_ui(app: &AppHandle, view: &tauri::Webview, parent: &Window) -> Result<(), String> {
@@ -124,7 +124,7 @@ pub fn initialize(app: &AppHandle, hidden: bool) -> tauri::Result<Window> {
         }
         tauri::WindowEvent::Focused(focused) => {
             if *focused {
-                let label = state(&a).main_active.lock().unwrap().clone();
+                let label = crate::lock::guard(&state(&a).main_active).clone();
                 if let Some(label) = label {
                     *a.state::<ActiveAccount>().lock().unwrap() = label;
                 }
@@ -195,7 +195,7 @@ fn install_menu(app: &AppHandle, w: &Window) -> tauri::Result<()> {
 
 pub fn selected(app: &AppHandle, parent: &str) -> Option<String> {
     if parent == "main" {
-        return state(app).main_active.lock().unwrap().clone();
+        return crate::lock::guard(&state(app).main_active).clone();
     }
     app.webviews()
         .into_iter()
@@ -210,8 +210,8 @@ pub fn open_account(app: &AppHandle, account: &Account, hidden: bool) -> tauri::
         let view = crate::window::build_account_view(app, &parent, account)?;
         set_view_visible(app, &view, false);
     }
-    if state(app).main_active.lock().unwrap().is_none() {
-        *state(app).main_active.lock().unwrap() = Some(label.clone());
+    if crate::lock::guard(&state(app).main_active).is_none() {
+        *crate::lock::guard(&state(app).main_active) = Some(label.clone());
     }
     if !hidden {
         activate(app, &label);
@@ -237,7 +237,7 @@ pub fn activate(app: &AppHandle, label: &str) {
 fn activate_on_main(app: &AppHandle, label: &str) {
     let _health = crate::ui_health::enter("account activation");
     if !crate::lock::is_unlocked(app) {
-        *state(app).pending.lock().unwrap() = Some(label.to_string());
+        *crate::lock::guard(&state(app).pending) = Some(label.to_string());
         crate::lock::show_lock_window(app);
         return;
     }
@@ -246,12 +246,12 @@ fn activate_on_main(app: &AppHandle, label: &str) {
     };
     let parent = view.window();
     if parent.label() == "main" {
-        *state(app).main_active.lock().unwrap() = Some(label.to_string());
+        *crate::lock::guard(&state(app).main_active) = Some(label.to_string());
     }
     if let Some(panel) = app.get_webview("settings") {
         if panel.window().label() == parent.label() {
             set_view_visible(app, &panel, false);
-            *state(app).panel_parent.lock().unwrap() = None;
+            *crate::lock::guard(&state(app).panel_parent) = None;
         }
     }
     for (other, v) in app.webviews() {
@@ -297,7 +297,7 @@ fn layout_on_main(app: &AppHandle, parent: &str) {
     let minimized = w.is_minimized().unwrap_or(false);
     let visible = w.is_visible().unwrap_or(false) && !minimized && crate::lock::is_unlocked(app);
     let active = selected(app, parent);
-    let panel_open = state(app).panel_parent.lock().unwrap().as_deref() == Some(parent);
+    let panel_open = crate::lock::guard(&state(app).panel_parent).as_deref() == Some(parent);
     for (label, view) in app.webviews() {
         if view.window().label() != parent {
             continue;
@@ -327,7 +327,7 @@ fn layout_on_main(app: &AppHandle, parent: &str) {
     let top = if parent == "main"
         && active
             .as_ref()
-            .is_some_and(|l| state(app).fallback.lock().unwrap().contains(l))
+            .is_some_and(|l| crate::lock::guard(&state(app).fallback).contains(l))
     {
         48.
     } else {
@@ -363,7 +363,7 @@ fn layout_on_main(app: &AppHandle, parent: &str) {
             })
             .is_err()
             {
-                state(app).applied_bounds.lock().unwrap().remove(&label);
+                crate::lock::guard(&state(app).applied_bounds).remove(&label);
             }
         }
         if shell {
@@ -405,14 +405,14 @@ fn sync_menu(app: &AppHandle, parent: &str) {
     });
     let changed = {
         let s = state(app);
-        let mut menus = s.menus_hidden.lock().unwrap();
+        let mut menus = crate::lock::guard(&s.menus_hidden);
         menus.insert(parent.into(), hidden) != Some(hidden)
     };
     if changed {
         if let Some(w) = app.get_window(parent) {
             let result = if hidden { w.hide_menu() } else { w.show_menu() };
             if result.is_err() {
-                state(app).menus_hidden.lock().unwrap().remove(parent);
+                crate::lock::guard(&state(app).menus_hidden).remove(parent);
             }
         }
     }
@@ -420,7 +420,7 @@ fn sync_menu(app: &AppHandle, parent: &str) {
 
 pub fn integration_changed(app: &AppHandle, label: &str, mounted: bool) {
     let s = state(app);
-    let mut f = s.fallback.lock().unwrap();
+    let mut f = crate::lock::guard(&s.fallback);
     if mounted {
         f.remove(label);
     } else {
@@ -507,7 +507,7 @@ fn attach_inner(app: &AppHandle, id: &str, activate_returned_account: bool) -> R
         }
         return Ok(());
     }
-    let selected_before_close = state(app).main_active.lock().unwrap().clone();
+    let selected_before_close = crate::lock::guard(&state(app).main_active).clone();
     if let Some(panel) = app.get_webview("settings") {
         if panel.window().label() == old.label() {
             set_view_visible(app, &panel, false);
@@ -519,7 +519,7 @@ fn attach_inner(app: &AppHandle, id: &str, activate_returned_account: bool) -> R
         }
     }
     reparent_on_ui(app, &v, &initialize(app, true).map_err(|e| e.to_string())?)?;
-    state(app).menus_hidden.lock().unwrap().remove(old.label());
+    crate::lock::guard(&state(app).menus_hidden).remove(old.label());
     let _ = old.destroy();
     if activate_returned_account {
         activate(app, &label);
@@ -551,7 +551,7 @@ fn restore_main_after_detached_close(
         })
         .unwrap_or_else(|| returned_label.to_string());
 
-    *state(app).main_active.lock().unwrap() = Some(selected.clone());
+    *crate::lock::guard(&state(app).main_active) = Some(selected.clone());
     *app.state::<ActiveAccount>().lock().unwrap() = selected.clone();
     sync_menu(app, "main");
     if let (Some(window), Some(view)) = (app.get_window("main"), app.get_webview(&selected)) {
@@ -569,7 +569,7 @@ fn restore_main_after_detached_close(
         let _ = window.unminimize();
         layout(app, "main");
         let _ = window.set_focus();
-        if state(app).panel_parent.lock().unwrap().as_deref() == Some("main") {
+        if crate::lock::guard(&state(app).panel_parent).as_deref() == Some("main") {
             if let Some(panel) = app.get_webview("settings") {
                 let _ = panel.set_focus();
             }
@@ -581,7 +581,7 @@ fn restore_main_after_detached_close(
 }
 
 fn choose_remaining(app: &AppHandle, exclude: Option<&str>) {
-    let current = state(app).main_active.lock().unwrap().clone();
+    let current = crate::lock::guard(&state(app).main_active).clone();
     if let Some(label) = current {
         if exclude != Some(label.as_str())
             && app
@@ -601,7 +601,7 @@ fn choose_remaining(app: &AppHandle, exclude: Option<&str>) {
                 .is_some_and(|v| v.window().label() == "main"))
         .then_some(label)
     });
-    *state(app).main_active.lock().unwrap() = next.clone();
+    *crate::lock::guard(&state(app).main_active) = next.clone();
     if let Some(label) = next {
         activate(app, &label);
     } else {
@@ -617,7 +617,7 @@ pub fn remove_view(app: &AppHandle, id: &str) -> tauri::Result<()> {
     if let Some(v) = app.get_webview(&accounts::window_label(id)) {
         let owner = v.window();
         v.close()?;
-        state(app).view_visibility.lock().unwrap().remove(v.label());
+        crate::lock::guard(&state(app).view_visibility).remove(v.label());
         if owner.label().starts_with("detached-") {
             let _ = owner.destroy();
         }
@@ -673,7 +673,7 @@ pub fn open_panel(app: &AppHandle, parent: Option<&str>) -> tauri::Result<()> {
             set_view_visible(app, &v, false);
         }
     }
-    *state(app).panel_parent.lock().unwrap() = Some(owner.label().into());
+    *crate::lock::guard(&state(app).panel_parent) = Some(owner.label().into());
     layout(app, owner.label());
     // A worker can finish constructing a panel after a lock request.
     if !crate::lock::is_unlocked(app) {
@@ -690,7 +690,7 @@ pub fn open_panel(app: &AppHandle, parent: Option<&str>) -> tauri::Result<()> {
 }
 
 pub fn close_panel(app: &AppHandle) {
-    *state(app).panel_parent.lock().unwrap() = None;
+    *crate::lock::guard(&state(app).panel_parent) = None;
     if let Some(v) = app.get_webview("settings") {
         let parent = v.window();
         set_view_visible(app, &v, false);
@@ -724,7 +724,7 @@ pub fn toggle(app: &AppHandle) {
     }
 }
 pub fn restore_pending(app: &AppHandle) {
-    let label = state(app).pending.lock().unwrap().take();
+    let label = crate::lock::guard(&state(app).pending).take();
     if let Some(label) = label {
         activate(app, &label);
     }
@@ -737,6 +737,6 @@ pub fn account_focused(app: &AppHandle, label: &str) -> bool {
             && !parent.is_minimized().unwrap_or(false)
             && parent.is_focused().unwrap_or(false)
             && selected(app, parent.label()).as_deref() == Some(label)
-            && state(app).panel_parent.lock().unwrap().as_deref() != Some(parent.label())
+            && crate::lock::guard(&state(app).panel_parent).as_deref() != Some(parent.label())
     })
 }

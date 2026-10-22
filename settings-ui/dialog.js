@@ -70,6 +70,8 @@
 
     if (opts.title) {
       var h = el("h2", null, opts.title);
+      h.id = "dlg-title";
+      box.setAttribute("aria-labelledby", "dlg-title");
       box.appendChild(h);
     }
     if (message) box.appendChild(el("p", "dlg-message", message));

@@ -62,7 +62,7 @@ async function init() {
     );
     if (!ok) return;
     try {
-      await invoke("reset_app_lock");
+      await invoke("reset_app_lock", { confirmed: true });
     } catch (err) {
       errEl.textContent = "Não foi possível redefinir o aplicativo. Tente novamente.";
     }

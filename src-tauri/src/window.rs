@@ -1023,7 +1023,7 @@ fn register_focus_listener(app: &AppHandle, win: &WebviewWindow) {
     win.on_window_event(move |event| {
         if let tauri::WindowEvent::Focused(true) = event {
             if let Some(active) = app_handle.try_state::<ActiveAccount>() {
-                *active.lock().unwrap() = label.clone();
+                *crate::lock::guard(&active) = label.clone();
             }
         }
     });
@@ -1136,8 +1136,17 @@ fn enable_webview_media(win: &WebviewWindow) {
                     settings.set_property("enable-developer-extras", true);
                 }
             }
-            wv.connect_permission_request(|_wv, req| {
-                req.allow();
+            wv.connect_permission_request(|wv, req| {
+                // Grant only to WhatsApp itself; any other page that ends up in
+                // this webview gets nothing.
+                let from_whatsapp = wv
+                    .uri()
+                    .is_some_and(|u| u.starts_with("https://web.whatsapp.com/"));
+                if from_whatsapp {
+                    req.allow();
+                } else {
+                    req.deny();
+                }
                 true
             });
             // The initial navigation was issued before this callback ran, i.e.
@@ -1222,6 +1231,12 @@ pub fn native_report(app: &AppHandle, id: &str, action: &str) {
 /// but none for real messages. WebView2's `NotificationReceived` sees those too:
 /// it is turned into a whatRust toast (lock-aware, de-duplicated) instead of
 /// WebView2's own popup.
+/// Whether a permission request comes from WhatsApp's own origin.
+#[cfg(any(target_os = "windows", test))]
+fn is_whatsapp_origin(uri: &str) -> bool {
+    uri == "https://web.whatsapp.com" || uri.starts_with("https://web.whatsapp.com/")
+}
+
 #[cfg(target_os = "windows")]
 fn enable_media_windows(webview: tauri::webview::PlatformWebview, app: AppHandle, label: String) {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
@@ -1229,6 +1244,7 @@ fn enable_media_windows(webview: tauri::webview::PlatformWebview, app: AppHandle
         ICoreWebView2PermissionRequestedEventArgs, ICoreWebView2_24, COREWEBVIEW2_PERMISSION_KIND,
         COREWEBVIEW2_PERMISSION_KIND_CAMERA, COREWEBVIEW2_PERMISSION_KIND_MICROPHONE,
         COREWEBVIEW2_PERMISSION_KIND_NOTIFICATIONS, COREWEBVIEW2_PERMISSION_STATE_ALLOW,
+        COREWEBVIEW2_PERMISSION_STATE_DENY,
     };
     use webview2_com::{NotificationReceivedEventHandler, PermissionRequestedEventHandler};
     use windows_core::Interface;
@@ -1248,11 +1264,17 @@ fn enable_media_windows(webview: tauri::webview::PlatformWebview, app: AppHandle
                 if let Some(args) = args {
                     let mut kind = COREWEBVIEW2_PERMISSION_KIND::default();
                     args.PermissionKind(&mut kind)?;
-                    if kind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE
-                        || kind == COREWEBVIEW2_PERMISSION_KIND_CAMERA
-                        || kind == COREWEBVIEW2_PERMISSION_KIND_NOTIFICATIONS
+                    let mut uri = windows_core::PWSTR::null();
+                    args.Uri(&mut uri)?;
+                    let uri = webview2_com::take_pwstr(uri);
+                    if is_whatsapp_origin(&uri)
+                        && (kind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE
+                            || kind == COREWEBVIEW2_PERMISSION_KIND_CAMERA
+                            || kind == COREWEBVIEW2_PERMISSION_KIND_NOTIFICATIONS)
                     {
                         args.SetState(COREWEBVIEW2_PERMISSION_STATE_ALLOW)?;
+                    } else {
+                        args.SetState(COREWEBVIEW2_PERMISSION_STATE_DENY)?;
                     }
                 }
                 Ok(())
@@ -1372,7 +1394,7 @@ pub fn show_active(app: &AppHandle) {
         return;
     }
     if let Some(active) = app.try_state::<ActiveAccount>() {
-        let label = active.lock().unwrap().clone();
+        let label = crate::lock::guard(&active).clone();
         if app.get_webview(&label).is_some() {
             show_account(app, &label);
             return;
@@ -1438,7 +1460,7 @@ pub fn toggle_active(app: &AppHandle) {
 fn toggle_active_legacy(app: &AppHandle) {
     let label = app
         .try_state::<ActiveAccount>()
-        .map(|a| a.lock().unwrap().clone());
+        .map(|a| crate::lock::guard(&a).clone());
     let visible = label
         .as_ref()
         .and_then(|l| app.get_webview_window(l))
@@ -1510,10 +1532,10 @@ fn open_settings_legacy(app: &AppHandle) {
 mod tests {
     use super::{
         base64_encode, drop_ack_failed, drop_msg_begin, drop_msg_chunk_prefix_parts,
-        drop_msg_commit, drop_msg_end, ensure_download_destination, mime_for, plan_drop,
-        run_drop_queue, safari_ua, stream_chunks, summarize_skips, toggle_decision, DropSkips,
-        StreamAbort, ToggleAct, CHUNKS_PER_EVAL, DROP_CHUNK_BYTES, DROP_MSG_CHUNK_SUFFIX_PARTS,
-        MAX_DROP_FILES,
+        drop_msg_commit, drop_msg_end, ensure_download_destination, is_whatsapp_origin, mime_for,
+        plan_drop, run_drop_queue, safari_ua, stream_chunks, summarize_skips, toggle_decision,
+        DropSkips, StreamAbort, ToggleAct, CHUNKS_PER_EVAL, DROP_CHUNK_BYTES,
+        DROP_MSG_CHUNK_SUFFIX_PARTS, MAX_DROP_FILES,
     };
 
     #[test]
@@ -1901,5 +1923,16 @@ mod tests {
     #[test]
     fn no_active_window_is_shown() {
         assert_eq!(toggle_decision(None), ToggleAct::Show);
+    }
+
+    #[test]
+    fn permissions_are_granted_to_whatsapp_origin_only() {
+        assert!(is_whatsapp_origin("https://web.whatsapp.com/"));
+        assert!(is_whatsapp_origin("https://web.whatsapp.com"));
+        assert!(!is_whatsapp_origin("https://web.whatsapp.com.evil.test/"));
+        assert!(!is_whatsapp_origin("http://web.whatsapp.com/"));
+        assert!(!is_whatsapp_origin(
+            "https://evil.test/https://web.whatsapp.com/"
+        ));
     }
 }

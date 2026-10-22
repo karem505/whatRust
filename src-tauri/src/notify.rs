@@ -60,7 +60,7 @@ impl Recent {
     #[cfg(any(windows, test))]
     fn cancel_pending(&self, label: &str, id: &str, identity: &str) {
         self.finish(label, id, identity, false);
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = crate::lock::guard(&self.inner);
         if let Some(n) = inner.records.iter_mut().find(|n| n.id == id) {
             n.status = "suppressed".into();
             n.reason = Some("locked".into());
@@ -88,7 +88,7 @@ impl Recent {
             .is_some_and(|(_, t)| *t >= since)
     }
     pub fn consume_coverage(&self, label: &str, since: Instant) -> bool {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = crate::lock::guard(&self.inner);
         let receipts = inner.coverage.entry(label.into()).or_default();
         while receipts.front().is_some_and(|(_, time)| *time < since) {
             receipts.pop_front();
@@ -96,10 +96,10 @@ impl Recent {
         receipts.pop_front().is_some()
     }
     pub fn native_ready(&self, label: &str) -> bool {
-        self.inner.lock().unwrap().native.contains(label)
+        crate::lock::guard(&self.inner).native.contains(label)
     }
     pub fn set_native(&self, label: &str, ready: bool) {
-        let mut i = self.inner.lock().unwrap();
+        let mut i = crate::lock::guard(&self.inner);
         if ready {
             i.native.insert(label.into());
         } else {
@@ -117,7 +117,7 @@ impl Recent {
             .collect()
     }
     fn record(&self, label: &str, id: &str, source: Source, status: &str, reason: Option<&str>) {
-        let mut i = self.inner.lock().unwrap();
+        let mut i = crate::lock::guard(&self.inner);
         i.records.push_back(Notice {
             id: id.into(),
             account_id: crate::accounts::id_from_label(label).unwrap_or("").into(),
@@ -134,7 +134,7 @@ impl Recent {
         }
     }
     fn finish(&self, label: &str, id: &str, identity: &str, success: bool) {
-        let mut i = self.inner.lock().unwrap();
+        let mut i = crate::lock::guard(&self.inner);
         let success = success && !i.records.iter().any(|r| r.id == id && r.status == "failed");
         let real_source = i
             .records
@@ -495,11 +495,11 @@ pub fn on_lock(app: &AppHandle) {
     #[cfg(windows)]
     {
         let generation = recent.epoch();
-        let toasts = std::mem::take(&mut recent.inner.lock().unwrap().toasts);
+        let toasts = std::mem::take(&mut crate::lock::guard(&recent.inner).toasts);
         let handle = app.clone();
         tauri::async_runtime::spawn_blocking(move || {
             let recent = handle.state::<Recent>();
-            let _gate = recent.delivery_gate.lock().unwrap();
+            let _gate = crate::lock::guard(&recent.delivery_gate);
             use windows::{core::HSTRING, UI::Notifications::ToastNotificationManager};
             if let Ok(notifier) = ToastNotificationManager::CreateToastNotifierWithId(
                 &HSTRING::from(&handle.config().identifier),
@@ -565,7 +565,7 @@ fn windows_toast(
         .unwrap_or_else(event_id);
     std::thread::spawn(move || {
         let recent = app.state::<Recent>();
-        let _gate = recent.delivery_gate.lock().unwrap();
+        let _gate = crate::lock::guard(&recent.delivery_gate);
         clear_history_before_delivery(&app, epoch);
         if !crate::lock::is_unlocked(&app) || app.state::<Recent>().epoch() != epoch {
             if let Some(d) = &delivery {
@@ -682,7 +682,7 @@ fn windows_toast(
         })();
         if let Ok(toast) = &send {
             let retired = {
-                let mut inner = recent.inner.lock().unwrap();
+                let mut inner = crate::lock::guard(&recent.inner);
                 let retired = if inner.toasts.len() >= 100 {
                     inner
                         .toasts
