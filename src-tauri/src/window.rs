@@ -1,4 +1,5 @@
 use crate::accounts::{self, Account, ActiveAccount};
+use crate::i18n::{tr, trf};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 /// Recent desktop Chrome UA (Linux, Windows). WhatsApp Web rejects the default
@@ -77,6 +78,7 @@ macro_rules! account_webview {
     ($builder:expr, $app:ident, $label:ident) => {
         $builder
             .user_agent(&user_agent())
+            .initialization_script(crate::i18n::init_script())
             .initialization_script(if cfg!(windows) {
                 format!("window.__WHATRUST_WINDOWS__=true;window.__whatrustNotificationEpoch={};window.__whatrustLocked={};",$app.state::<crate::notify::Recent>().epoch(),!crate::lock::is_unlocked($app))
             } else {
@@ -172,24 +174,24 @@ macro_rules! account_webview {
                         if !shown || !focused {
                             if success {
                                 let body = match done.as_ref().and_then(|(_, p)| p.file_name()) {
-                                    Some(n) => format!(
-                                        "{} — salvo no local escolhido.",
-                                        n.to_string_lossy()
+                                    Some(n) => trf(
+                                        "{0} — salvo no local escolhido.",
+                                        &[&n.to_string_lossy()],
                                     ),
-                                    None => "Arquivo salvo no local escolhido.".to_string(),
+                                    None => tr("Arquivo salvo no local escolhido.").into_owned(),
                                 };
                                 crate::notify::show_for_account(
                                     app,
                                     webview.label(),
-                                    "Download concluído",
+                                    tr("Download concluído").as_ref(),
                                     &body,
                                 );
                             } else {
                                 crate::notify::show_for_account(
                                     app,
                                     webview.label(),
-                                    "Falha no download",
-                                    "Não foi possível baixar o arquivo. Tente novamente.",
+                                    tr("Falha no download").as_ref(),
+                                    tr("Não foi possível baixar o arquivo. Tente novamente.").as_ref(),
                                 );
                             }
                         }
@@ -474,8 +476,8 @@ fn register_drop_handler(win: &WebviewWindow) {
             // with zero paths. Tell the user instead of silently doing nothing.
             crate::notify::show(
                 win.app_handle(),
-                "Nenhum arquivo foi anexado",
-                "Não é possível arrastar esse item diretamente. Arraste o arquivo pelo Explorador de Arquivos ou use o botão de anexo (+).",
+                tr("Nenhum arquivo foi anexado").as_ref(),
+                tr("Não é possível arrastar esse item diretamente. Arraste o arquivo pelo Explorador de Arquivos ou use o botão de anexo (+).").as_ref(),
             );
             return;
         }
@@ -485,8 +487,8 @@ fn register_drop_handler(win: &WebviewWindow) {
             ));
             crate::notify::show(
                 win.app_handle(),
-                "Arquivos não anexados",
-                "Não foi possível processar os arquivos. Tente novamente.",
+                tr("Arquivos não anexados").as_ref(),
+                tr("Não foi possível processar os arquivos. Tente novamente.").as_ref(),
             );
         }
     });
@@ -584,46 +586,47 @@ fn plan_drop(paths: &[std::path::PathBuf]) -> (Vec<PlannedFile>, DropSkips) {
 /// Human summary of skipped files for the toast. Counts and reasons only — no names.
 fn summarize_skips(s: &DropSkips) -> String {
     let mut parts: Vec<String> = Vec::new();
-    let plural = |n: usize| if n == 1 { "arquivo" } else { "arquivos" };
+    let plural = |n: usize| {
+        if n == 1 {
+            tr("arquivo")
+        } else {
+            tr("arquivos")
+        }
+    };
     if s.too_large > 0 {
-        parts.push(format!(
-            "{} {} acima do limite de 500 MB",
-            s.too_large,
-            plural(s.too_large)
+        parts.push(trf(
+            "{0} {1} acima do limite de 500 MB",
+            &[&s.too_large, &plural(s.too_large)],
         ));
     }
     if s.over_budget > 0 {
-        parts.push(format!(
-            "{} {} acima do total de 500 MB por envio",
-            s.over_budget,
-            plural(s.over_budget)
+        parts.push(trf(
+            "{0} {1} acima do total de 500 MB por envio",
+            &[&s.over_budget, &plural(s.over_budget)],
         ));
     }
     if s.over_count > 0 {
-        parts.push(format!(
-            "{} {} acima do limite de 200 arquivos",
-            s.over_count,
-            plural(s.over_count)
+        parts.push(trf(
+            "{0} {1} acima do limite de 200 arquivos",
+            &[&s.over_count, &plural(s.over_count)],
         ));
     }
     if s.not_file > 0 {
-        parts.push(format!("pastas ou arquivos especiais: {}", s.not_file));
+        parts.push(trf("pastas ou arquivos especiais: {0}", &[&s.not_file]));
     }
     if s.unreadable > 0 {
-        parts.push(format!(
-            "{} {} sem permissão de leitura",
-            s.unreadable,
-            plural(s.unreadable)
+        parts.push(trf(
+            "{0} {1} sem permissão de leitura",
+            &[&s.unreadable, &plural(s.unreadable)],
         ));
     }
     if s.changed > 0 {
-        parts.push(format!(
-            "{} {} alterados durante a leitura",
-            s.changed,
-            plural(s.changed)
+        parts.push(trf(
+            "{0} {1} alterados durante a leitura",
+            &[&s.changed, &plural(s.changed)],
         ));
     }
-    format!("Não anexados: {}.", parts.join(", "))
+    trf("Não anexados: {0}.", &[&parts.join(", ")])
 }
 
 /// Why streaming one file to the page stopped.
@@ -830,8 +833,9 @@ fn stream_drop(w: &WebviewWindow, drop_id: u64, paths: &[std::path::PathBuf]) {
                 ));
                 crate::notify::show(
                     w.app_handle(),
-                    "Arquivos não anexados",
-                    "Não foi possível enviar os arquivos ao WhatsApp. Tente novamente.",
+                    tr("Arquivos não anexados").as_ref(),
+                    tr("Não foi possível enviar os arquivos ao WhatsApp. Tente novamente.")
+                        .as_ref(),
                 );
                 return;
             }
@@ -852,8 +856,8 @@ fn stream_drop(w: &WebviewWindow, drop_id: u64, paths: &[std::path::PathBuf]) {
             if drop_ack_failed(&ack) {
                 crate::notify::show(
                     &app,
-                    "Arquivos não anexados",
-                    "O WhatsApp ainda não estava pronto para receber os arquivos. Tente novamente.",
+                    tr("Arquivos não anexados").as_ref(),
+                    tr("O WhatsApp ainda não estava pronto para receber os arquivos. Tente novamente.").as_ref(),
                 );
             }
         });
@@ -869,7 +873,7 @@ fn stream_drop(w: &WebviewWindow, drop_id: u64, paths: &[std::path::PathBuf]) {
     if skips.total() > 0 {
         crate::notify::show(
             w.app_handle(),
-            "Alguns arquivos não foram anexados",
+            tr("Alguns arquivos não foram anexados").as_ref(),
             &summarize_skips(&skips),
         );
     }
@@ -1512,7 +1516,8 @@ fn open_settings_legacy(app: &AppHandle) {
         return;
     }
     match WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("index.html".into()))
-        .title("whatRust — Configurações")
+        .initialization_script(crate::i18n::init_script())
+        .title(tr("whatRust — Configurações"))
         .inner_size(440.0, 680.0)
         .min_inner_size(440.0, 520.0)
         .resizable(true)

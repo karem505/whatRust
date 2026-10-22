@@ -5,6 +5,7 @@ mod biometric;
 mod commands;
 mod dlog;
 mod downloads;
+mod i18n;
 mod integration;
 mod jsonfile;
 mod links;
@@ -207,6 +208,7 @@ pub fn run() {
             // Failure aborts startup before reading accounts or creating a view.
             applock::complete_pending_reset(handle).map_err(std::io::Error::other)?;
             let mut s = settings::load(handle);
+            i18n::set(i18n::Lang::from_code(&s.language));
             if smoke_mode {
                 s.start_minimized = true;
                 settings::save(handle, &s)?;

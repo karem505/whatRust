@@ -13,6 +13,7 @@
 //! to [`LAUNCH_GRACE`], so the public functions run on their own thread and report
 //! failures as a toast instead of freezing the window.
 
+use crate::i18n::tr;
 use std::path::{Path, PathBuf};
 
 /// Schemes we hand to the system. Everything else (javascript:, file:, data:,
@@ -42,8 +43,9 @@ pub fn open_url(app: &tauri::AppHandle, url: tauri::Url) {
             crate::dlog::log(&format!("opener: {e}"));
             crate::notify::show(
                 &app,
-                "Não foi possível abrir o link",
-                "Não foi possível iniciar o navegador. Copie o link e abra-o no navegador.",
+                tr("Não foi possível abrir o link").as_ref(),
+                tr("Não foi possível iniciar o navegador. Copie o link e abra-o no navegador.")
+                    .as_ref(),
             );
         }
     });
@@ -75,8 +77,8 @@ fn report(app: &tauri::AppHandle, what: &str, result: Result<(), String>) {
             crate::dlog::log(&format!("opener: {what} file FAILED: {e}"));
             crate::notify::show(
                 app,
-                "Não foi possível abrir o arquivo",
-                "Abra o arquivo pela pasta em que ele foi salvo.",
+                tr("Não foi possível abrir o arquivo").as_ref(),
+                tr("Abra o arquivo pela pasta em que ele foi salvo.").as_ref(),
             );
         }
     }

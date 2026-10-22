@@ -1,8 +1,9 @@
 (function () {
   "use strict";
+  function L(pt, en) { return window.__WR_LANG === "en" ? en : pt; }
   if (!window.__WHATRUST_WINDOWS__ || location.origin !== "https://web.whatsapp.com") return;
   var state = { accounts: [], current_id: "", native_notifications: false };
-  var host, root, menu, accountButton, accountName, accountBadge, status, lastReport = "", observer, scheduled, resizeObserver, resizeTarget, themeObserver;
+  var host, root, menu, gear, accountButton, accountName, accountBadge, status, lastReport = "", observer, scheduled, resizeObserver, resizeTarget, themeObserver;
   function call(cmd, args) { var t=window.__TAURI__;if(!t||!t.core)return Promise.resolve(null);return t.core.invoke(cmd, args).catch(function () { return null; }); }
   function button(text, fn) { var b=document.createElement("button");b.type="button";b.textContent=text;b.addEventListener("click",function(e){e.stopPropagation();fn();});return b; }
   function openPanel() { if(menu.open)menu.close();call("open_app_panel"); }
@@ -13,20 +14,22 @@
     var focusKey=root.activeElement && root.activeElement.dataset.item;
     var keepFocus=menu.open && !!focusKey;
     var own=state.accounts.find(function(a){return a.id===state.current_id;});
-    accountName.textContent=own ? own.name : "Contas";
+    accountName.textContent=own ? own.name : L("Contas","Accounts");
     accountBadge.textContent=own && own.unread ? String(own.unread>99?"99+":own.unread) : "";
     accountBadge.hidden=!accountBadge.textContent;
-    accountButton.setAttribute("aria-label","Trocar conta"+(own?": "+own.name:"")+(own&&own.unread?" · "+own.unread+" conversas não lidas":""));
-    accountButton.title=own ? "Conta: "+own.name+" — Trocar conta" : "Trocar conta do WhatsApp";
+    accountButton.setAttribute("aria-label",L("Trocar conta","Switch account")+(own?": "+own.name:"")+(own&&own.unread?" · "+own.unread+L(" conversas não lidas"," unread chats"):""));
+    accountButton.title=own ? L("Conta: ","Account: ")+own.name+L(" — Trocar conta"," — Switch account") : L("Trocar conta do WhatsApp","Switch WhatsApp account");
+    gear.setAttribute("aria-label",L("Configurações do whatRust","whatRust settings"));gear.title=L("Configurações do whatRust","whatRust settings");menu.setAttribute("aria-label",L("Contas do whatRust","whatRust accounts"));
     menu.replaceChildren();
-    var title=document.createElement("h2");title.textContent="Suas contas";menu.appendChild(title);
-    state.accounts.forEach(function(a){var b=button(a.name+(a.unread?" · "+a.unread+" conversas não lidas":""),function(){menu.close();call("switch_account",{id:a.id});});b.setAttribute("aria-current",String(a.id===state.current_id));b.dataset.item=a.id;menu.appendChild(b);});
-    var manage=button("Gerenciar contas e configurações",openPanel);manage.dataset.item="manage";menu.appendChild(manage);
-    var close=button("Fechar",function(){menu.close();});close.dataset.item="close";menu.appendChild(close);
-    status=document.createElement("p");status.setAttribute("role","status");status.textContent=own?"Conta atual: "+own.name:"Escolha uma conta";menu.appendChild(status);
+    var title=document.createElement("h2");title.textContent=L("Suas contas","Your accounts");menu.appendChild(title);
+    state.accounts.forEach(function(a){var b=button(a.name+(a.unread?" · "+a.unread+L(" conversas não lidas"," unread chats"):""),function(){menu.close();call("switch_account",{id:a.id});});b.setAttribute("aria-current",String(a.id===state.current_id));b.dataset.item=a.id;menu.appendChild(b);});
+    var manage=button(L("Gerenciar contas e configurações","Manage accounts and settings"),openPanel);manage.dataset.item="manage";menu.appendChild(manage);
+    var close=button(L("Fechar","Close"),function(){menu.close();});close.dataset.item="close";menu.appendChild(close);
+    status=document.createElement("p");status.setAttribute("role","status");status.textContent=own?L("Conta atual: ","Current account: ")+own.name:L("Escolha uma conta","Choose an account");menu.appendChild(status);
     if(menu.open)positionMenu();
     if(keepFocus){var restore=Array.from(menu.querySelectorAll("button")).find(function(b){return b.dataset.item===focusKey;})||menu.querySelector("button");if(restore)restore.focus();}
   }
+  window.__wrRelang=function(){if(accountButton)draw();};
   window.__whatrustState=function(next){if(!next)return;state=next;window.__whatrustPreferNative=!!next.native_notifications;window.__whatrustNotificationEpoch=next.notification_epoch||0;window.__whatrustLocked=!!next.notifications_locked;draw();};
   function create(){
     host=document.createElement("span");host.id="__whatrust_controls";host.setAttribute("data-whatrust","controls");
@@ -54,7 +57,7 @@
     accountName=document.createElement("span");accountName.className="account-name";
     accountBadge=document.createElement("span");accountBadge.className="badge";accountBadge.setAttribute("aria-hidden","true");
     accountButton.append(people,accountName,accountBadge);accountButton.setAttribute("aria-haspopup","dialog");accountButton.setAttribute("aria-expanded","false");
-    var gear=button("⚙",openPanel);gear.setAttribute("aria-label","Configurações do whatRust");gear.title="Configurações do whatRust";
+    gear=button("⚙",openPanel);gear.setAttribute("aria-label","Configurações do whatRust");gear.title="Configurações do whatRust";
     gear.textContent="";
     var svg=document.createElementNS("http://www.w3.org/2000/svg","svg"),path=document.createElementNS("http://www.w3.org/2000/svg","path");svg.setAttribute("viewBox","0 0 24 24");svg.setAttribute("aria-hidden","true");path.setAttribute("d","M9.5 3h5l.6 2.4 2 1.2 2.4-.7 2.5 4.3-1.8 1.8v2.3l1.8 1.8-2.5 4.3-2.4-.7-2 1.2-.6 2.1h-5l-.6-2.1-2-1.2-2.4.7L2 16.1l1.8-1.8V12L2 10.2l2.5-4.3 2.4.7 2-1.2z M15.5 12.5a3.5 3.5 0 1 1-7 0a3.5 3.5 0 0 1 7 0");svg.appendChild(path);gear.appendChild(svg);
     menu=document.createElement("dialog");menu.setAttribute("aria-label","Contas do whatRust");menu.addEventListener("click",function(e){var r=menu.getBoundingClientRect();if(e.target===menu&&(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom))menu.close();});menu.addEventListener("close",function(){accountButton.setAttribute("aria-expanded","false");accountButton.focus();});

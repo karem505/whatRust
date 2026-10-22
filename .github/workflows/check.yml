@@ -69,3 +69,9 @@ jobs:
       # and shows up only as a dead button on macOS, so it needs a test.
       - name: settings-ui dialog tests
         run: node settings-ui/dialog.test.mjs
+
+      - name: settings-ui language tests (every UI string has an English entry)
+        run: node settings-ui/i18n.test.mjs
+
+      - name: notification tests
+        run: node src-tauri/resources/notifications.test.mjs

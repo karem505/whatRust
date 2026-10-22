@@ -1,3 +1,4 @@
+use crate::i18n::{tr, trf};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Mutex, MutexGuard,
@@ -74,11 +75,12 @@ pub const MIN_PASSWORD_LEN: usize = 6;
 /// Shared validation for choosing a new app-lock password.
 pub fn validate_new_password(new: &str, confirm: &str) -> Result<(), String> {
     if new != confirm {
-        return Err("As senhas não coincidem.".into());
+        return Err(tr("As senhas não coincidem.").into());
     }
     if new.chars().count() < MIN_PASSWORD_LEN {
-        return Err(format!(
-            "A senha deve ter pelo menos {MIN_PASSWORD_LEN} caracteres."
+        return Err(trf(
+            "A senha deve ter pelo menos {0} caracteres.",
+            &[&MIN_PASSWORD_LEN],
         ));
     }
     Ok(())
@@ -243,7 +245,8 @@ fn show_lock_window_inner(app: &AppHandle) {
         return;
     }
     let built = WebviewWindowBuilder::new(app, "lock", WebviewUrl::App("lock.html".into()))
-        .title("whatRust — Bloqueado")
+        .initialization_script(crate::i18n::init_script())
+        .title(tr("whatRust — Bloqueado"))
         .inner_size(420.0, 540.0)
         .resizable(false)
         .decorations(false)

@@ -1,6 +1,8 @@
 (function () {
   "use strict";
   if (window.location.origin !== "https://web.whatsapp.com") return;
+  // Interface language, injected by Rust and re-set live on a language change.
+  function L(pt, en) { return window.__WR_LANG === "en" ? en : pt; }
 
   // A rejected command used to vanish here without a trace, which is how every
   // notify/set_unread call being refused by the IPC permission check went
@@ -32,8 +34,8 @@
     trigger.id = "__whatrust_accounts";
     trigger.type = "button";
     trigger.textContent = "⇄";
-    trigger.title = "Trocar conta do WhatsApp";
-    trigger.setAttribute("aria-label", "Trocar conta do WhatsApp");
+    trigger.title = L("Trocar conta do WhatsApp", "Switch WhatsApp account");
+    trigger.setAttribute("aria-label", L("Trocar conta do WhatsApp", "Switch WhatsApp account"));
     trigger.setAttribute("aria-haspopup", "dialog");
     trigger.setAttribute("aria-expanded", "false");
     trigger.style.cssText = "position:static;display:inline-flex;align-items:center;justify-content:center;flex:0 0 36px;align-self:center;width:36px;height:36px;margin-inline-start:8px;padding:0;border:1px solid #00806966;border-radius:50%;background:#00806922;color:inherit;font:600 24px system-ui;line-height:1;cursor:pointer;outline-offset:3px";
@@ -41,12 +43,12 @@
     if (oldDialog) oldDialog.remove();
     var dialog = document.createElement("dialog");
     dialog.id = "__whatrust_accounts_dialog";
-    dialog.setAttribute("aria-label", "Contas do WhatsApp");
+    dialog.setAttribute("aria-label", L("Contas do WhatsApp", "WhatsApp accounts"));
     dialog.style.cssText = "border:0;border-radius:14px;padding:16px;min-width:260px;max-width:90vw;box-shadow:0 8px 36px #0006;font:14px system-ui;color:#222";
-    var heading = document.createElement("h2"); heading.textContent = "Contas do WhatsApp";
+    var heading = document.createElement("h2"); heading.textContent = L("Contas do WhatsApp", "WhatsApp accounts");
     heading.style.cssText = "font-size:16px;margin:0 0 10px";
     var list = document.createElement("div"); list.setAttribute("role", "list");
-    var close = document.createElement("button"); close.type = "button"; close.textContent = "Fechar";
+    var close = document.createElement("button"); close.type = "button"; close.textContent = L("Fechar", "Close");
     close.style.cssText = "margin-top:12px;padding:7px 12px;border:0;border-radius:8px;cursor:pointer";
     close.addEventListener("click", function () { dialog.close(); trigger.focus(); });
     dialog.append(heading, list, close);
@@ -64,8 +66,8 @@
           var item = document.createElement("button"); item.type = "button";
           var row = document.createElement("div");
           row.setAttribute("role", "listitem");
-          item.textContent = String(account.name || "WhatsApp") + (account.unread > 0 ? "  ·  " + account.unread + " não lidas" : "");
-          item.setAttribute("aria-label", String(account.name || "WhatsApp") + (account.unread > 0 ? ", " + account.unread + " não lidas" : ""));
+          item.textContent = String(account.name || "WhatsApp") + (account.unread > 0 ? "  ·  " + account.unread + L(" não lidas", " unread") : "");
+          item.setAttribute("aria-label", String(account.name || "WhatsApp") + (account.unread > 0 ? ", " + account.unread + L(" não lidas", " unread") : ""));
           item.style.cssText = "display:block;width:100%;text-align:left;padding:10px;border:0;border-radius:8px;background:white;color:#222;cursor:pointer";
           item.addEventListener("click", function () { invoke("switch_account", { id: account.id }); dialog.close(); });
           row.appendChild(item);
@@ -500,10 +502,10 @@
       text.className = "text";
       var title = document.createElement("div");
       title.className = "title";
-      title.textContent = d.ok ? "Download concluído" : "Falha no download";
+      title.textContent = d.ok ? L("Download concluído", "Download complete") : L("Falha no download", "Download failed");
       var name = document.createElement("div");
       name.className = "name";
-      name.textContent = d.ok ? String(d.name || "") : "Não foi possível baixar o arquivo.";
+      name.textContent = d.ok ? String(d.name || "") : L("Não foi possível baixar o arquivo.", "The file could not be downloaded.");
       if (d.ok) name.title = String(d.name || "");
       text.appendChild(title);
       text.appendChild(name);
@@ -519,18 +521,18 @@
       };
       if (d.ok && typeof d.id === "number") {
         if (d.canOpen) {
-          toast.appendChild(dl.button("Abrir", "", function () {
+          toast.appendChild(dl.button(L("Abrir", "Open"), "", function () {
             invoke("open_download", { id: d.id });
             close();
           }));
         }
-        toast.appendChild(dl.button("Mostrar na pasta", "", function () {
+        toast.appendChild(dl.button(L("Mostrar na pasta", "Show in folder"), "", function () {
           invoke("reveal_download", { id: d.id });
           close();
         }));
       }
       var x = dl.button("\u00d7", "close", close);
-      x.setAttribute("aria-label", "Fechar aviso");
+      x.setAttribute("aria-label", L("Fechar aviso", "Dismiss notice"));
       toast.appendChild(x);
       // Hovering keeps it up; leaving restarts the countdown.
       toast.addEventListener("mouseenter", function () { if (timer) clearTimeout(timer); });
@@ -587,7 +589,7 @@
       try { invoke("dlog", { msg: String(m).slice(0, 280) }); } catch (e) {}
     };
     drop.attachFailed = function () {
-      nativeNotify("whatRust", "Não foi possível anexar os arquivos. Use o botão de anexo (+) e tente novamente.");
+      nativeNotify("whatRust", L("Não foi possível anexar os arquivos. Use o botão de anexo (+) e tente novamente.", "Could not attach the files. Use the attach button (+) and try again."));
     };
     // Decode one base64 stanza to bytes. Modern WebKit (18.4+) has
     // Uint8Array.fromBase64 — ~10x faster than atob + a char loop on multi-MB

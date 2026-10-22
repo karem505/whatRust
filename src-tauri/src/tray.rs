@@ -14,6 +14,7 @@ pub fn badge_state(count: u32) -> BadgeState {
 }
 
 use crate::accounts::{self, UnreadMap};
+use crate::i18n::{tr, trf};
 use tauri::{
     image::Image,
     menu::{MenuBuilder, MenuItemBuilder},
@@ -127,17 +128,17 @@ pub fn rebuild_menu(app: &AppHandle) {
         builder = builder.item(&item);
     }
 
-    let Ok(accounts_item) = MenuItemBuilder::with_id("accounts", "Contas\u{2026}").build(app)
+    let Ok(accounts_item) = MenuItemBuilder::with_id("accounts", tr("Contas…")).build(app) else {
+        return;
+    };
+    let Ok(settings) = MenuItemBuilder::with_id("settings", tr("Configurações")).build(app)
     else {
         return;
     };
-    let Ok(settings) = MenuItemBuilder::with_id("settings", "Configurações").build(app) else {
+    let Ok(reload) = MenuItemBuilder::with_id("reload", tr("Recarregar")).build(app) else {
         return;
     };
-    let Ok(reload) = MenuItemBuilder::with_id("reload", "Recarregar").build(app) else {
-        return;
-    };
-    let Ok(quit) = MenuItemBuilder::with_id("quit", "Sair").build(app) else {
+    let Ok(quit) = MenuItemBuilder::with_id("quit", tr("Sair")).build(app) else {
         return;
     };
 
@@ -147,7 +148,8 @@ pub fn rebuild_menu(app: &AppHandle) {
         .item(&settings)
         .item(&reload);
     if lock_active {
-        let Ok(lock_item) = MenuItemBuilder::with_id("lock", "Bloquear agora").build(app) else {
+        let Ok(lock_item) = MenuItemBuilder::with_id("lock", tr("Bloquear agora")).build(app)
+        else {
             return;
         };
         tail = tail.item(&lock_item);
@@ -188,7 +190,7 @@ pub fn update_badge(app: &AppHandle, count: u32) {
         }
         BadgeState::Count(c) => {
             let _ = tray.set_title(Some(c.to_string()));
-            let _ = tray.set_tooltip(Some(format!("{c} conversas não lidas — WhatsApp")));
+            let _ = tray.set_tooltip(Some(trf("{0} conversas não lidas — WhatsApp", &[&c])));
             if let Ok(icon) = Image::from_bytes(ICON_UNREAD) {
                 let _ = tray.set_icon_with_as_template(Some(icon), ICON_IS_TEMPLATE);
             }

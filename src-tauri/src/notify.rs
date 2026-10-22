@@ -1,4 +1,5 @@
 //! Account-scoped delivery policy and bounded, content-free session diagnostics.
+use crate::i18n::{tr, trf};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
@@ -186,11 +187,11 @@ pub fn fallback_due(previous: Option<u32>, now: u32, focused: bool, settled: boo
 }
 pub fn fallback_text(n: u32) -> (String, String) {
     (
-        "New message".into(),
+        tr("Nova mensagem").into_owned(),
         if n == 1 {
-            "You have a new message.".into()
+            tr("Você tem uma nova mensagem.").into_owned()
         } else {
-            format!("You have new messages in {n} chats.")
+            trf("Você tem novas mensagens em {0} conversas.", &[&n])
         },
     )
 }
@@ -417,8 +418,8 @@ pub fn visual_signal(
         from_event(
             &app,
             &label,
-            "Nova mensagem",
-            "Você recebeu uma mensagem no WhatsApp.",
+            tr("Nova mensagem").as_ref(),
+            tr("Você recebeu uma mensagem no WhatsApp.").as_ref(),
             None,
             Source::Visual,
             &format!("visual:{identity}"),

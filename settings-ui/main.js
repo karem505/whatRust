@@ -1,4 +1,5 @@
 const invoke = window.__TAURI__.core.invoke;
+const LANGS = ["pt-BR", "en"];
 const BOOLS = ["close_to_tray", "start_minimized", "autostart", "notifications", "hotkey_enabled", "menu_bar_icon", "notify_when_focused", "notify_active_chat", "respect_muted"];
 // The menu-bar icon can only be hidden on macOS, where the Dock icon still
 // brings the window back (issue #44).
@@ -28,6 +29,9 @@ async function load() {
   }
   document.getElementById("hotkey").value = s.hotkey || "CmdOrCtrl+Shift+W";
   selectNearestZoom(Number.isFinite(s.zoom) ? s.zoom : ZOOM_DEFAULT);
+  const lang = LANGS.includes(s.language) ? s.language : "pt-BR";
+  document.getElementById("language").value = lang;
+  if (I18n.lang() !== lang) I18n.setLang(lang);
 }
 
 async function save() {
@@ -39,11 +43,12 @@ async function save() {
   const hk = document.getElementById("hotkey").value.trim();
   s.hotkey = hk || "CmdOrCtrl+Shift+W";
   s.zoom = parseFloat(document.getElementById("zoom").value) || ZOOM_DEFAULT;
+  s.language = document.getElementById("language").value;
   const note = document.getElementById("note");
   try {
     const warn = await invoke("set_settings", { settings: s });
     if (warn) {
-      note.textContent = "Salvo com observação: " + warn;
+      note.textContent = t("Salvo com observação: {0}", [warn]);
       setTimeout(() => (note.textContent = ""), 6000);
     } else {
       note.textContent = "Alterações salvas ✓";
@@ -83,7 +88,7 @@ function accountMenu(a, accounts, anchor) {
   const menu = document.createElement("div"); menu.id="account-actions";menu.className="account-actions";
   const nativePopover=typeof menu.showPopover==="function";
   if(nativePopover)menu.setAttribute("popover", "auto");
-  else {menu.style.position="fixed";menu.style.zIndex="9999";menu.showPopover=()=>{menu.style.display="block";menu.dataset.open="true";};menu.hidePopover=()=>{menu.style.display="none";menu.dataset.open="false";anchor.focus({preventScroll:true});};}menu.setAttribute("role", "menu");menu.setAttribute("aria-label", "Ações de " + a.name);
+  else {menu.style.position="fixed";menu.style.zIndex="9999";menu.showPopover=()=>{menu.style.display="block";menu.dataset.open="true";};menu.hidePopover=()=>{menu.style.display="none";menu.dataset.open="false";anchor.focus({preventScroll:true});};}menu.setAttribute("role", "menu");menu.setAttribute("aria-label", t("Ações de {0}", [a.name]));
   const actions = [
     ["Abrir conta", () => accountAction(() => invoke("open_account", {id:a.id}))],
     ...( /Win/.test(navigator.platform || navigator.userAgent) ? [[a.detached ? "Reintegrar à janela" : "Abrir em janela separada", () => accountAction(() => invoke(a.detached?"attach_account":"detach_account",{id:a.id}))]] : []),
@@ -95,7 +100,7 @@ function accountMenu(a, accounts, anchor) {
     if(index+delta<0||index+delta>=accounts.length)continue;
     actions.push([label,()=>accountAction(()=>{const ids=accounts.map(x=>x.id);[ids[index],ids[index+delta]]=[ids[index+delta],ids[index]];return invoke("reorder_accounts",{ids});})]);
   }
-  if(accounts.length>1)actions.push(["Remover conta",async()=>{if(await Dlg.confirm("A sessão local desta conta será apagada. Para usá-la novamente, você precisará ler o QR code.",{title:`Remover "${a.name}"?`,okLabel:"Remover",danger:true}))await accountAction(()=>invoke("remove_account",{id:a.id}));}]);
+  if(accounts.length>1)actions.push(["Remover conta",async()=>{if(await Dlg.confirm("A sessão local desta conta será apagada. Para usá-la novamente, você precisará ler o QR code.",{title:t('Remover "{0}"?',[a.name]),okLabel:"Remover",danger:true}))await accountAction(()=>invoke("remove_account",{id:a.id}));}]);
   for(const [label,action] of actions){const button=document.createElement("button");button.type="button";button.textContent=label;button.setAttribute("role","menuitem");if(label==="Remover conta")button.className="danger";button.onclick=()=>{menu.hidePopover();menu.dataset.open="false";action();};menu.appendChild(button);}
   const lifecycle=new AbortController();
   const originalHide=menu.hidePopover.bind(menu);
@@ -133,12 +138,12 @@ function renderAccounts(accounts) {
     const option=document.createElement("option");option.value=a.id;option.textContent=a.name;option.selected=a.is_default;startup.appendChild(option);
     const row=document.createElement("div");row.className="account-row";
     const avatar=document.createElement("span");avatar.className="account-avatar";avatar.setAttribute("aria-hidden","true");avatar.textContent=a.name.trim().split(/\s+/).slice(0,2).map(x=>x[0]).join("").toUpperCase();
-    const open=document.createElement("button");open.type="button";open.className="account-open";open.setAttribute("aria-label","Abrir "+a.name);
+    const open=document.createElement("button");open.type="button";open.className="account-open";open.setAttribute("aria-label",t("Abrir {0}",[a.name]));
     const name=document.createElement("span");name.className="acct-name";name.textContent=a.name;
     const info=document.createElement("span");info.className="acct-subtitle";info.textContent=a.detached?"Em janela separada":a.is_default?"Conta ao iniciar":"WhatsApp";open.append(name,info);open.onclick=()=>accountAction(()=>invoke("open_account",{id:a.id}));
     row.append(avatar,open);
-    if(a.unread){const badge=document.createElement("span");badge.className="acct-unread";badge.textContent=a.unread;badge.title=a.unread+" conversas não lidas";row.appendChild(badge);}
-    const more=document.createElement("button");more.type="button";more.className="account-more";more.textContent="⋮";more.setAttribute("aria-label","Opções de "+a.name);more.setAttribute("aria-haspopup","menu");more.onclick=()=>accountMenu(a,accounts,more);row.appendChild(more);list.appendChild(row);
+    if(a.unread){const badge=document.createElement("span");badge.className="acct-unread";badge.textContent=a.unread;badge.title=t("{0} conversas não lidas",[a.unread]);row.appendChild(badge);}
+    const more=document.createElement("button");more.type="button";more.className="account-more";more.textContent="⋮";more.setAttribute("aria-label",t("Opções de {0}",[a.name]));more.setAttribute("aria-haspopup","menu");more.onclick=()=>accountMenu(a,accounts,more);row.appendChild(more);list.appendChild(row);
   }
 }
 
@@ -147,7 +152,7 @@ async function loadAccounts() {
     const accounts = await invoke("list_accounts");
     renderAccounts(accounts);
   } catch (e) {
-    document.getElementById('accounts-note').textContent = 'Não foi possível carregar as contas: ' + String(e);
+    document.getElementById('accounts-note').textContent = t('Não foi possível carregar as contas: {0}', [String(e)]);
   }
 }
 
@@ -179,6 +184,11 @@ window.addEventListener("DOMContentLoaded", () => {
   // Zoom saves on change rather than on Save: picking a size you cannot see the
   // effect of is guesswork, and the webview applies it immediately.
   document.getElementById("zoom").addEventListener("change", save);
+  // Language applies at once, like zoom.
+  document.getElementById("language").addEventListener("change", async () => {
+    I18n.setLang(document.getElementById("language").value);
+    await save();
+  });
 });
 
 // --- App lock ---
@@ -198,7 +208,7 @@ async function loadLock() {
   if (s.enabled) {
     const row = document.getElementById("biometric_row");
     row.hidden = !s.biometric_available;
-    document.getElementById("biometric_label").textContent = "Usar " + s.biometric_label;
+    document.getElementById("biometric_label").textContent = t("Usar {0}", [s.biometric_label]);
     document.getElementById("biometric_enabled").checked = s.biometric_enabled;
     document.getElementById("lock_on_launch").checked = s.lock_on_launch;
     document.getElementById("lock_on_hide").checked = s.lock_on_hide;
@@ -239,7 +249,7 @@ function wireLock() {
       requiredMessage: "Informe sua senha atual.",
     });
     if (current === null) return;
-    const next = await Dlg.prompt("Pelo menos 4 caracteres.", {
+    const next = await Dlg.prompt("Pelo menos 6 caracteres.", {
       title: "Nova senha",
       password: true,
       okLabel: "Alterar",

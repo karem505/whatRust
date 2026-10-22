@@ -1,3 +1,4 @@
+use crate::i18n::tr;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
@@ -172,7 +173,7 @@ fn complete_reset_paths(config: &Path, data: &Path) -> std::io::Result<bool> {
 pub fn complete_pending_reset(app: &AppHandle) -> Result<(), String> {
     let config = app.path().app_config_dir().map_err(|e| e.to_string())?;
     let data = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    complete_reset_paths(&config,&data).map(|_|()).map_err(|_|"Não foi possível concluir a redefinição. Feche outras instâncias do whatRust e tente novamente.".into())
+    complete_reset_paths(&config,&data).map(|_|()).map_err(|_| tr("Não foi possível concluir a redefinição. Feche outras instâncias do whatRust e tente novamente.").into_owned())
 }
 
 #[cfg(test)]

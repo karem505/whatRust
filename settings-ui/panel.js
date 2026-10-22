@@ -4,7 +4,7 @@
   const back=document.getElementById("back-to-chat");back.hidden=!isWindows;
   let dirty=false, diagnosticsBusy=false, timer;
   document.querySelector(".prefs").addEventListener("input",e=>{if(e.target.id!=="new_account_name")dirty=true;});
-  document.getElementById("save").addEventListener("click",()=>{setTimeout(()=>{if(document.getElementById("note").textContent.startsWith("Alterações salvas"))dirty=false;},400);});
+  document.getElementById("save").addEventListener("click",()=>{setTimeout(()=>{if(/^(Alterações salvas|Changes saved)/.test(document.getElementById("note").textContent))dirty=false;},400);});
   async function close(){if(dirty && !await Dlg.confirm("As alterações ainda não foram salvas.",{title:"Voltar sem salvar?",okLabel:"Voltar"}))return;await invoke("close_app_panel");}
   back.onclick=close;
   document.addEventListener("keydown",e=>{if(e.key==="Escape" && !document.querySelector('.dlg-backdrop,dialog[open],.account-actions[data-open=true]') && !e.defaultPrevented){e.preventDefault();close();}});
@@ -16,8 +16,8 @@
     try{
       const d=await invoke("notification_diagnostics"), routes=document.getElementById("route-status"),history=document.getElementById("notification-history");
       routes.replaceChildren();history.replaceChildren();
-      for(const a of d.accounts){const adapter=d.adapters["wa-"+a.id];routes.appendChild(row(a.name,(d.native[a.id]?"Captura nativa ativa":"Captura nativa indisponível; ponte alternativa")+" · "+(adapter?.mounted?"Controles integrados":"Acesso pelo menu da janela")+" · "+(adapter?.detector?"Detector adicional disponível quando houver sinais confiáveis":"Aguardando conversa compatível")));}
-      for(const n of d.recent.slice(0,20)){const account=d.accounts.find(a=>a.id===n.account_id)?.name||"whatRust";history.appendChild(row(new Date(n.time*1000).toLocaleTimeString("pt-BR")+" · "+account,(names[n.status]||n.status)+(n.reason?" — "+(reasons[n.reason]||n.reason):"")));}
+      for(const a of d.accounts){const adapter=d.adapters["wa-"+a.id];routes.appendChild(row(a.name,t(d.native[a.id]?"Captura nativa ativa":"Captura nativa indisponível; ponte alternativa")+" · "+t(adapter?.mounted?"Controles integrados":"Acesso pelo menu da janela")+" · "+t(adapter?.detector?"Detector adicional disponível quando houver sinais confiáveis":"Aguardando conversa compatível")));}
+      for(const n of d.recent.slice(0,20)){const account=d.accounts.find(a=>a.id===n.account_id)?.name||"whatRust";history.appendChild(row(new Date(n.time*1000).toLocaleTimeString(I18n.locale())+" · "+account,t(names[n.status]||n.status)+(n.reason?" — "+t(reasons[n.reason]||n.reason):"")));}
       if(!d.recent.length)history.appendChild(row("Nenhum aviso registrado","Os próximos eventos aparecerão aqui durante esta execução."));
       document.documentElement.dataset.version=d.version;
     }catch(e){document.getElementById("diagnostic-note").textContent=String(e);}finally{diagnosticsBusy=false;}

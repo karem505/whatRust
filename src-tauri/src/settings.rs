@@ -1,3 +1,4 @@
+use crate::i18n::trf;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -18,6 +19,8 @@ pub struct Settings {
     /// Dock icon brings a hidden window back. Windows and Linux always show the
     /// tray icon, since there it is the only way back to a hidden window.
     pub menu_bar_icon: bool,
+    /// Interface language: `pt-BR` (default) or `en`.
+    pub language: String,
 }
 
 impl Default for Settings {
@@ -34,6 +37,7 @@ impl Default for Settings {
             respect_muted: true,
             zoom: 1.0,
             menu_bar_icon: true,
+            language: crate::i18n::PT_BR.to_string(),
         }
     }
 }
@@ -77,6 +81,7 @@ impl Settings {
     /// Repair values an older or hand-edited settings.json can carry.
     pub fn sanitized(mut self) -> Self {
         self.zoom = sanitize_zoom(self.zoom);
+        self.language = crate::i18n::sanitize_code(&self.language);
         self
     }
 }
@@ -170,6 +175,11 @@ pub fn save(app: &AppHandle, s: &Settings) -> tauri::Result<()> {
 pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
     // Zoom is a webview property, so it applies on every platform and takes
     // effect on the open account windows without a reload.
+    let lang = crate::i18n::Lang::from_code(&s.language);
+    if lang != crate::i18n::current() {
+        crate::i18n::set(lang);
+        crate::i18n::refresh(app);
+    }
     crate::window::apply_zoom_all(app, s.zoom);
     crate::tray::apply_visibility(app, s.menu_bar_icon);
 
@@ -181,8 +191,9 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
         let flatpak_autostart_handled = flatpak_id()
             .map(|id| {
                 if let Err(e) = apply_flatpak_autostart(&id, s.autostart) {
-                    warnings.push(format!(
-                        "Não foi possível atualizar a inicialização automática: {e}"
+                    warnings.push(trf(
+                        "Não foi possível atualizar a inicialização automática: {0}",
+                        &[&e],
                     ));
                 }
                 true
@@ -204,8 +215,9 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
                     .and_then(|on| if on { autostart.disable() } else { Ok(()) })
             };
             if let Err(e) = result {
-                warnings.push(format!(
-                    "Não foi possível atualizar a inicialização automática: {e}"
+                warnings.push(trf(
+                    "Não foi possível atualizar a inicialização automática: {0}",
+                    &[&e],
                 ));
             }
         }
@@ -215,8 +227,9 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
         let _ = gs.unregister_all();
         if s.hotkey_enabled && !s.hotkey.trim().is_empty() {
             if let Err(e) = gs.register(s.hotkey.as_str()) {
-                warnings.push(format!(
-                    "Não foi possível registrar o atalho (ele pode estar em uso): {e}"
+                warnings.push(trf(
+                    "Não foi possível registrar o atalho (ele pode estar em uso): {0}",
+                    &[&e],
                 ));
             }
         }

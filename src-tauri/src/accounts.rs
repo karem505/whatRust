@@ -1,3 +1,4 @@
+use crate::i18n::{tr, trf};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -87,10 +88,10 @@ pub fn add(f: &mut AccountsFile, name: &str) -> Account {
 /// errors if the id is unknown. Returns the removed account on success.
 pub fn remove(f: &mut AccountsFile, id: &str) -> Result<Account, String> {
     if f.accounts.len() <= 1 {
-        return Err("Não é possível remover a última conta.".into());
+        return Err(tr("Não é possível remover a última conta.").into());
     }
     let Some(pos) = f.accounts.iter().position(|a| a.id == id) else {
-        return Err(format!("Conta não encontrada: {id}"));
+        return Err(trf("Conta não encontrada: {0}", &[&id]));
     };
     let removed = f.accounts.remove(pos);
     if f.startup_account.as_deref() == Some(id) {
@@ -109,7 +110,7 @@ pub fn startup_account(f: &AccountsFile) -> Option<&Account> {
 
 pub fn set_startup_account(f: &mut AccountsFile, id: &str) -> Result<(), String> {
     if !f.accounts.iter().any(|a| a.id == id) {
-        return Err(format!("Conta não encontrada: {id}"));
+        return Err(trf("Conta não encontrada: {0}", &[&id]));
     }
     f.startup_account = Some(id.to_owned());
     Ok(())
@@ -118,7 +119,7 @@ pub fn set_startup_account(f: &mut AccountsFile, id: &str) -> Result<(), String>
 /// Rename an account by id. Errors if the id is unknown.
 pub fn rename(f: &mut AccountsFile, id: &str, name: &str) -> Result<(), String> {
     let Some(acct) = f.accounts.iter_mut().find(|a| a.id == id) else {
-        return Err(format!("Conta não encontrada: {id}"));
+        return Err(trf("Conta não encontrada: {0}", &[&id]));
     };
     acct.name = name.to_string();
     Ok(())
@@ -131,7 +132,7 @@ pub fn reorder(f: &mut AccountsFile, ids: &[String]) -> Result<(), String> {
         || unique.len() != ids.len()
         || ids.iter().any(|id| !f.accounts.iter().any(|a| &a.id == id))
     {
-        return Err("A ordem deve conter todas as contas uma única vez".into());
+        return Err(tr("A ordem deve conter todas as contas uma única vez").into());
     }
     for a in &mut f.accounts {
         a.order = ids.iter().position(|id| id == &a.id).unwrap() as u32;

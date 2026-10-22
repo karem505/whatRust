@@ -1,4 +1,5 @@
 //! Narrow page adapter API. Never grant account/password management to WhatsApp.
+use crate::i18n::tr;
 use crate::{accounts, notify};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -222,7 +223,7 @@ pub async fn detach_account(window: Webview, app: AppHandle, id: String) -> Resu
     #[cfg(windows)]
     crate::sessions::detach(&app, &id)?;
     #[cfg(not(windows))]
-    return Err("Disponível no Windows".into());
+    return Err(tr("Disponível no Windows").into());
     broadcast(&app);
     Ok(())
 }
@@ -233,7 +234,7 @@ pub async fn attach_account(window: Webview, app: AppHandle, id: String) -> Resu
     #[cfg(windows)]
     crate::sessions::attach(&app, &id)?;
     #[cfg(not(windows))]
-    return Err("Disponível no Windows".into());
+    return Err(tr("Disponível no Windows").into());
     broadcast(&app);
     Ok(())
 }
@@ -282,7 +283,7 @@ pub fn notification_diagnostics(window: Webview, app: AppHandle) -> Result<Diagn
 pub fn test_notification(window: Webview, app: AppHandle) -> Result<String, String> {
     local(&window, &app)?;
     if !crate::settings::load(&app).notifications {
-        return Err("Ative as notificações antes do teste.".into());
+        return Err(tr("Ative as notificações antes do teste.").into());
     }
     let label = app
         .state::<accounts::ActiveAccount>()
@@ -292,12 +293,12 @@ pub fn test_notification(window: Webview, app: AppHandle) -> Result<String, Stri
     notify::from_account(
         &app,
         &label,
-        "Teste do whatRust",
-        "Se você está vendo este aviso, o Windows exibiu o teste.",
+        tr("Teste do whatRust").as_ref(),
+        tr("Se você está vendo este aviso, o Windows exibiu o teste.").as_ref(),
         None,
         notify::Source::Test,
     );
-    Ok("Teste solicitado. Confira o banner e a central do Windows; aceitação não confirma exibição.".into())
+    Ok(tr("Teste solicitado. Confira o banner e a central do Windows; aceitação não confirma exibição.").into_owned())
 }
 #[tauri::command]
 pub fn open_notification_settings(window: Webview, app: AppHandle) -> Result<(), String> {
@@ -318,7 +319,7 @@ pub fn open_notification_settings(window: Webview, app: AppHandle) -> Result<(),
             )
         };
         if result.0 as isize <= 32 {
-            return Err("Não foi possível abrir as configurações do Windows".into());
+            return Err(tr("Não foi possível abrir as configurações do Windows").into());
         }
     }
     Ok(())

@@ -2,6 +2,7 @@
 use crate::accounts::ActiveAccount;
 use crate::accounts::{self, UnreadMap};
 use crate::applock::{self, AppLockConfig};
+use crate::i18n::{tr, trf};
 use crate::lock;
 use crate::settings::Settings;
 use serde::Serialize;
@@ -61,7 +62,7 @@ pub fn open_download(app: tauri::AppHandle, id: u64) -> Result<(), String> {
     let path = app
         .state::<crate::downloads::Downloads>()
         .path(id)
-        .ok_or("Download não encontrado")?;
+        .ok_or_else(|| tr("Download não encontrado").into_owned())?;
     if crate::downloads::is_risky(&path) {
         crate::dlog::log("download: open refused for a program, revealing instead");
         crate::opener::reveal_file(&app, path);
@@ -78,7 +79,7 @@ pub fn reveal_download(app: tauri::AppHandle, id: u64) -> Result<(), String> {
     let path = app
         .state::<crate::downloads::Downloads>()
         .path(id)
-        .ok_or("Download não encontrado")?;
+        .ok_or_else(|| tr("Download não encontrado").into_owned())?;
     crate::opener::reveal_file(&app, path);
     Ok(())
 }
@@ -239,7 +240,7 @@ pub async fn switch_account(
     let _guard = accounts::lock_mutations();
     let f = accounts::load(&app);
     let Some(acct) = f.accounts.iter().find(|a| a.id == id) else {
-        return Err("Conta não encontrada".into());
+        return Err(tr("Conta não encontrada").into());
     };
     if app.get_webview(&accounts::window_label(&acct.id)).is_none() {
         crate::window::open_account_window(&app, acct, false).map_err(|e| e.to_string())?;
@@ -307,8 +308,12 @@ pub async fn add_account(
         // Don't leave an account behind that never got a window. The sequence
         // number stays consumed, so a retry gets a fresh profile id.
         f.accounts.retain(|a| a.id != acct.id);
-        accounts::save(&app, &f)
-            .map_err(|rollback| format!("{e}; e não foi possível restaurar a conta: {rollback}"))?;
+        accounts::save(&app, &f).map_err(|rollback| {
+            trf(
+                "{0}; e não foi possível restaurar a conta: {1}",
+                &[&e, &rollback],
+            )
+        })?;
         return Err(e.to_string());
     }
     crate::tray::rebuild_menu(&app);
@@ -432,7 +437,7 @@ pub async fn open_account(
     let _guard = accounts::lock_mutations();
     let f = accounts::load(&app);
     let Some(acct) = f.accounts.iter().find(|a| a.id == id) else {
-        return Err(format!("Conta não encontrada: {id}"));
+        return Err(trf("Conta não encontrada: {0}", &[&id]));
     };
     // Open the window if it was closed, then show + focus it.
     if app.get_webview(&accounts::window_label(&acct.id)).is_none() {
@@ -516,7 +521,7 @@ pub async fn set_app_lock_password(
     lock::require_unlocked(&app)?;
     let mut c = applock::load(&app);
     if c.is_active() {
-        return Err("O bloqueio já está ativado.".into());
+        return Err(tr("O bloqueio já está ativado.").into());
     }
     lock::validate_new_password(&new, &confirm)?;
     c.password_phc = Some(hash_off_thread(new).await?);
@@ -543,9 +548,9 @@ pub async fn change_app_lock_password(
     let phc = c
         .password_phc
         .clone()
-        .ok_or("O bloqueio não está ativado.")?;
+        .ok_or_else(|| tr("O bloqueio não está ativado.").into_owned())?;
     if !verify_off_thread(current, phc).await {
-        return Err("A senha atual está incorreta.".into());
+        return Err(tr("A senha atual está incorreta.").into());
     }
     lock::validate_new_password(&new, &confirm)?;
     c.password_phc = Some(hash_off_thread(new).await?);
@@ -566,9 +571,9 @@ pub async fn disable_app_lock(
     let phc = c
         .password_phc
         .clone()
-        .ok_or("O bloqueio não está ativado.")?;
+        .ok_or_else(|| tr("O bloqueio não está ativado.").into_owned())?;
     if !verify_off_thread(current, phc).await {
-        return Err("A senha atual está incorreta.".into());
+        return Err(tr("A senha atual está incorreta.").into());
     }
     c = AppLockConfig::default(); // fully reset: disabled, no hash, no biometric, default triggers
     applock::save(&app, &c).map_err(|e| e.to_string())?;
@@ -611,16 +616,21 @@ pub fn set_biometric_enabled(
     let mut c = applock::load(&app);
     if enabled {
         if !c.is_active() {
-            return Err("Defina uma senha de bloqueio primeiro.".into());
+            return Err(tr("Defina uma senha de bloqueio primeiro.").into());
         }
         if !matches!(
             crate::biometric::availability(),
             crate::biometric::Availability::Available
         ) {
-            return Err("A autenticação biométrica não está disponível neste dispositivo.".into());
+            return Err(
+                tr("A autenticação biométrica não está disponível neste dispositivo.").into(),
+            );
         }
-        if !crate::biometric::authenticate(&app, "Ativar desbloqueio por biometria no whatRust")? {
-            return Err("Não foi possível confirmar a biometria.".into());
+        if !crate::biometric::authenticate(
+            &app,
+            tr("Ativar desbloqueio por biometria no whatRust").as_ref(),
+        )? {
+            return Err(tr("Não foi possível confirmar a biometria.").into());
         }
     }
     c.biometric_enabled = enabled;
@@ -634,7 +644,7 @@ pub async fn lock_app(window: tauri::Webview, app: tauri::AppHandle) -> Result<(
         return Err("forbidden".into());
     }
     if !applock::load(&app).is_active() {
-        return Err("O bloqueio não está ativado.".into());
+        return Err(tr("O bloqueio não está ativado.").into());
     }
     lock::lock_now(&app);
     Ok(())
@@ -660,7 +670,7 @@ pub async fn unlock_password(
     {
         let t = lock::guard(&lock::THROTTLE);
         if let Some(Err(secs)) = t.as_ref().map(|t| t.check(std::time::Instant::now())) {
-            return Err(format!("Muitas tentativas. Tente de novo em {secs}s."));
+            return Err(format!("throttled:{secs}"));
         }
     }
     let ok = verify_off_thread(password, phc).await;
@@ -686,9 +696,9 @@ pub fn unlock_biometric(window: tauri::Webview, app: tauri::AppHandle) -> Result
         return Err("forbidden".into());
     }
     if !applock::load(&app).biometric_enabled {
-        return Err("O desbloqueio por biometria não está ativado.".into());
+        return Err(tr("O desbloqueio por biometria não está ativado.").into());
     }
-    if crate::biometric::authenticate(&app, "Desbloquear o whatRust")? {
+    if crate::biometric::authenticate(&app, tr("Desbloquear o whatRust").as_ref())? {
         lock::unlock(&app);
         Ok(true)
     } else {
@@ -708,7 +718,7 @@ pub fn reset_app_lock(
         return Err("forbidden".into());
     }
     if !confirmed {
-        return Err("A redefinição precisa ser confirmada.".into());
+        return Err(tr("A redefinição precisa ser confirmada.").into());
     }
     crate::applock::request_reset(&app)?;
     app.restart();

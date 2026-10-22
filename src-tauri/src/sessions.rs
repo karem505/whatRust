@@ -1,5 +1,6 @@
 //! Windows account ownership. One live WebView per profile; detach moves it.
 use crate::accounts::{self, Account, ActiveAccount};
+use crate::i18n::tr;
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use tauri::{
@@ -110,6 +111,7 @@ pub fn initialize(app: &AppHandle, hidden: bool) -> tauri::Result<Window> {
         .build()?;
     install_menu(app, &w)?;
     let shell = WebviewBuilder::new("shell-main", WebviewUrl::App("shell.html".into()))
+        .initialization_script(crate::i18n::init_script())
         .data_directory(app.path().app_data_dir()?.join("management"))
         .on_navigation(crate::integration::local_url);
     w.add_child(
@@ -156,17 +158,26 @@ pub fn initialize(app: &AppHandle, hidden: bool) -> tauri::Result<Window> {
     Ok(w)
 }
 
+/// Rebuild the native window menu after a language change.
+pub fn refresh_menus(app: &AppHandle) {
+    for (label, w) in app.windows() {
+        if label == "main" || label.starts_with("detached-") {
+            let _ = install_menu(app, &w);
+        }
+    }
+}
+
 fn install_menu(app: &AppHandle, w: &Window) -> tauri::Result<()> {
-    let accounts = MenuItemBuilder::with_id("app.accounts", "Contas")
+    let accounts = MenuItemBuilder::with_id("app.accounts", tr("Contas"))
         .accelerator("Ctrl+Shift+A")
         .build(app)?;
-    let settings = MenuItemBuilder::with_id("app.settings", "Configurações do whatRust")
+    let settings = MenuItemBuilder::with_id("app.settings", tr("Configurações do whatRust"))
         .accelerator("Ctrl+,")
         .build(app)?;
-    let back = MenuItemBuilder::with_id("app.back", "Voltar ao WhatsApp").build(app)?;
-    let reload = MenuItemBuilder::with_id("app.reload", "Recarregar conta").build(app)?;
-    let lock = MenuItemBuilder::with_id("app.lock", "Bloquear").build(app)?;
-    let quit = MenuItemBuilder::with_id("app.quit", "Sair do whatRust").build(app)?;
+    let back = MenuItemBuilder::with_id("app.back", tr("Voltar ao WhatsApp")).build(app)?;
+    let reload = MenuItemBuilder::with_id("app.reload", tr("Recarregar conta")).build(app)?;
+    let lock = MenuItemBuilder::with_id("app.lock", tr("Bloquear")).build(app)?;
+    let quit = MenuItemBuilder::with_id("app.quit", tr("Sair do whatRust")).build(app)?;
     let submenu = SubmenuBuilder::new(app, "whatRust")
         .items(&[&accounts, &settings, &back, &reload, &lock, &quit])
         .build()?;
@@ -440,14 +451,16 @@ pub fn detach(app: &AppHandle, id: &str) -> Result<(), String> {
     let _health = crate::ui_health::enter("detach account");
     crate::lock::require_unlocked(app)?;
     let label = accounts::window_label(id);
-    let v = app.get_webview(&label).ok_or("Conta não está aberta")?;
+    let v = app
+        .get_webview(&label)
+        .ok_or_else(|| tr("Conta não está aberta").into_owned())?;
     if v.window().label() != "main" {
         activate(app, &label);
         return Ok(());
     }
     let parent_label = format!("detached-{id}");
     let w = WindowBuilder::new(app, &parent_label)
-        .title("whatRust — Conta destacada")
+        .title(tr("whatRust — Conta destacada"))
         .background_color(tauri::utils::config::Color(22, 23, 23, 255))
         .inner_size(1000., 760.)
         .min_inner_size(560., 480.)
@@ -499,7 +512,9 @@ fn attach_inner(app: &AppHandle, id: &str, activate_returned_account: bool) -> R
     let _health = crate::ui_health::enter("attach account");
     crate::lock::require_unlocked(app)?;
     let label = accounts::window_label(id);
-    let v = app.get_webview(&label).ok_or("Conta não está aberta")?;
+    let v = app
+        .get_webview(&label)
+        .ok_or_else(|| tr("Conta não está aberta").into_owned())?;
     let old = v.window();
     if old.label() == "main" {
         if activate_returned_account {
@@ -660,6 +675,7 @@ pub fn open_panel(app: &AppHandle, parent: Option<&str>) -> tauri::Result<()> {
     } else {
         owner.add_child(
             WebviewBuilder::new("settings", WebviewUrl::App("index.html".into()))
+                .initialization_script(crate::i18n::init_script())
                 .initialization_script(format!(r#"document.addEventListener("DOMContentLoaded",function(){{{theme_script}}},{{once:true}})"#))
                 .data_directory(app.path().app_data_dir()?.join("management"))
                 .on_navigation(crate::integration::local_url),

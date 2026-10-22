@@ -20,7 +20,10 @@ async function tryUnlock() {
       pwd.focus();
     }
   } catch (e) {
-    errEl.textContent = "Não foi possível desbloquear. Tente novamente.";
+    const wait = /^throttled:(\d+)$/.exec(String(e));
+    errEl.textContent = wait
+      ? t("Muitas tentativas. Tente de novo em {0}s.", [wait[1]])
+      : t("Não foi possível desbloquear. Tente novamente.");
   } finally {
     busy = false;
     document.getElementById("unlock").disabled = false;
@@ -56,8 +59,7 @@ async function init() {
   document.getElementById("reset").addEventListener("click", async (e) => {
     e.preventDefault();
     const ok = await Dlg.confirm(
-      "Isso desconecta todas as contas deste aplicativo e remove o bloqueio. " +
-      "Você precisará vincular o WhatsApp novamente pelo QR Code. Suas conversas continuam no celular.",
+      "Isso desconecta todas as contas deste aplicativo e remove o bloqueio. Você precisará vincular o WhatsApp novamente pelo QR Code. Suas conversas continuam no celular.",
       { title: "Redefinir o whatRust?", okLabel: "Redefinir", danger: true }
     );
     if (!ok) return;
@@ -71,7 +73,7 @@ async function init() {
   try {
     const s = await invoke("get_lock_status");
     if (s.biometric_enabled) {
-      bio.textContent = "Usar " + (s.biometric_label || "biometria");
+      bio.textContent = s.biometric_label ? t("Usar {0}", [s.biometric_label]) : t("Usar biometria");
       bio.hidden = false;
       tryBiometric(); // auto-prompt on load
     }

@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>whatRust — Configurações</title>
+    <script src="i18n.js"></script>
     <link rel="stylesheet" href="style.css" />
     <link rel="stylesheet" href="dialog.css" />
   </head>
@@ -70,6 +71,14 @@
               <option value="1.15">Grande</option>
             </select>
           </label>
+          <label class="row">
+            <span class="row-text"><span class="row-title">Idioma</span>
+              <span class="row-subtitle">Idioma da interface do whatRust.</span></span>
+            <select id="language">
+              <option value="pt-BR">Português (Brasil)</option>
+              <option value="en">English</option>
+            </select>
+          </label>
         </div>
       </section>
 
@@ -100,7 +109,7 @@
           <div class="boxed-list">
             <label class="row entry-row">
               <span class="row-title">Senha</span>
-              <input type="password" id="lock_pw1" autocomplete="new-password" placeholder="Pelo menos 4 caracteres" />
+              <input type="password" id="lock_pw1" autocomplete="new-password" placeholder="Pelo menos 6 caracteres" />
             </label>
             <label class="row entry-row">
               <span class="row-title">Confirmar</span>
