@@ -17,8 +17,9 @@ pub fn availability() -> Availability {
 pub fn authenticate(_app: &tauri::AppHandle, reason: &str) -> Result<bool, String> {
     // Fresh context per call (LAContext caches a prior success).
     let ctx = unsafe { LAContext::new() };
+    let fallback = crate::i18n::tr("Desbloquear o whatRust");
     let reason = if reason.is_empty() {
-        crate::i18n::tr("Desbloquear o whatRust")
+        fallback.as_ref()
     } else {
         reason
     };

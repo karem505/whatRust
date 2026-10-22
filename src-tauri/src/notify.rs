@@ -14,6 +14,7 @@ use tauri::{AppHandle, Manager};
 #[serde(rename_all = "snake_case")]
 pub enum Source {
     Page,
+    #[cfg_attr(not(windows), allow(dead_code))]
     WebView2,
     UnreadFallback,
     Visual,
@@ -99,6 +100,7 @@ impl Recent {
     pub fn native_ready(&self, label: &str) -> bool {
         crate::lock::guard(&self.inner).native.contains(label)
     }
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub fn set_native(&self, label: &str, ready: bool) {
         let mut i = crate::lock::guard(&self.inner);
         if ready {
@@ -168,6 +170,7 @@ impl Recent {
             };
         }
     }
+    #[cfg_attr(not(windows), allow(dead_code))]
     fn lifecycle(&self, id: &str, status: &str) {
         if let Some(r) = self
             .inner
@@ -469,6 +472,7 @@ struct Delivery {
     native: bool,
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 fn escape_xml(s: &str) -> String {
     s.chars().filter(|c| matches!(*c, '\t'|'\n'|'\r'|'\u{20}'..='\u{d7ff}'|'\u{e000}'..='\u{fffd}'|'\u{10000}'..='\u{10ffff}')).collect::<String>().replace('&', "&amp;")
         .replace('<', "&lt;")
