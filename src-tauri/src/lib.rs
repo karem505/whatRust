@@ -6,6 +6,7 @@ mod commands;
 mod dlog;
 mod downloads;
 mod integration;
+mod jsonfile;
 mod links;
 mod lock;
 mod notif_icon;

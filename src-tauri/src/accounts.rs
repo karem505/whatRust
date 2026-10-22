@@ -168,7 +168,16 @@ pub fn profile_dir(app: &AppHandle, id: &str) -> tauri::Result<PathBuf> {
 #[cfg(not(target_os = "macos"))]
 pub fn delete_profile(app: &AppHandle, id: &str) {
     if let Ok(dir) = profile_dir(app, id) {
-        let _ = std::fs::remove_dir_all(dir);
+        // WebView2 can still hold files for a moment after its window is
+        // destroyed, so retry briefly instead of leaving an orphaned profile.
+        for attempt in 0..5 {
+            if std::fs::remove_dir_all(&dir).is_ok() || !dir.exists() {
+                return;
+            }
+            if attempt < 4 {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+        }
     }
 }
 
@@ -189,12 +198,20 @@ fn accounts_path(app: &AppHandle) -> tauri::Result<PathBuf> {
 }
 
 pub fn load(app: &AppHandle) -> AccountsFile {
-    accounts_path(app)
-        .ok()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .map(ensure_account)
-        .unwrap_or_default()
+    use crate::jsonfile::Loaded;
+    let Ok(path) = accounts_path(app) else {
+        return AccountsFile::default();
+    };
+    match crate::jsonfile::read::<AccountsFile>(&path) {
+        Loaded::Ok(f) | Loaded::Recovered(f) => ensure_account(f),
+        Loaded::Missing => AccountsFile::default(),
+        Loaded::Corrupt => {
+            // Defaults will overwrite this on the next save; keep a copy so the
+            // account list (and its profile ids) can be restored by hand.
+            crate::jsonfile::preserve_corrupt(&path);
+            AccountsFile::default()
+        }
+    }
 }
 
 /// An empty configuration still needs one profile to display WhatsApp's login.
@@ -227,8 +244,7 @@ mod empty_account_tests {
 
 pub fn save(app: &AppHandle, f: &AccountsFile) -> tauri::Result<()> {
     let path = accounts_path(app)?;
-    let json = serde_json::to_string_pretty(f).expect("serialize accounts");
-    std::fs::write(path, json)?;
+    crate::jsonfile::save(&path, f)?;
     Ok(())
 }
 

@@ -54,18 +54,36 @@ fn config_path(app: &AppHandle) -> tauri::Result<PathBuf> {
     Ok(dir.join("app-lock.json"))
 }
 
+/// Stored in place of the hash when `app-lock.json` exists but cannot be read.
+/// It never parses as a PHC string, so `verify_password` always fails.
+const CORRUPT_PHC: &str = "!corrupt";
+
+/// Fail closed: an unreadable lock file (with no usable backup) keeps the lock
+/// ON with a hash nobody can match, instead of silently turning it off. The
+/// forgot-password reset is then the way out.
+fn corrupt_config() -> AppLockConfig {
+    AppLockConfig {
+        enabled: true,
+        password_phc: Some(CORRUPT_PHC.to_string()),
+        ..AppLockConfig::default()
+    }
+}
+
 pub fn load(app: &AppHandle) -> AppLockConfig {
-    config_path(app)
-        .ok()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+    use crate::jsonfile::Loaded;
+    let Ok(path) = config_path(app) else {
+        return AppLockConfig::default();
+    };
+    match crate::jsonfile::read::<AppLockConfig>(&path) {
+        Loaded::Ok(c) | Loaded::Recovered(c) => c,
+        Loaded::Missing => AppLockConfig::default(),
+        Loaded::Corrupt => corrupt_config(),
+    }
 }
 
 pub fn save(app: &AppHandle, c: &AppLockConfig) -> tauri::Result<()> {
     let path = config_path(app)?;
-    let json = serde_json::to_string_pretty(c).expect("serialize app-lock config");
-    std::fs::write(path, json)?;
+    crate::jsonfile::save(&path, c)?;
     Ok(())
 }
 
@@ -101,11 +119,13 @@ pub fn verify_password(password: &str, phc: &str) -> bool {
 /// holds BOTH the default account's webview store (directly under it, on Linux/Windows)
 /// and the per-account `profiles/` dirs — removing it logs every account out.
 fn reset_targets(config_dir: &Path, data_dir: &Path) -> Vec<PathBuf> {
-    vec![
-        config_dir.join("accounts.json"),
-        config_dir.join("app-lock.json"),
-        data_dir.to_path_buf(),
-    ]
+    let accounts = config_dir.join("accounts.json");
+    let lock = config_dir.join("app-lock.json");
+    // The backups must go too, or a later read could bring the old lock back.
+    let mut v = crate::jsonfile::sidecar_paths(&accounts);
+    v.extend(crate::jsonfile::sidecar_paths(&lock));
+    v.extend([accounts, lock, data_dir.to_path_buf()]);
+    v
 }
 
 /// Request cleanup on the next launch, before any profile is opened.
@@ -135,7 +155,10 @@ fn complete_reset_paths(config: &Path, data: &Path) -> std::io::Result<bool> {
     if data.exists() {
         std::fs::remove_dir_all(data)?;
     }
-    for p in reset_targets(config, data).into_iter().take(2) {
+    for p in reset_targets(config, data)
+        .into_iter()
+        .filter(|p| p.as_path() != data)
+    {
         match std::fs::remove_file(p) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -193,6 +216,15 @@ mod tests {
     }
 
     #[test]
+    fn corrupt_config_is_active_and_unmatchable() {
+        let c = corrupt_config();
+        assert!(c.is_active());
+        assert!(!c.biometric_enabled);
+        assert!(!verify_password("", CORRUPT_PHC));
+        assert!(!verify_password("!corrupt", CORRUPT_PHC));
+    }
+
+    #[test]
     fn roundtrip() {
         let c = AppLockConfig {
             enabled: true,
@@ -230,6 +262,8 @@ mod tests {
         let t = super::reset_targets(cfg, data);
         assert!(t.contains(&cfg.join("accounts.json")));
         assert!(t.contains(&cfg.join("app-lock.json")));
+        assert!(t.contains(&cfg.join("app-lock.json.bak")));
+        assert!(t.contains(&cfg.join("accounts.json.bak")));
         // The data root must be a target — this is what logs the DEFAULT account out.
         assert!(t.contains(&data.to_path_buf()));
     }

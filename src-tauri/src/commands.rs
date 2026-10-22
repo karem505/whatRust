@@ -358,6 +358,19 @@ pub async fn remove_account(
     }
     accounts::delete_profile(&app, &removed.id);
 
+    // If the removed account was the active one, point at a surviving account
+    // so toggle/show don't target a window that no longer exists. (On Windows
+    // the active view is tracked by sessions.rs instead.)
+    #[cfg(not(windows))]
+    if let Some(active) = app.try_state::<ActiveAccount>() {
+        let mut label = active.lock().unwrap_or_else(|e| e.into_inner());
+        if *label == accounts::window_label(&removed.id) {
+            if let Some(next) = accounts::startup_account(&f) {
+                *label = accounts::window_label(&next.id);
+            }
+        }
+    }
+
     // Recompute the aggregate badge and the menu.
     let total = {
         let state = app.state::<UnreadMap>();

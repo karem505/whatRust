@@ -144,18 +144,23 @@ fn settings_path(app: &AppHandle) -> tauri::Result<PathBuf> {
 }
 
 pub fn load(app: &AppHandle) -> Settings {
-    settings_path(app)
-        .ok()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str::<Settings>(&s).ok())
-        .map(Settings::sanitized)
-        .unwrap_or_default()
+    use crate::jsonfile::Loaded;
+    let Ok(path) = settings_path(app) else {
+        return Settings::default();
+    };
+    match crate::jsonfile::read::<Settings>(&path) {
+        Loaded::Ok(s) | Loaded::Recovered(s) => s.sanitized(),
+        Loaded::Missing => Settings::default(),
+        Loaded::Corrupt => {
+            crate::jsonfile::preserve_corrupt(&path);
+            Settings::default()
+        }
+    }
 }
 
 pub fn save(app: &AppHandle, s: &Settings) -> tauri::Result<()> {
     let path = settings_path(app)?;
-    let json = serde_json::to_string_pretty(s).expect("serialize settings");
-    std::fs::write(path, json)?;
+    crate::jsonfile::save(&path, s)?;
     Ok(())
 }
 
