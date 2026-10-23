@@ -8,11 +8,24 @@ fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
             // WhatsApp page (bridge.js)
+            "integration_state",
+            "report_integration",
+            "report_message_signal",
+            "open_app_panel",
+            "close_app_panel",
+            "detach_account",
+            "attach_account",
+            "reorder_accounts",
+            "notification_diagnostics",
+            "test_notification",
+            "open_notification_settings",
             "notify",
             "set_unread",
             "dlog",
             "open_download",
             "reveal_download",
+            "switcher_accounts",
+            "switch_account",
             // settings window
             "get_settings",
             "set_settings",
@@ -22,6 +35,7 @@ fn main() {
             "remove_account",
             "rename_account",
             "open_account",
+            "set_default_account",
             "set_app_lock_password",
             "change_app_lock_password",
             "disable_app_lock",

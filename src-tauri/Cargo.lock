@@ -4697,7 +4697,7 @@ dependencies = [
 
 [[package]]
 name = "whatrust"
-version = "0.6.8"
+version = "0.6.9-local.10"
 dependencies = [
  "argon2",
  "block2",
@@ -4716,6 +4716,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-window-state",
  "tauri-winrt-notification",
+ "tokio",
  "user-idle",
  "webkit2gtk",
  "webview2-com",

@@ -5,6 +5,9 @@ mod biometric;
 mod commands;
 mod dlog;
 mod downloads;
+mod i18n;
+mod integration;
+mod jsonfile;
 mod links;
 mod lock;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -12,8 +15,14 @@ mod menubar;
 mod notif_icon;
 mod notify;
 mod opener;
+#[cfg(windows)]
+mod sessions;
 mod settings;
+#[cfg(all(windows, debug_assertions))]
+mod smoke;
 mod tray;
+#[cfg(windows)]
+mod ui_health;
 mod unread;
 mod window;
 
@@ -42,41 +51,65 @@ pub fn run() {
         std::env::set_var("JSC_useSharedArrayBuffer", "1");
     }
 
+    let smoke_mode =
+        cfg!(debug_assertions) && std::env::var("WHATRUST_SMOKE").as_deref() == Ok("1");
+    let mut context = tauri::generate_context!();
+    if smoke_mode {
+        context.config_mut().identifier = "com.karem.whatrust.smoke".into();
+    }
     let mut builder = tauri::Builder::default();
 
     // single-instance MUST be registered first.
     #[cfg(desktop)]
     {
-        let mut single_instance = tauri_plugin_single_instance::Builder::<tauri::Wry>::new()
-            .callback(|app, args, _cwd| {
+        let single_instance = tauri_plugin_single_instance::Builder::<tauri::Wry>::new().callback(
+            |app, args, _cwd| {
                 // `whatrust --toggle` (bind it to an OS keyboard shortcut — the reliable
                 // global-hotkey path on Wayland, where in-process X11 grabs don't fire)
                 // toggles the active window. Otherwise a 2nd launch raises it, except an
                 // autostart relaunch carrying --minimized (stay hidden in the tray).
                 // Both toggle_active and show_main defer to the lock screen when locked,
                 // so neither can bypass the app lock.
-                if args.iter().any(|a| a == "--toggle") {
+                if args.iter().any(|a| a == "--settings") {
+                    window::open_settings_window(app);
+                } else if args.iter().any(|a| a == "--toggle") {
                     window::toggle_active(app);
                 } else if let Some(link) = links::link_from_args(&args) {
                     // A whatsapp:// (or wa.me) link handed to a second launch by
                     // the OS scheme handler (issue #23): open it in the running copy.
                     links::open_from_outside(app, &link);
-                } else if !args.iter().any(|a| a == "--minimized") {
+                } else if !settings::start_hidden(
+                    cfg!(windows) && settings::load(app).start_minimized,
+                    &args,
+                ) {
                     window::show_main(app);
                 }
-            });
+            },
+        );
 
         // Flatpak only permits a sandbox to own D-Bus names under its exported
         // application ID. Native packages keep using the stable Tauri identifier.
         #[cfg(target_os = "linux")]
-        if let Some(id) = settings::flatpak_id() {
-            single_instance = single_instance.dbus_id(id);
-        }
+        let single_instance = {
+            let mut single_instance = single_instance;
+            if let Some(id) = settings::flatpak_id() {
+                single_instance = single_instance.dbus_id(id);
+            }
+            single_instance
+        };
 
-        builder = builder.plugin(single_instance.build());
+        if !smoke_mode {
+            builder = builder.plugin(single_instance.build());
+        }
     }
 
-    builder = builder.plugin(tauri_plugin_notification::init());
+    // The Windows toast service is owned by notify.rs. This plugin injects a
+    // replacement window.Notification that bypasses that account/lock-aware
+    // service and invokes its own forbidden remote IPC command instead.
+    #[cfg(not(windows))]
+    {
+        builder = builder.plugin(tauri_plugin_notification::init());
+    }
 
     #[cfg(desktop)]
     {
@@ -108,21 +141,42 @@ pub fn run() {
             )
             .plugin(tauri_plugin_autostart::init(
                 tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-                Some(vec!["--minimized"]),
+                Some(vec![if cfg!(windows) {
+                    "--autostart"
+                } else {
+                    "--minimized"
+                }]),
             ));
     }
+
+    #[cfg(windows)]
+    let builder = builder.manage(sessions::Sessions::default());
 
     builder
         .manage(accounts::UnreadMap::default())
         .manage(downloads::Downloads::default())
         .manage(notify::Recent::default())
+        .manage(integration::Integration::default())
         .manage(accounts::ActiveAccount::new("wa-default".into()))
         .invoke_handler(tauri::generate_handler![
+            integration::integration_state,
+            integration::report_integration,
+            integration::report_message_signal,
+            integration::open_app_panel,
+            integration::close_app_panel,
+            integration::detach_account,
+            integration::attach_account,
+            integration::reorder_accounts,
+            integration::notification_diagnostics,
+            integration::test_notification,
+            integration::open_notification_settings,
             commands::notify,
             commands::set_unread,
             commands::dlog,
             commands::open_download,
             commands::reveal_download,
+            commands::switcher_accounts,
+            commands::switch_account,
             commands::get_settings,
             commands::set_settings,
             commands::open_settings,
@@ -131,6 +185,7 @@ pub fn run() {
             commands::remove_account,
             commands::rename_account,
             commands::open_account,
+            commands::set_default_account,
             commands::get_lock_status,
             commands::set_app_lock_password,
             commands::change_app_lock_password,
@@ -142,10 +197,10 @@ pub fn run() {
             commands::unlock_biometric,
             commands::reset_app_lock,
         ])
-        .setup(|app| {
+        .setup(move |app| {
             // Menu-bar-only on macOS: load settings early (the rest of setup needs them
             // below) so the Dock icon can be dropped before the app starts presenting.
-            let s = settings::load(app.handle());
+            let mut s = settings::load(app.handle());
             #[cfg(target_os = "macos")]
             if s.menubar_only {
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -163,11 +218,27 @@ pub fn run() {
             // before any account window can fire a notification. See aumid.rs.
             aumid::register(handle);
 
+            // A reset only runs while no WebViews hold the session stores open.
+            // Failure aborts startup before reading accounts or creating a view.
+            applock::complete_pending_reset(handle).map_err(std::io::Error::other)?;
+            i18n::set(i18n::Lang::from_code(&s.language));
+            if smoke_mode {
+                s.start_minimized = true;
+                settings::save(handle, &s)?;
+            }
             let args: Vec<String> = std::env::args().collect();
-            let start_hidden = s.start_minimized || args.iter().any(|a| a == "--minimized");
+            let start_hidden = settings::start_hidden(s.start_minimized, &args);
 
             // Load accounts (seeds a single `default` on first run / corrupt file).
             let mut f = accounts::load(handle);
+            dlog::log("startup: account configuration loaded");
+            if smoke_mode {
+                if f.accounts.len() == 1 {
+                    accounts::add(&mut f, "Conta de teste B");
+                }
+                accounts::save(handle, &f)?;
+                applock::save(handle, &applock::AppLockConfig::default())?;
+            }
 
             // Backfill a persisted store_uuid for any non-default account missing one
             // (older state predating multi-account). Save only if something changed.
@@ -184,18 +255,14 @@ pub fn run() {
 
             // App lock: decide the initial state and whether to start hidden.
             let lock_cfg = applock::load(handle);
-            let lock_on_launch = lock_cfg.is_active() && lock_cfg.lock_on_launch;
+            let lock_on_launch = lock_cfg.should_lock_on_launch();
             handle.manage(lock::LockState::new(!lock_on_launch));
             let open_hidden = start_hidden || lock_on_launch;
 
-            // Open every account window so each one receives messages/notifications.
-            // In menu-bar-only mode they start hidden: the inactive-scheduling
-            // policy keeps every account connected while hidden, and the tray
-            // opens them as panels.
-            #[cfg(target_os = "macos")]
-            let open_hidden = open_hidden || s.menubar_only;
-            for a in &f.accounts {
-                window::open_account_window(handle, a, open_hidden)?;
+            let startup_label =
+                accounts::startup_account(&f).map(|account| accounts::window_label(&account.id));
+            if let Some(label) = &startup_label {
+                *crate::lock::guard(&handle.state::<accounts::ActiveAccount>()) = label.clone();
             }
             #[cfg(target_os = "macos")]
             {
@@ -207,13 +274,44 @@ pub fn run() {
                 }
             }
 
-            tray::setup(handle)?;
-            tray::rebuild_menu(handle);
-            let _ = settings::apply(handle, &s);
+            // In menu-bar-only mode every account window starts hidden: the
+            // inactive-scheduling policy keeps each one connected while hidden,
+            // and the tray opens them as panels.
+            #[cfg(target_os = "macos")]
+            let open_hidden = open_hidden || s.menubar_only;
 
-            if lock_on_launch && !start_hidden {
-                lock::show_lock_window(handle);
+            // Build windows while Tauri is still on its UI thread. On Windows a
+            // WebView2 controller is created lazily for a hidden window, so the
+            // preferred account must be the one made visible here. This keeps
+            // every other account connected in the background and guarantees the
+            // selected startup account is the first usable window.
+            for account in &f.accounts {
+                let is_startup = startup_label
+                    .as_deref()
+                    .is_some_and(|label| label == accounts::window_label(&account.id));
+                window::open_account_window(handle, account, open_hidden || !is_startup)?;
             }
+            dlog::log("startup: account windows built");
+            #[cfg(windows)]
+            ui_health::start(handle);
+            tray::setup(handle)?;
+            // Let setup return before accessing tray/window APIs again. This
+            // avoids waiting on the Windows UI loop while it is being created.
+            let startup_handle = handle.clone();
+            let open_settings = !start_hidden && args.iter().any(|a| a == "--settings");
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                let ui_handle = startup_handle.clone();
+                let _ = startup_handle.run_on_main_thread(move || {
+                    tray::rebuild_menu(&ui_handle);
+                    let _ = settings::apply(&ui_handle, &s);
+                    if lock_on_launch && !start_hidden {
+                        lock::show_lock_window(&ui_handle);
+                    } else if open_settings {
+                        window::open_settings_window(&ui_handle);
+                    }
+                });
+            });
 
             // Launched by the OS to open a whatsapp:// link (issue #23). The
             // account window is already loading; point it at the chat instead.
@@ -236,7 +334,7 @@ pub fn run() {
                         continue;
                     }
                     let idle_ok = user_idle::UserIdle::get_time()
-                        .map(|t| t.as_seconds() >= c.idle_secs as u64)
+                        .map(|t| c.should_lock_when_idle(t.as_seconds()))
                         .unwrap_or(false);
                     if idle_ok {
                         let h = idle_handle.clone();
@@ -245,9 +343,13 @@ pub fn run() {
                 });
             }
 
+            #[cfg(all(windows, debug_assertions))]
+            if smoke_mode {
+                smoke::start(handle);
+            }
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building whatRust")
         .run(|_app_handle, _event| {
             // Give restyled panels their real geometry back before the exit

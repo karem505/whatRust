@@ -1,6 +1,8 @@
 (function () {
   "use strict";
   if (window.location.origin !== "https://web.whatsapp.com") return;
+  // Interface language, injected by Rust and re-set live on a language change.
+  function L(pt, en) { return window.__WR_LANG === "en" ? en : pt; }
 
   // A rejected command used to vanish here without a trace, which is how every
   // notify/set_unread call being refused by the IPC permission check went
@@ -13,11 +15,83 @@
       return t.core.invoke(cmd, args).catch(function (e) {
         if (warnedCmds[cmd]) return;
         warnedCmds[cmd] = true;
-        try { console.warn("[whatRust] " + cmd + " was refused: " + e); } catch (e2) {}
+        try { console.warn("[whatRust] " + cmd + " was refused"); } catch (e2) {}
       });
     }
     return Promise.resolve();
   }
+
+  // A small, keyboard-accessible account switcher owned by whatRust. It exposes
+  // only account names/unread counts and a request to focus an existing account.
+  function mountAccountSwitcher() {
+    if (window.__WHATRUST_WINDOWS__) return;
+    if (!document.body || document.getElementById("__whatrust_accounts")) return;
+    // Join the WhatsApp header's normal layout, so the control never covers
+    // the navigation icons or conversations. Wait until the header is mounted.
+    var header = document.querySelector("#side header, #app header");
+    if (!header) return;
+    var trigger = document.createElement("button");
+    trigger.id = "__whatrust_accounts";
+    trigger.type = "button";
+    trigger.textContent = "⇄";
+    trigger.title = L("Trocar conta do WhatsApp", "Switch WhatsApp account");
+    trigger.setAttribute("aria-label", L("Trocar conta do WhatsApp", "Switch WhatsApp account"));
+    trigger.setAttribute("aria-haspopup", "dialog");
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.style.cssText = "position:static;display:inline-flex;align-items:center;justify-content:center;flex:0 0 36px;align-self:center;width:36px;height:36px;margin-inline-start:8px;padding:0;border:1px solid #00806966;border-radius:50%;background:#00806922;color:inherit;font:600 24px system-ui;line-height:1;cursor:pointer;outline-offset:3px";
+    var oldDialog = document.getElementById("__whatrust_accounts_dialog");
+    if (oldDialog) oldDialog.remove();
+    var dialog = document.createElement("dialog");
+    dialog.id = "__whatrust_accounts_dialog";
+    dialog.setAttribute("aria-label", L("Contas do WhatsApp", "WhatsApp accounts"));
+    dialog.style.cssText = "border:0;border-radius:14px;padding:16px;min-width:260px;max-width:90vw;box-shadow:0 8px 36px #0006;font:14px system-ui;color:#222";
+    var heading = document.createElement("h2"); heading.textContent = L("Contas do WhatsApp", "WhatsApp accounts");
+    heading.style.cssText = "font-size:16px;margin:0 0 10px";
+    var list = document.createElement("div"); list.setAttribute("role", "list");
+    var close = document.createElement("button"); close.type = "button"; close.textContent = L("Fechar", "Close");
+    close.style.cssText = "margin-top:12px;padding:7px 12px;border:0;border-radius:8px;cursor:pointer";
+    close.addEventListener("click", function () { dialog.close(); trigger.focus(); });
+    dialog.append(heading, list, close);
+    dialog.addEventListener("click", function (e) { if (e.target === dialog) { dialog.close(); trigger.focus(); } });
+    dialog.addEventListener("close", function () {
+      trigger.setAttribute("aria-expanded", "false");
+      trigger.focus();
+    });
+    trigger.addEventListener("click", function (event) {
+      event.stopPropagation();
+      invoke("switcher_accounts").then(function (accounts) {
+        if (!Array.isArray(accounts)) return;
+        list.textContent = "";
+        accounts.forEach(function (account) {
+          var item = document.createElement("button"); item.type = "button";
+          var row = document.createElement("div");
+          row.setAttribute("role", "listitem");
+          item.textContent = String(account.name || "WhatsApp") + (account.unread > 0 ? "  ·  " + account.unread + L(" não lidas", " unread") : "");
+          item.setAttribute("aria-label", String(account.name || "WhatsApp") + (account.unread > 0 ? ", " + account.unread + L(" não lidas", " unread") : ""));
+          item.style.cssText = "display:block;width:100%;text-align:left;padding:10px;border:0;border-radius:8px;background:white;color:#222;cursor:pointer";
+          item.addEventListener("click", function () { invoke("switch_account", { id: account.id }); dialog.close(); });
+          row.appendChild(item);
+          list.appendChild(row);
+        });
+        if (!dialog.open) dialog.showModal();
+        trigger.setAttribute("aria-expanded", "true");
+        var first = list.querySelector("button"); if (first) first.focus(); else close.focus();
+      });
+    });
+    header.appendChild(trigger);
+    document.body.appendChild(dialog);
+  }
+  // React can replace the header when navigating or reconnecting.
+  var switcherObserver = new MutationObserver(mountAccountSwitcher);
+  function watchAccountSwitcher() {
+    if (!document.body) return;
+    switcherObserver.observe(document.body, { childList: true, subtree: true });
+    mountAccountSwitcher();
+  }
+  if (document.body) watchAccountSwitcher();
+  else document.addEventListener("DOMContentLoaded", watchAccountSwitcher, { once: true });
+  var switcherTimer = setInterval(mountAccountSwitcher, 500);
+  setTimeout(function () { clearInterval(switcherTimer); }, 30000);
 
   // Native OS toast with short-window de-duplication. WhatsApp can raise the same alert
   // more than once in a burst (a React re-render, or one message surfacing through two
@@ -71,6 +145,9 @@
     return Promise.race([load, timeout]);
   }
   function nativeNotify(title, body, icon) {
+    if(window.__whatrustLocked)return false;
+    var epoch=window.__whatrustNotificationEpoch||0;
+    function deliver(args){if(window.__WHATRUST_WINDOWS__)args.epoch=epoch;invoke("notify",args);}
     title = String(title || "WhatsApp");
     body = String(body || "");
     var now = Date.now();
@@ -78,16 +155,16 @@
       if (now - recentNotif[k] > DEDUP_MS) delete recentNotif[k]; // prune stale keys
     }
     var key = title + " " + body;
-    if (recentNotif[key] && now - recentNotif[key] <= DEDUP_MS) return false;
+    if (!window.__WHATRUST_WINDOWS__ && recentNotif[key] && now - recentNotif[key] <= DEDUP_MS) return false;
     recentNotif[key] = now;
     var scheme = typeof icon === "string" && (/^(blob|data|https):/.exec(icon) || [])[1];
     if (!scheme) {
-      invoke("notify", { title: title, body: body });
+      deliver({ title: title, body: body });
       return true;
     }
     iconPng(icon).then(function (png) {
       notePath("icon " + scheme + (png ? " ok" : " unavailable"));
-      invoke("notify", png ? { title: title, body: body, icon: png } : { title: title, body: body });
+      deliver(png ? { title: title, body: body, icon: png } : { title: title, body: body });
     });
     return true;
   }
@@ -214,7 +291,23 @@
 
   // 2) Notification override — forward to a native OS notification via Rust.
   try {
+    var OriginalNotification = window.Notification;
+    // Request the actual browser permission as well as advertising our own
+    // bridge permission. A shim-only grant cannot enable worker notifications.
+    if (window.__WHATRUST_WINDOWS__ && OriginalNotification && OriginalNotification.requestPermission) {
+      Promise.resolve().then(function(){return OriginalNotification.permission === "granted" ? "granted" : OriginalNotification.requestPermission();}).then(function(permission){
+        notePath("browser permission " + (permission === "granted" ? "granted" : "not granted; page fallback"));
+      }).catch(function(){notePath("browser permission unavailable; page fallback");});
+    }
     function ShimNotification(title, options) {
+      if (window.__whatrustPreferNative && typeof OriginalNotification === "function" && OriginalNotification.permission === "granted") {
+        try {
+          notePath("native Notification()");
+          var notification = new OriginalNotification(title, options);
+          if(notification.addEventListener)notification.addEventListener("error",function(){notePath("native notification error; page fallback");options=options||{};nativeNotify(title,options.body,options.icon);},{once:true});
+          return notification;
+        } catch (e) { notePath("native constructor refused; page fallback"); }
+      }
       options = options || {};
       this.title = title;
       this.body = options.body || "";
@@ -278,6 +371,10 @@
   try {
     var SWR = window.ServiceWorkerRegistration;
     if (SWR && SWR.prototype && typeof SWR.prototype.showNotification === "function") {
+      // WebView2's NotificationReceived contract covers non-persistent
+      // Notification() events. A persistent showNotification() promise can
+      // resolve without that event, so the page-side registration uses our
+      // own service directly, even when the constructor uses native delivery.
       SWR.prototype.showNotification = function (title, options) {
         options = options || {};
         notePath("page registration.showNotification()");
@@ -367,7 +464,7 @@
       var style = document.createElement("style");
       style.textContent = [
         ":host{all:initial}",
-        ".stack{position:fixed;left:16px;bottom:16px;z-index:2147483647;display:flex;flex-direction:column;gap:8px;",
+        ".stack{position:fixed;left:16px;bottom:16px;z-index:2147483647;display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 32px);overflow-y:auto;",
         "font:14px/1.35 system-ui,-apple-system,'Segoe UI',Roboto,Ubuntu,sans-serif;max-width:min(380px,calc(100vw - 32px))}",
         ".toast{display:flex;align-items:center;gap:12px;padding:10px 10px 10px 14px;border-radius:10px;",
         "background:#233138;color:#e9edef;box-shadow:0 4px 18px rgba(0,0,0,.35)}",
@@ -405,10 +502,10 @@
       text.className = "text";
       var title = document.createElement("div");
       title.className = "title";
-      title.textContent = d.ok ? "Downloaded" : "Download failed";
+      title.textContent = d.ok ? L("Download concluído", "Download complete") : L("Falha no download", "Download failed");
       var name = document.createElement("div");
       name.className = "name";
-      name.textContent = d.ok ? String(d.name || "") : "The file could not be downloaded.";
+      name.textContent = d.ok ? String(d.name || "") : L("Não foi possível baixar o arquivo.", "The file could not be downloaded.");
       if (d.ok) name.title = String(d.name || "");
       text.appendChild(title);
       text.appendChild(name);
@@ -424,18 +521,18 @@
       };
       if (d.ok && typeof d.id === "number") {
         if (d.canOpen) {
-          toast.appendChild(dl.button("Open", "", function () {
+          toast.appendChild(dl.button(L("Abrir", "Open"), "", function () {
             invoke("open_download", { id: d.id });
             close();
           }));
         }
-        toast.appendChild(dl.button("Show in folder", "", function () {
+        toast.appendChild(dl.button(L("Mostrar na pasta", "Show in folder"), "", function () {
           invoke("reveal_download", { id: d.id });
           close();
         }));
       }
       var x = dl.button("\u00d7", "close", close);
-      x.setAttribute("aria-label", "Dismiss");
+      x.setAttribute("aria-label", L("Fechar aviso", "Dismiss notice"));
       toast.appendChild(x);
       // Hovering keeps it up; leaving restarts the countdown.
       toast.addEventListener("mouseenter", function () { if (timer) clearTimeout(timer); });
@@ -493,7 +590,7 @@
       try { invoke("dlog", { msg: String(m).slice(0, 280) }); } catch (e) {}
     };
     drop.attachFailed = function () {
-      nativeNotify("whatRust", "Could not attach dropped files. Use the attach (+) button and try again.");
+      nativeNotify("whatRust", L("Não foi possível anexar os arquivos. Use o botão de anexo (+) e tente novamente.", "Could not attach the files. Use the attach button (+) and try again."));
     };
     // Decode one base64 stanza to bytes. Modern WebKit (18.4+) has
     // Uint8Array.fromBase64 — ~10x faster than atob + a char loop on multi-MB

@@ -67,97 +67,28 @@ impl Downloads {
     }
 }
 
-/// File types that run code when "opened". These are shown in their folder
-/// instead, where the user can still choose to run them.
+/// Extensions that are opened directly. Anything else (programs, scripts,
+/// macro-enabled Office files, HTML/SVG, shortcuts, disk images, unknown types)
+/// is shown in its folder instead, where the user can still choose to run it.
+/// An allowlist, so a type nobody thought of fails safe.
+const SAFE_TO_OPEN: &[&str] = &[
+    // documents
+    "pdf", "txt", "md", "csv", "rtf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods",
+    "odp", "vcf", // images
+    "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif", "avif", "tif", "tiff",
+    // audio
+    "mp3", "m4a", "aac", "ogg", "oga", "opus", "wav", "flac", "amr", // video
+    "mp4", "m4v", "mov", "mkv", "webm", "avi", "3gp", // archives
+    "zip", "7z", "rar", "gz", "tar",
+];
+
+/// Whether "Open" must be replaced by "Show in folder" for this file.
 pub fn is_risky(path: &Path) -> bool {
-    const RISKY: &[&str] = &[
-        // Windows
-        "exe",
-        "msi",
-        "msix",
-        "msixbundle",
-        "appx",
-        "appxbundle",
-        "appinstaller",
-        "bat",
-        "cmd",
-        "com",
-        "cpl",
-        "scr",
-        "pif",
-        "ps1",
-        "psm1",
-        "psd1",
-        "vbs",
-        "vbe",
-        "js",
-        "jse",
-        "wsf",
-        "wsh",
-        "hta",
-        "lnk",
-        "url",
-        "reg",
-        "dll",
-        "sys",
-        "inf",
-        "msc",
-        "msp",
-        "scf",
-        "gadget",
-        "application",
-        "settingcontent-ms",
-        "iso",
-        "img",
-        "vhd",
-        "vhdx",
-        "jar",
-        "jnlp",
-        // Linux
-        "sh",
-        "bash",
-        "zsh",
-        "csh",
-        "ksh",
-        "run",
-        "bin",
-        "appimage",
-        "desktop",
-        "deb",
-        "rpm",
-        "flatpak",
-        "flatpakref",
-        "flatpakrepo",
-        "snap",
-        "so",
-        "py",
-        "pl",
-        "rb",
-        "elf",
-        "out",
-        // macOS
-        "app",
-        "command",
-        "tool",
-        "dmg",
-        "pkg",
-        "mpkg",
-        "workflow",
-        "terminal",
-        "scpt",
-        "applescript",
-        "action",
-        "dylib",
-        "webloc",
-        "inetloc",
-        "fileloc",
-    ];
-    // No extension: on Unix that can be an executable (or a script with a shebang).
     let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
-        return !cfg!(windows);
+        return true;
     };
     let ext = ext.to_ascii_lowercase();
-    RISKY.contains(&ext.as_str())
+    !SAFE_TO_OPEN.contains(&ext.as_str())
 }
 
 /// The page call that shows the toast. Only the file *name* goes to the page.
@@ -236,6 +167,13 @@ mod tests {
             "Disk.dmg",
             "a.command",
             "a.jar",
+            "macro.docm",
+            "macro.xlsm",
+            "page.html",
+            "image.svg",
+            "help.chm",
+            "noextension",
+            "weird.zzz",
         ] {
             assert!(is_risky(Path::new(risky)), "{risky}");
         }

@@ -1,3 +1,4 @@
+use crate::i18n::trf;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -9,6 +10,9 @@ pub struct Settings {
     pub hotkey_enabled: bool,
     pub hotkey: String,
     pub notifications: bool,
+    pub notify_when_focused: bool,
+    pub notify_active_chat: bool,
+    pub respect_muted: bool,
     /// macOS only: the app lives in the menu bar, no Dock icon and no
     /// standard window. Every account stays connected in the background and
     /// opens as a panel from the tray. Off by default. Ignored on other platforms.
@@ -19,6 +23,8 @@ pub struct Settings {
     /// Dock icon brings a hidden window back. Windows and Linux always show the
     /// tray icon, since there it is the only way back to a hidden window.
     pub menu_bar_icon: bool,
+    /// Interface language: `pt-BR` (default) or `en`.
+    pub language: String,
 }
 
 impl Default for Settings {
@@ -30,10 +36,32 @@ impl Default for Settings {
             hotkey_enabled: true,
             hotkey: "CmdOrCtrl+Shift+W".to_string(),
             notifications: true,
+            notify_when_focused: true,
+            notify_active_chat: true,
+            respect_muted: true,
             menubar_only: false,
             zoom: 1.0,
             menu_bar_icon: true,
+            language: crate::i18n::PT_BR.to_string(),
         }
+    }
+}
+
+pub fn start_hidden(preference: bool, args: &[String]) -> bool {
+    if args.iter().any(|a| a == "--show") {
+        return false;
+    }
+    if cfg!(windows) {
+        // A manual launch from Start or a desktop shortcut has no startup flag
+        // and should always show the window. Apply the preference only to OS
+        // startup. Accept --minimized for older Run entries, but still respect
+        // the saved preference; new entries use the explicit flag below.
+        preference
+            && args
+                .iter()
+                .any(|a| a == "--autostart" || a == "--minimized")
+    } else {
+        preference || args.iter().any(|a| a == "--minimized")
     }
 }
 
@@ -58,6 +86,7 @@ impl Settings {
     /// Repair values an older or hand-edited settings.json can carry.
     pub fn sanitized(mut self) -> Self {
         self.zoom = sanitize_zoom(self.zoom);
+        self.language = crate::i18n::sanitize_code(&self.language);
         // Menu-bar-only mode needs WKWebView's inactive-scheduling policy
         // (macOS 14+). Dropping the flag here means a settings file or an
         // older build can never leave the app in a mode it cannot sustain.
@@ -132,18 +161,23 @@ fn settings_path(app: &AppHandle) -> tauri::Result<PathBuf> {
 }
 
 pub fn load(app: &AppHandle) -> Settings {
-    settings_path(app)
-        .ok()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str::<Settings>(&s).ok())
-        .map(Settings::sanitized)
-        .unwrap_or_default()
+    use crate::jsonfile::Loaded;
+    let Ok(path) = settings_path(app) else {
+        return Settings::default();
+    };
+    match crate::jsonfile::read::<Settings>(&path) {
+        Loaded::Ok(s) | Loaded::Recovered(s) => s.sanitized(),
+        Loaded::Missing => Settings::default(),
+        Loaded::Corrupt => {
+            crate::jsonfile::preserve_corrupt(&path);
+            Settings::default()
+        }
+    }
 }
 
 pub fn save(app: &AppHandle, s: &Settings) -> tauri::Result<()> {
     let path = settings_path(app)?;
-    let json = serde_json::to_string_pretty(s).expect("serialize settings");
-    std::fs::write(path, json)?;
+    crate::jsonfile::save(&path, s)?;
     Ok(())
 }
 
@@ -153,6 +187,11 @@ pub fn save(app: &AppHandle, s: &Settings) -> tauri::Result<()> {
 pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
     // Zoom is a webview property, so it applies on every platform and takes
     // effect on the open account windows without a reload.
+    let lang = crate::i18n::Lang::from_code(&s.language);
+    if lang != crate::i18n::current() {
+        crate::i18n::set(lang);
+        crate::i18n::refresh(app);
+    }
     crate::window::apply_zoom_all(app, s.zoom);
 
     // Menu-bar mode is only available where a hidden WKWebView keeps running
@@ -208,7 +247,10 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
         let flatpak_autostart_handled = flatpak_id()
             .map(|id| {
                 if let Err(e) = apply_flatpak_autostart(&id, s.autostart) {
-                    warnings.push(format!("autostart could not be updated: {e}"));
+                    warnings.push(trf(
+                        "Não foi possível atualizar a inicialização automática: {0}",
+                        &[&e],
+                    ));
                 }
                 true
             })
@@ -229,7 +271,10 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
                     .and_then(|on| if on { autostart.disable() } else { Ok(()) })
             };
             if let Err(e) = result {
-                warnings.push(format!("autostart could not be updated: {e}"));
+                warnings.push(trf(
+                    "Não foi possível atualizar a inicialização automática: {0}",
+                    &[&e],
+                ));
             }
         }
 
@@ -238,7 +283,10 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
         let _ = gs.unregister_all();
         if s.hotkey_enabled && !s.hotkey.trim().is_empty() {
             if let Err(e) = gs.register(s.hotkey.as_str()) {
-                warnings.push(format!("shortcut not registered (it may be in use): {e}"));
+                warnings.push(trf(
+                    "Não foi possível registrar o atalho (ele pode estar em uso): {0}",
+                    &[&e],
+                ));
             }
         }
         if warnings.is_empty() {
@@ -260,6 +308,13 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     use super::{flatpak_autostart_entry, is_valid_flatpak_id};
+
+    #[test]
+    fn old_settings_enable_new_notification_preferences() {
+        let s: Settings = serde_json::from_str(r#"{"notifications":false}"#).unwrap();
+        assert!(!s.notifications);
+        assert!(s.notify_when_focused && s.notify_active_chat && s.respect_muted);
+    }
 
     #[cfg(target_os = "linux")]
     #[test]
@@ -351,5 +406,33 @@ mod tests {
         let json = serde_json::to_string(&s).unwrap();
         let back: Settings = serde_json::from_str(&json).unwrap();
         assert_eq!(s, back);
+    }
+    #[test]
+    fn explicit_foreground_launch_overrides_background_preference() {
+        let args = |items: &[&str]| items.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(super::start_hidden(true, &args(&[])), !cfg!(windows));
+        assert_eq!(
+            super::start_hidden(false, &args(&["--minimized"])),
+            !cfg!(windows)
+        );
+        assert!(!super::start_hidden(true, &args(&["--show"])));
+        assert!(!super::start_hidden(
+            true,
+            &args(&["--show", "--minimized"])
+        ));
+        assert!(!super::start_hidden(false, &args(&[])));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn start_minimized_only_affects_system_autostart() {
+        assert!(!super::start_hidden(true, &[]));
+        assert!(super::start_hidden(true, &["--autostart".into()]));
+        assert!(!super::start_hidden(false, &["--autostart".into()]));
+        assert!(!super::start_hidden(false, &["--minimized".into()]));
+        assert!(!super::start_hidden(
+            true,
+            &["--autostart".into(), "--show".into()]
+        ));
     }
 }

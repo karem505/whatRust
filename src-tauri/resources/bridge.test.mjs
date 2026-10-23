@@ -134,6 +134,7 @@ function makeHarness(options = {}) {
   body.isRoot = true;
   const document = {
     body,
+    getElementById() { return null; },
     createElement: (tag) => new FakeElement(tag),
     title: "WhatsApp",
     readyState: "complete",
@@ -151,6 +152,10 @@ function makeHarness(options = {}) {
   };
   const window = {
     location: { origin: "https://web.whatsapp.com" },
+    Notification: options.nativeNotification,
+    ServiceWorkerRegistration: options.serviceWorkerRegistration,
+    __WHATRUST_WINDOWS__: !!options.windows,
+    __whatrustPreferNative: !!options.preferNative,
     addEventListener() {},
     __TAURI__: {
       core: {
@@ -394,7 +399,7 @@ async function testDecodeFailureNotifies() {
   await sleep(30);
   assert(mediaInput.batches.length === 0, "failed decode is never injected");
   assert(
-    invocations.some((x) => x.cmd === "notify" && /Could not attach/.test(x.args.body)),
+    invocations.some((x) => x.cmd === "notify" && /Não foi possível anexar/.test(x.args.body)),
     "native failure notification is sent"
   );
 }
@@ -533,10 +538,10 @@ async function testDownloadToastOffersOpenAndShowInFolder() {
   const [toast] = toastsIn(document);
   assert(!!toast, "one toast in the page");
   const texts = toast.all().map((e) => e.textContent);
-  assert(texts.includes("Downloaded") && texts.includes(name), "title and file name, as plain text");
+  assert(texts.includes("Download concluído") && texts.includes(name), "title and file name, as plain text");
   const labels = buttonsOf(toast).map((b) => b.textContent);
-  assert(labels.includes("Open") && labels.includes("Show in folder"), `buttons: ${labels}`);
-  buttonsOf(toast).find((b) => b.textContent === "Open").click();
+  assert(labels.includes("Abrir") && labels.includes("Mostrar na pasta"), `buttons: ${labels}`);
+  buttonsOf(toast).find((b) => b.textContent === "Abrir").click();
   const call = invocations.find((x) => x.cmd === "open_download");
   assert(call && call.args.id === 4 && Object.keys(call.args).length === 1, "Open sends just the id");
   assert(toastsIn(document).length === 0, "the toast closes after a choice");
@@ -548,14 +553,14 @@ async function testRiskyDownloadsAndFailures() {
   w.__whatrustDownloadDone({ ok: true, id: 9, name: "setup.exe", canOpen: false });
   const [toast] = toastsIn(document);
   const labels = buttonsOf(toast).map((b) => b.textContent);
-  assert(!labels.includes("Open"), "no Open button for a program");
-  buttonsOf(toast).find((b) => b.textContent === "Show in folder").click();
+  assert(!labels.includes("Abrir"), "no Open button for a program");
+  buttonsOf(toast).find((b) => b.textContent === "Mostrar na pasta").click();
   assert(invocations.some((x) => x.cmd === "reveal_download" && x.args.id === 9), "Show in folder sends the id");
   w.__whatrustDownloadDone({ ok: false });
   const [failed] = toastsIn(document);
   assert(failed && /failed/.test(failed.className), "failure toast");
-  assert(failed.all().some((e) => e.textContent === "Download failed"), "failure says so");
-  assert(buttonsOf(failed).every((b) => b.textContent !== "Open"), "nothing to open after a failure");
+  assert(failed.all().some((e) => e.textContent === "Falha no download"), "failure says so");
+  assert(buttonsOf(failed).every((b) => b.textContent !== "Abrir"), "nothing to open after a failure");
   for (let i = 0; i < 5; i++) w.__whatrustDownloadDone({ ok: true, id: 20 + i, name: i + ".jpg", canOpen: true });
   assert(toastsIn(document).length === 3, "at most three toasts stack up");
 }
@@ -584,7 +589,53 @@ async function testUnreadReportsSayWhenThePageHasSettled() {
   assert(first && first.args.settled === false, "the first report after load is not settled");
 }
 
+async function testWindowsNativePreferenceAndFallback() {
+  let nativeCalls=0;
+  const healthy=makeHarness({windows:true,preferNative:true,nativeNotification:class {static permission="granted";constructor(){nativeCalls++;}}});
+  new healthy.window.Notification("one",{body:"same"});new healthy.window.Notification("two",{body:"same"});
+  assert(nativeCalls===2,"healthy native route owns delivery");
+  assert(!healthy.invocations.some(x=>x.cmd==="notify"),"page route does not duplicate native delivery");
+  const failed=makeHarness({windows:true,preferNative:true,nativeNotification:class {static permission="granted";constructor(){throw Error("permission");}}});
+  new failed.window.Notification("same",{body:"same"});new failed.window.Notification("same",{body:"same"});
+  assert(failed.invocations.filter(x=>x.cmd==="notify").length===2,"native rejection falls back without dropping distinct repeated text");
+}
+
+async function testNativePermissionAndAsyncErrorFallback() {
+  const denied=makeHarness({windows:true,preferNative:true,nativeNotification:class {static permission="denied";constructor(){throw Error("must not be used");}}});
+  new denied.window.Notification("permission denied",{body:"test"});
+  assert(denied.invocations.filter(x=>x.cmd==="notify").length===1,"missing real browser permission uses safe page route");
+  let fail;
+  const asynchronous=makeHarness({windows:true,preferNative:true,nativeNotification:class {static permission="granted";addEventListener(type,callback){if(type==="error")fail=callback;}}});
+  new asynchronous.window.Notification("async browser failure",{body:"test"});fail();
+  assert(asynchronous.invocations.filter(x=>x.cmd==="notify").length===1,"asynchronous native error reaches page fallback");
+  let requested=0;
+  makeHarness({windows:true,nativeNotification:class {static permission="default";static requestPermission(){requested++;return Promise.resolve("granted");}}});
+  await sleep(0);assert(requested===1,"requests actual browser permission for service-worker notifications");
+}
+
+async function testPersistentWindowsNotificationUsesOwnService() {
+  let originals=0;
+  const h=makeHarness({windows:true,preferNative:true,nativeNotification:class {static permission="granted";},serviceWorkerRegistration:class {showNotification(){originals++;return Promise.resolve();}getNotifications(){return Promise.resolve([]);}}});
+  await new h.window.ServiceWorkerRegistration().showNotification("persistent test",{body:"test"});
+  assert(originals===0,"persistent registration never waits for a non-persistent WebView2 event");
+  assert(h.invocations.filter(x=>x.cmd==="notify").length===1,"Windows registration notification reaches account-aware service exactly once");
+}
+
+async function testDelayedIconRetainsDetectionEpoch(){
+ const h=makeHarness({windows:true});h.window.__whatrustNotificationEpoch=7;
+ new h.window.Notification("late icon",{body:"test",icon:"https://example.com/icon.png"});
+ h.window.__whatrustNotificationEpoch=8;await sleep(0);
+ assert(h.invocations.find(c=>c.cmd==="notify").args.epoch===7,"icon conversion retains the event epoch from before locking");
+ const before=h.invocations.filter(c=>c.cmd==="notify").length;h.window.__whatrustLocked=true;
+ new h.window.Notification("while locked",{body:"test"});
+ assert(h.invocations.filter(c=>c.cmd==="notify").length===before,"locked page bridge does not forward message notifications");
+}
+
 const tests = [
+  testWindowsNativePreferenceAndFallback,
+  testNativePermissionAndAsyncErrorFallback,
+  testPersistentWindowsNotificationUsesOwnService,
+  testDelayedIconRetainsDetectionEpoch,
   testUnreadReportsSayWhenThePageHasSettled,
   testNotificationPathIsLoggedOnceWithoutContent,
   testDownloadToastOffersOpenAndShowInFolder,

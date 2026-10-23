@@ -17,8 +17,9 @@ pub fn availability() -> Availability {
 pub fn authenticate(_app: &tauri::AppHandle, reason: &str) -> Result<bool, String> {
     // Fresh context per call (LAContext caches a prior success).
     let ctx = unsafe { LAContext::new() };
+    let fallback = crate::i18n::tr("Desbloquear o whatRust");
     let reason = if reason.is_empty() {
-        "Unlock whatRust"
+        fallback.as_ref()
     } else {
         reason
     };
@@ -42,5 +43,5 @@ pub fn authenticate(_app: &tauri::AppHandle, reason: &str) -> Result<bool, Strin
 
     // The reply block fires on a background thread; block until it does (with a cap).
     rx.recv_timeout(std::time::Duration::from_secs(60))
-        .map_err(|_| "biometric prompt timed out".to_string())
+        .map_err(|_| crate::i18n::tr("O tempo para confirmar a biometria terminou.").into_owned())
 }

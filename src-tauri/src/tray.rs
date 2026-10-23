@@ -14,6 +14,7 @@ pub fn badge_state(count: u32) -> BadgeState {
 }
 
 use crate::accounts::{self, UnreadMap};
+use crate::i18n::{tr, trf};
 use tauri::{
     image::Image,
     menu::{MenuBuilder, MenuItemBuilder},
@@ -83,8 +84,8 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
                 "accounts" | "settings" => crate::window::open_settings_window(app),
                 "reload" => {
                     if let Some(active) = app.try_state::<crate::accounts::ActiveAccount>() {
-                        let label = active.lock().unwrap().clone();
-                        if let Some(w) = app.get_webview_window(&label) {
+                        let label = crate::lock::guard(&active).clone();
+                        if let Some(w) = app.get_webview(&label) {
                             let _ = w.eval("window.location.reload()");
                         }
                     }
@@ -146,7 +147,7 @@ pub fn rebuild_menu(app: &AppHandle) {
     // static items (update_badge / other paths may re-lock the map).
     let counts: std::collections::HashMap<String, u32> = {
         let state = app.state::<UnreadMap>();
-        let map = state.lock().unwrap();
+        let map = crate::lock::guard(&state);
         map.clone()
     };
 
@@ -168,17 +169,17 @@ pub fn rebuild_menu(app: &AppHandle) {
         builder = builder.item(&item);
     }
 
-    let Ok(accounts_item) = MenuItemBuilder::with_id("accounts", "Accounts\u{2026}").build(app)
+    let Ok(accounts_item) = MenuItemBuilder::with_id("accounts", tr("Contas…")).build(app) else {
+        return;
+    };
+    let Ok(settings) = MenuItemBuilder::with_id("settings", tr("Configurações")).build(app)
     else {
         return;
     };
-    let Ok(settings) = MenuItemBuilder::with_id("settings", "Settings").build(app) else {
+    let Ok(reload) = MenuItemBuilder::with_id("reload", tr("Recarregar")).build(app) else {
         return;
     };
-    let Ok(reload) = MenuItemBuilder::with_id("reload", "Reload").build(app) else {
-        return;
-    };
-    let Ok(quit) = MenuItemBuilder::with_id("quit", "Quit").build(app) else {
+    let Ok(quit) = MenuItemBuilder::with_id("quit", tr("Sair")).build(app) else {
         return;
     };
 
@@ -188,7 +189,8 @@ pub fn rebuild_menu(app: &AppHandle) {
         .item(&settings)
         .item(&reload);
     if lock_active {
-        let Ok(lock_item) = MenuItemBuilder::with_id("lock", "Lock now").build(app) else {
+        let Ok(lock_item) = MenuItemBuilder::with_id("lock", tr("Bloquear agora")).build(app)
+        else {
             return;
         };
         tail = tail.item(&lock_item);
@@ -229,7 +231,7 @@ pub fn update_badge(app: &AppHandle, count: u32) {
         }
         BadgeState::Count(c) => {
             let _ = tray.set_title(Some(c.to_string()));
-            let _ = tray.set_tooltip(Some(format!("{c} unread — WhatsApp")));
+            let _ = tray.set_tooltip(Some(trf("{0} conversas não lidas — WhatsApp", &[&c])));
             if let Ok(icon) = Image::from_bytes(ICON_UNREAD) {
                 let _ = tray.set_icon_with_as_template(Some(icon), ICON_IS_TEMPLATE);
             }

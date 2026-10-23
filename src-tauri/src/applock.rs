@@ -1,3 +1,4 @@
+use crate::i18n::tr;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
@@ -37,6 +38,15 @@ impl AppLockConfig {
     pub fn is_active(&self) -> bool {
         self.enabled && self.password_phc.is_some()
     }
+    pub fn should_lock_on_launch(&self) -> bool {
+        self.is_active() && self.lock_on_launch
+    }
+    pub fn should_lock_on_hide(&self) -> bool {
+        self.is_active() && self.lock_on_hide
+    }
+    pub fn should_lock_when_idle(&self, seconds: u64) -> bool {
+        self.is_active() && self.idle_secs > 0 && seconds >= u64::from(self.idle_secs)
+    }
 }
 
 fn config_path(app: &AppHandle) -> tauri::Result<PathBuf> {
@@ -45,18 +55,36 @@ fn config_path(app: &AppHandle) -> tauri::Result<PathBuf> {
     Ok(dir.join("app-lock.json"))
 }
 
+/// Stored in place of the hash when `app-lock.json` exists but cannot be read.
+/// It never parses as a PHC string, so `verify_password` always fails.
+const CORRUPT_PHC: &str = "!corrupt";
+
+/// Fail closed: an unreadable lock file (with no usable backup) keeps the lock
+/// ON with a hash nobody can match, instead of silently turning it off. The
+/// forgot-password reset is then the way out.
+fn corrupt_config() -> AppLockConfig {
+    AppLockConfig {
+        enabled: true,
+        password_phc: Some(CORRUPT_PHC.to_string()),
+        ..AppLockConfig::default()
+    }
+}
+
 pub fn load(app: &AppHandle) -> AppLockConfig {
-    config_path(app)
-        .ok()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+    use crate::jsonfile::Loaded;
+    let Ok(path) = config_path(app) else {
+        return AppLockConfig::default();
+    };
+    match crate::jsonfile::read::<AppLockConfig>(&path) {
+        Loaded::Ok(c) | Loaded::Recovered(c) => c,
+        Loaded::Missing => AppLockConfig::default(),
+        Loaded::Corrupt => corrupt_config(),
+    }
 }
 
 pub fn save(app: &AppHandle, c: &AppLockConfig) -> tauri::Result<()> {
     let path = config_path(app)?;
-    let json = serde_json::to_string_pretty(c).expect("serialize app-lock config");
-    std::fs::write(path, json)?;
+    crate::jsonfile::save(&path, c)?;
     Ok(())
 }
 
@@ -92,35 +120,60 @@ pub fn verify_password(password: &str, phc: &str) -> bool {
 /// holds BOTH the default account's webview store (directly under it, on Linux/Windows)
 /// and the per-account `profiles/` dirs — removing it logs every account out.
 fn reset_targets(config_dir: &Path, data_dir: &Path) -> Vec<PathBuf> {
-    vec![
-        config_dir.join("accounts.json"),
-        config_dir.join("app-lock.json"),
-        data_dir.to_path_buf(),
-    ]
+    let accounts = config_dir.join("accounts.json");
+    let lock = config_dir.join("app-lock.json");
+    // The backups must go too, or a later read could bring the old lock back.
+    let mut v = crate::jsonfile::sidecar_paths(&accounts);
+    v.extend(crate::jsonfile::sidecar_paths(&lock));
+    v.extend([accounts, lock, data_dir.to_path_buf()]);
+    v
 }
 
-/// Factory reset for the forgot-password flow: log out ALL accounts and clear the lock.
-pub fn reset_all(app: &AppHandle) {
-    // Belt-and-suspenders: explicitly drop each per-account profile first.
-    let f = crate::accounts::load(app);
-    for a in &f.accounts {
-        crate::accounts::delete_profile(app, &a.id);
+/// Request cleanup on the next launch, before any profile is opened.
+/// The sibling marker survives even when config_dir == data_dir.
+fn reset_marker(config_dir: &Path) -> PathBuf {
+    let mut marker = config_dir.as_os_str().to_os_string();
+    marker.push(".reset-pending");
+    PathBuf::from(marker)
+}
+
+pub fn request_reset(app: &AppHandle) -> Result<(), String> {
+    let config = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let marker = reset_marker(&config);
+    if let Some(parent) = marker.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    // Then remove the config files + the whole data root (default store + profiles).
-    let config_dir = app.path().app_config_dir().ok();
-    let data_dir = app.path().app_data_dir().ok();
-    if let (Some(c), Some(d)) = (config_dir, data_dir) {
-        for p in reset_targets(&c, &d) {
-            if p.is_dir() {
-                let _ = std::fs::remove_dir_all(&p);
-            } else {
-                let _ = std::fs::remove_file(&p);
-            }
+    std::fs::write(marker, b"reset-sessions-v1").map_err(|e| e.to_string())
+}
+
+fn complete_reset_paths(config: &Path, data: &Path) -> std::io::Result<bool> {
+    let marker = reset_marker(config);
+    if !marker.exists() {
+        return Ok(false);
+    }
+    // Remove profiles first. Keep the marker and refuse startup on any failure.
+    // Never treat a partially removed (or locked) WebView store as logged out.
+    if data.exists() {
+        std::fs::remove_dir_all(data)?;
+    }
+    for p in reset_targets(config, data)
+        .into_iter()
+        .filter(|p| p.as_path() != data)
+    {
+        match std::fs::remove_file(p) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e),
         }
     }
-    // NOTE (macOS, hardware-pending): the default account uses the system WKWebsiteDataStore
-    // and additional accounts use data_store_identifier — both system-managed, NOT plain files
-    // under app_data_dir, so file deletion alone may not fully log out on macOS. Verify on a Mac.
+    std::fs::remove_file(marker)?;
+    Ok(true)
+}
+
+pub fn complete_pending_reset(app: &AppHandle) -> Result<(), String> {
+    let config = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    complete_reset_paths(&config,&data).map(|_|()).map_err(|_| tr("Não foi possível concluir a redefinição. Feche outras instâncias do whatRust e tente novamente.").into_owned())
 }
 
 #[cfg(test)]
@@ -164,6 +217,15 @@ mod tests {
     }
 
     #[test]
+    fn corrupt_config_is_active_and_unmatchable() {
+        let c = corrupt_config();
+        assert!(c.is_active());
+        assert!(!c.biometric_enabled);
+        assert!(!verify_password("", CORRUPT_PHC));
+        assert!(!verify_password("!corrupt", CORRUPT_PHC));
+    }
+
+    #[test]
     fn roundtrip() {
         let c = AppLockConfig {
             enabled: true,
@@ -201,7 +263,85 @@ mod tests {
         let t = super::reset_targets(cfg, data);
         assert!(t.contains(&cfg.join("accounts.json")));
         assert!(t.contains(&cfg.join("app-lock.json")));
+        assert!(t.contains(&cfg.join("app-lock.json.bak")));
+        assert!(t.contains(&cfg.join("accounts.json.bak")));
         // The data root must be a target — this is what logs the DEFAULT account out.
         assert!(t.contains(&data.to_path_buf()));
+    }
+    #[test]
+    fn deferred_reset_clears_profiles_before_removing_marker() {
+        let dir = std::env::temp_dir().join(format!("whatrust-reset-{}", accounts_test_id()));
+        let config = dir.join("config");
+        let data = dir.join("data");
+        std::fs::create_dir_all(&config).unwrap();
+        std::fs::create_dir_all(data.join("profiles")).unwrap();
+        std::fs::write(config.join("app-lock.json"), b"hash fixture").unwrap();
+        std::fs::write(config.join("accounts.json"), b"accounts fixture").unwrap();
+        std::fs::write(reset_marker(&config), b"reset-sessions-v1").unwrap();
+        assert!(complete_reset_paths(&config, &data).unwrap());
+        assert!(!data.exists());
+        assert!(!config.join("app-lock.json").exists());
+        assert!(!reset_marker(&config).exists());
+        assert!(!complete_reset_paths(&config, &data).unwrap());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn failed_reset_keeps_marker_and_password() {
+        let dir = std::env::temp_dir().join(format!("whatrust-reset-{}", accounts_test_id()));
+        let config = dir.join("config");
+        let data = dir.join("data");
+        std::fs::create_dir_all(&config).unwrap();
+        std::fs::write(&data, b"a file cannot be removed as a directory").unwrap();
+        std::fs::write(config.join("app-lock.json"), b"hash fixture").unwrap();
+        std::fs::write(reset_marker(&config), b"reset-sessions-v1").unwrap();
+        assert!(complete_reset_paths(&config, &data).is_err());
+        assert!(reset_marker(&config).exists());
+        assert!(config.join("app-lock.json").exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    fn accounts_test_id() -> u128 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    }
+    #[test]
+    fn automatic_lock_triggers_require_an_enabled_password() {
+        let mut c = AppLockConfig {
+            lock_on_hide: true,
+            idle_secs: 60,
+            ..Default::default()
+        };
+        assert!(!c.should_lock_on_launch());
+        assert!(!c.should_lock_on_hide());
+        assert!(!c.should_lock_when_idle(500));
+        c.enabled = true;
+        c.password_phc = Some("hash fixture".into());
+        assert!(c.should_lock_on_launch());
+        assert!(c.should_lock_on_hide());
+        assert!(!c.should_lock_when_idle(59));
+        assert!(c.should_lock_when_idle(60));
+        c.lock_on_launch = false;
+        c.lock_on_hide = false;
+        c.idle_secs = 0;
+        assert!(!c.should_lock_on_launch());
+        assert!(!c.should_lock_on_hide());
+        assert!(!c.should_lock_when_idle(500));
+    }
+    #[test]
+    fn reset_marker_survives_shared_config_and_data_directory() {
+        let config = std::env::temp_dir().join(format!("whatrust-reset-{}", accounts_test_id()));
+        std::fs::create_dir_all(config.join("profiles")).unwrap();
+        std::fs::write(config.join("app-lock.json"), b"hash fixture").unwrap();
+        let marker = reset_marker(&config);
+        assert!(!marker.starts_with(&config));
+        assert_eq!(
+            reset_marker(Path::new("com.karem.whatrust")),
+            Path::new("com.karem.whatrust.reset-pending")
+        );
+        std::fs::write(&marker, b"reset-sessions-v1").unwrap();
+        assert!(complete_reset_paths(&config, &config).unwrap());
+        assert!(!config.exists());
+        assert!(!marker.exists());
     }
 }

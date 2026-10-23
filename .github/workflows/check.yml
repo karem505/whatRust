@@ -18,7 +18,7 @@ jobs:
           - platform: macos-latest
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install Linux deps
         if: matrix.platform == 'ubuntu-22.04'
@@ -27,11 +27,20 @@ jobs:
           sudo apt install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
             libxdo-dev libdbus-1-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libhunspell-dev patchelf
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
 
-      - uses: swatinem/rust-cache@v2
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: "./src-tauri -> target"
+
+      - name: cargo fmt
+        if: matrix.platform == 'ubuntu-22.04'
+        working-directory: src-tauri
+        run: cargo fmt --check
+
+      - name: cargo clippy
+        working-directory: src-tauri
+        run: cargo clippy --locked -- -D warnings
 
       - name: cargo build (compile check)
         working-directory: src-tauri
@@ -45,7 +54,7 @@ jobs:
         working-directory: src-tauri
         run: cargo test --locked
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
 
@@ -60,3 +69,9 @@ jobs:
       # and shows up only as a dead button on macOS, so it needs a test.
       - name: settings-ui dialog tests
         run: node settings-ui/dialog.test.mjs
+
+      - name: settings-ui language tests (every UI string has an English entry)
+        run: node settings-ui/i18n.test.mjs
+
+      - name: notification tests
+        run: node src-tauri/resources/notifications.test.mjs

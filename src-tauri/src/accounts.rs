@@ -1,3 +1,4 @@
+use crate::i18n::{tr, trf};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -8,7 +9,6 @@ use tauri::{AppHandle, Manager};
 pub type UnreadMap = Mutex<HashMap<String, u32>>;
 /// Window label of the last-focused account window (e.g. `wa-default`). Managed app state.
 pub type ActiveAccount = Mutex<String>;
-
 /// Held across each account command's load-modify-save (and its window build),
 /// so two account commands running at once can't interleave and lose a change.
 static MUTATIONS: Mutex<()> = Mutex::new(());
@@ -40,6 +40,8 @@ pub struct Account {
 pub struct AccountsFile {
     pub accounts: Vec<Account>,
     pub next_seq: u32,
+    /// Preferred startup account; independent of the historical `default` profile id.
+    pub startup_account: Option<String>,
 }
 
 impl Default for AccountsFile {
@@ -52,6 +54,7 @@ impl Default for AccountsFile {
                 store_uuid: None,
             }],
             next_seq: 1,
+            startup_account: None,
         }
     }
 }
@@ -85,20 +88,55 @@ pub fn add(f: &mut AccountsFile, name: &str) -> Account {
 /// errors if the id is unknown. Returns the removed account on success.
 pub fn remove(f: &mut AccountsFile, id: &str) -> Result<Account, String> {
     if f.accounts.len() <= 1 {
-        return Err("cannot remove the last account".into());
+        return Err(tr("Não é possível remover a última conta.").into());
     }
     let Some(pos) = f.accounts.iter().position(|a| a.id == id) else {
-        return Err(format!("unknown account: {id}"));
+        return Err(trf("Conta não encontrada: {0}", &[&id]));
     };
-    Ok(f.accounts.remove(pos))
+    let removed = f.accounts.remove(pos);
+    if f.startup_account.as_deref() == Some(id) {
+        f.startup_account = None;
+    }
+    Ok(removed)
+}
+
+/// Older files and a removed preference fall back to the first account in UI order.
+pub fn startup_account(f: &AccountsFile) -> Option<&Account> {
+    f.startup_account
+        .as_deref()
+        .and_then(|id| f.accounts.iter().find(|a| a.id == id))
+        .or_else(|| f.accounts.iter().min_by_key(|a| a.order))
+}
+
+pub fn set_startup_account(f: &mut AccountsFile, id: &str) -> Result<(), String> {
+    if !f.accounts.iter().any(|a| a.id == id) {
+        return Err(trf("Conta não encontrada: {0}", &[&id]));
+    }
+    f.startup_account = Some(id.to_owned());
+    Ok(())
 }
 
 /// Rename an account by id. Errors if the id is unknown.
 pub fn rename(f: &mut AccountsFile, id: &str, name: &str) -> Result<(), String> {
     let Some(acct) = f.accounts.iter_mut().find(|a| a.id == id) else {
-        return Err(format!("unknown account: {id}"));
+        return Err(trf("Conta não encontrada: {0}", &[&id]));
     };
     acct.name = name.to_string();
+    Ok(())
+}
+
+/// Exact permutation only: no omitted or repeated accounts.
+pub fn reorder(f: &mut AccountsFile, ids: &[String]) -> Result<(), String> {
+    let unique: std::collections::HashSet<_> = ids.iter().collect();
+    if ids.len() != f.accounts.len()
+        || unique.len() != ids.len()
+        || ids.iter().any(|id| !f.accounts.iter().any(|a| &a.id == id))
+    {
+        return Err(tr("A ordem deve conter todas as contas uma única vez").into());
+    }
+    for a in &mut f.accounts {
+        a.order = ids.iter().position(|id| id == &a.id).unwrap() as u32;
+    }
     Ok(())
 }
 
@@ -122,6 +160,7 @@ pub fn id_from_label(label: &str) -> Option<&str> {
 }
 
 /// The on-disk profile directory for an account (Linux/Windows data_directory).
+#[cfg(not(target_os = "macos"))]
 pub fn profile_dir(app: &AppHandle, id: &str) -> tauri::Result<PathBuf> {
     Ok(app.path().app_data_dir()?.join("profiles").join(id))
 }
@@ -131,7 +170,16 @@ pub fn profile_dir(app: &AppHandle, id: &str) -> tauri::Result<PathBuf> {
 #[cfg(not(target_os = "macos"))]
 pub fn delete_profile(app: &AppHandle, id: &str) {
     if let Ok(dir) = profile_dir(app, id) {
-        let _ = std::fs::remove_dir_all(dir);
+        // WebView2 can still hold files for a moment after its window is
+        // destroyed, so retry briefly instead of leaving an orphaned profile.
+        for attempt in 0..5 {
+            if std::fs::remove_dir_all(&dir).is_ok() || !dir.exists() {
+                return;
+            }
+            if attempt < 4 {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+        }
     }
 }
 
@@ -152,17 +200,53 @@ fn accounts_path(app: &AppHandle) -> tauri::Result<PathBuf> {
 }
 
 pub fn load(app: &AppHandle) -> AccountsFile {
-    accounts_path(app)
-        .ok()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+    use crate::jsonfile::Loaded;
+    let Ok(path) = accounts_path(app) else {
+        return AccountsFile::default();
+    };
+    match crate::jsonfile::read::<AccountsFile>(&path) {
+        Loaded::Ok(f) | Loaded::Recovered(f) => ensure_account(f),
+        Loaded::Missing => AccountsFile::default(),
+        Loaded::Corrupt => {
+            // Defaults will overwrite this on the next save; keep a copy so the
+            // account list (and its profile ids) can be restored by hand.
+            crate::jsonfile::preserve_corrupt(&path);
+            AccountsFile::default()
+        }
+    }
+}
+
+/// An empty configuration still needs one profile to display WhatsApp's login.
+/// This creates no authenticated session and never deletes existing profiles.
+fn ensure_account(mut file: AccountsFile) -> AccountsFile {
+    if file.accounts.is_empty() {
+        file.accounts = AccountsFile::default().accounts;
+        file.startup_account = None;
+        file.next_seq = file.next_seq.max(1);
+    }
+    file
+}
+
+#[cfg(test)]
+mod empty_account_tests {
+    use super::*;
+    #[test]
+    fn empty_configuration_opens_first_login_profile() {
+        let file = ensure_account(AccountsFile {
+            accounts: vec![],
+            next_seq: 7,
+            startup_account: Some("gone".into()),
+        });
+        assert_eq!(file.accounts.len(), 1);
+        assert_eq!(startup_account(&file).unwrap().id, "default");
+        assert_eq!(file.next_seq, 7);
+        assert_eq!(file.startup_account, None);
+    }
 }
 
 pub fn save(app: &AppHandle, f: &AccountsFile) -> tauri::Result<()> {
     let path = accounts_path(app)?;
-    let json = serde_json::to_string_pretty(f).expect("serialize accounts");
-    std::fs::write(path, json)?;
+    crate::jsonfile::save(&path, f)?;
     Ok(())
 }
 
@@ -214,6 +298,65 @@ pub fn gen_store_uuid() -> [u8; 16] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reorder_requires_an_exact_permutation_without_changing_profiles() {
+        let mut f = AccountsFile::default();
+        let other = add(&mut f, "B");
+        let before = f.clone();
+        assert!(reorder(&mut f, &["default".into(), "default".into()]).is_err());
+        assert_eq!(f, before);
+        reorder(&mut f, &[other.id.clone(), "default".into()]).unwrap();
+        assert_eq!(startup_account(&f).unwrap().id, other.id);
+        assert_eq!(f.accounts[1].store_uuid, before.accounts[1].store_uuid);
+    }
+
+    #[test]
+    fn startup_preference_survives_roundtrip_without_changing_profile_identity() {
+        let mut f = AccountsFile::default();
+        let second = add(&mut f, "Work");
+        set_startup_account(&mut f, &second.id).unwrap();
+        let restored: AccountsFile =
+            serde_json::from_str(&serde_json::to_string(&f).unwrap()).unwrap();
+        assert_eq!(startup_account(&restored), Some(&second));
+        assert_eq!(restored.accounts[0].id, "default");
+        assert_eq!(restored.accounts[0].store_uuid, None);
+    }
+
+    #[test]
+    fn missing_or_stale_startup_preference_uses_ui_order() {
+        let mut f = AccountsFile::default();
+        add(&mut f, "Work");
+        f.accounts.reverse();
+        assert_eq!(startup_account(&f).unwrap().id, "default");
+        f.startup_account = Some("removed-id".into());
+        assert_eq!(startup_account(&f).unwrap().id, "default");
+    }
+
+    #[test]
+    fn removing_preferred_account_selects_remaining_account() {
+        let mut f = AccountsFile::default();
+        let second = add(&mut f, "Work");
+        set_startup_account(&mut f, &second.id).unwrap();
+        remove(&mut f, &second.id).unwrap();
+        assert_eq!(startup_account(&f).unwrap().id, "default");
+        assert_eq!(f.startup_account, None);
+    }
+
+    #[test]
+    fn startup_selection_rejects_unknown_id_without_mutating_state() {
+        let mut f = AccountsFile::default();
+        let before = f.clone();
+        assert!(set_startup_account(&mut f, "missing").is_err());
+        assert_eq!(f, before);
+    }
+
+    #[test]
+    fn no_startup_account_when_list_is_empty() {
+        let mut f = AccountsFile::default();
+        f.accounts.clear();
+        assert!(startup_account(&f).is_none());
+    }
 
     #[test]
     fn default_file_has_single_default_account() {
@@ -283,7 +426,7 @@ mod tests {
     fn cannot_remove_last_account() {
         let mut f = AccountsFile::default();
         let err = remove(&mut f, "default").unwrap_err();
-        assert!(err.contains("last account"));
+        assert!(err.contains("última conta"));
         assert_eq!(f.accounts.len(), 1);
     }
 
@@ -292,7 +435,7 @@ mod tests {
         let mut f = AccountsFile::default();
         add(&mut f, "Work");
         let err = remove(&mut f, "nope").unwrap_err();
-        assert!(err.contains("unknown account"));
+        assert!(err.contains("Conta não encontrada"));
         assert_eq!(f.accounts.len(), 2);
     }
 
@@ -307,7 +450,7 @@ mod tests {
     fn rename_unknown_id_is_err() {
         let mut f = AccountsFile::default();
         let err = rename(&mut f, "nope", "x").unwrap_err();
-        assert!(err.contains("unknown account"));
+        assert!(err.contains("Conta não encontrada"));
     }
 
     #[test]

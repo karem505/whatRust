@@ -17,3 +17,7 @@ dist/
 /builddir/
 /repo/
 /*.flatpak
+
+# UI validation artifacts
+/.playwright-cli/
+/output/

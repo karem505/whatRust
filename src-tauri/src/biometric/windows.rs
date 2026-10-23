@@ -23,8 +23,8 @@ pub fn authenticate(app: &tauri::AppHandle, reason: &str) -> Result<bool, String
     let _ = UserConsentVerifier::CheckAvailabilityAsync().and_then(|op| op.get());
 
     let win = app
-        .get_webview_window("lock")
-        .or_else(|| app.webview_windows().into_values().next())
+        .get_window("lock")
+        .or_else(|| app.windows().into_values().next())
         .ok_or("no window to host the Hello prompt")?;
     let hwnd = win.hwnd().map_err(|e| e.to_string())?;
 
