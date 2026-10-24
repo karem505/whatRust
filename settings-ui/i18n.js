@@ -191,7 +191,7 @@
     "Este campo não pode ficar vazio.": "This field cannot be empty."
   };
 
-  var lang = root.__WR_LANG === "pt-BR" ? "pt-BR" : "en";
+  var lang = root.__WR_LANG === "en" ? "en" : "pt-BR";
 
   function norm(s) { return String(s).replace(/\s+/g, " ").trim(); }
   function has(k) { return Object.prototype.hasOwnProperty.call(EN, k); }
