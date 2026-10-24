@@ -23,7 +23,8 @@ pub struct Settings {
     /// Dock icon brings a hidden window back. Windows and Linux always show the
     /// tray icon, since there it is the only way back to a hidden window.
     pub menu_bar_icon: bool,
-    /// Interface language: `pt-BR` (default) or `en`.
+    /// Interface language: `en` or `pt-BR`. Defaults to the OS language
+    /// (Portuguese for a Portuguese system, English otherwise).
     pub language: String,
 }
 
@@ -42,7 +43,7 @@ impl Default for Settings {
             menubar_only: false,
             zoom: 1.0,
             menu_bar_icon: true,
-            language: crate::i18n::PT_BR.to_string(),
+            language: crate::i18n::system_default().to_string(),
         }
     }
 }

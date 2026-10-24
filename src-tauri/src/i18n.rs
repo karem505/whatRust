@@ -20,10 +20,14 @@ pub const PT_BR: &str = "pt-BR";
 pub const EN: &str = "en";
 
 impl Lang {
+    /// `pt`, `pt-BR`, `pt_PT.UTF-8`... mean Portuguese; anything else,
+    /// including an empty or unknown code, means English.
     pub fn from_code(code: &str) -> Lang {
-        match code.trim().to_ascii_lowercase().as_str() {
-            "en" | "en-us" | "en-gb" => Lang::En,
-            _ => Lang::PtBr,
+        let code = code.trim().to_ascii_lowercase();
+        if code == "pt" || code.starts_with("pt-") || code.starts_with("pt_") {
+            Lang::PtBr
+        } else {
+            Lang::En
         }
     }
 
@@ -38,6 +42,52 @@ impl Lang {
 /// Normalise any stored value to one of the supported codes.
 pub fn sanitize_code(code: &str) -> String {
     Lang::from_code(code).code().to_string()
+}
+
+/// Default for a fresh install or a settings.json written before the language
+/// setting existed: Portuguese when the operating system is set to Portuguese,
+/// English otherwise. Existing users keep the language they had (English).
+pub fn system_default() -> &'static str {
+    Lang::from_code(&os_locale()).code()
+}
+
+#[cfg(windows)]
+fn os_locale() -> String {
+    use windows::Win32::Globalization::GetUserDefaultLocaleName;
+    // LOCALE_NAME_MAX_LENGTH
+    let mut buf = [0u16; 85];
+    let n = unsafe { GetUserDefaultLocaleName(&mut buf) };
+    if n > 1 {
+        String::from_utf16_lossy(&buf[..(n as usize - 1)])
+    } else {
+        String::new()
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn os_locale() -> String {
+    // Apps started from Finder or the Dock get no LANG; ask the user defaults.
+    std::process::Command::new("defaults")
+        .args(["read", "-g", "AppleLocale"])
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(env_locale)
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn os_locale() -> String {
+    env_locale()
+}
+
+#[cfg(not(windows))]
+fn env_locale() -> String {
+    ["LC_ALL", "LC_MESSAGES", "LANG"]
+        .iter()
+        .filter_map(|k| std::env::var(k).ok())
+        .find(|v| !v.is_empty() && v != "C" && v != "POSIX")
+        .unwrap_or_default()
 }
 
 static CURRENT: AtomicU8 = AtomicU8::new(0);
@@ -235,13 +285,25 @@ mod tests {
     }
 
     #[test]
-    fn codes_round_trip_and_unknown_means_portuguese() {
+    fn codes_round_trip_and_unknown_means_english() {
         assert_eq!(Lang::from_code("en"), Lang::En);
         assert_eq!(Lang::from_code("EN-us"), Lang::En);
         assert_eq!(Lang::from_code("pt-BR"), Lang::PtBr);
-        assert_eq!(Lang::from_code("fr"), Lang::PtBr);
-        assert_eq!(sanitize_code("zz"), PT_BR);
+        assert_eq!(Lang::from_code("fr"), Lang::En);
+        assert_eq!(sanitize_code("zz"), EN);
+        assert_eq!(sanitize_code("pt-BR"), PT_BR);
         assert_eq!(sanitize_code("en"), EN);
+    }
+
+    #[test]
+    fn os_locales_map_to_a_supported_language() {
+        assert_eq!(Lang::from_code("pt_BR.UTF-8"), Lang::PtBr);
+        assert_eq!(Lang::from_code("pt-PT"), Lang::PtBr);
+        assert_eq!(Lang::from_code("pt"), Lang::PtBr);
+        assert_eq!(Lang::from_code("en_US.UTF-8"), Lang::En);
+        assert_eq!(Lang::from_code("ar-EG"), Lang::En);
+        assert_eq!(Lang::from_code("ptx"), Lang::En);
+        assert_eq!(Lang::from_code(""), Lang::En);
     }
 
     #[test]

@@ -59,7 +59,7 @@ async function load() {
   }
   document.getElementById("hotkey").value = s.hotkey || "CmdOrCtrl+Shift+W";
   selectNearestZoom(Number.isFinite(s.zoom) ? s.zoom : ZOOM_DEFAULT);
-  const lang = LANGS.includes(s.language) ? s.language : "pt-BR";
+  const lang = LANGS.includes(s.language) ? s.language : "en";
   document.getElementById("language").value = lang;
   if (I18n.lang() !== lang) I18n.setLang(lang);
   menuBarIconChecked = document.getElementById("menu_bar_icon").checked;

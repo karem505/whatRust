@@ -1,6 +1,6 @@
 [package]
 name = "whatrust"
-version = "0.6.9-local.10"
+version = "0.6.9"
 edition = "2021"
 rust-version = "1.82"
 
@@ -47,6 +47,7 @@ windows = { version = "0.61", features = [
   "Win32_UI_Shell",           # SetCurrentProcessExplicitAppUserModelID, ShellExecuteW (open links/files)
   "Win32_UI_Controls_Dialogs", # native per-download Save As dialog
   "Win32_UI_WindowsAndMessaging", # SW_SHOWNORMAL for ShellExecuteW
+  "Win32_Globalization",      # GetUserDefaultLocaleName: default UI language
 ] }
 windows-core = "0.61"
 # In windows-rs 0.61 IAsyncOperation moved out of windows::Foundation into the
