@@ -6,6 +6,9 @@
 
 <p align="center"><a href="https://github.com/sponsors/karem505"><img src="https://img.shields.io/badge/Sponsor%20this%20project-ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Sponsor this project on GitHub Sponsors" height="40"></a></p>
 
+<p align="center"><b>Sponsorship goal: 10 monthly sponsors.</b> That funds one fixed day every month for whatRust releases and bug fixes on Linux, Windows and macOS.<br>
+<a href="https://github.com/sponsors/karem505"><img src="https://img.shields.io/github/sponsors/karem505?label=sponsors%20so%20far&style=for-the-badge&color=ea4aaa&logo=githubsponsors&logoColor=white" alt="Number of GitHub sponsors"></a></p>
+
 **whatRust is a free, open-source, lightweight desktop client for WhatsApp Web that runs on Linux, Windows, and macOS — a lean, native alternative to the official Electron-based WhatsApp Desktop app, built with Rust and Tauri v2. It runs multiple WhatsApp accounts at once, each in its own window with a fully isolated login.**
 
 ![Latest release](https://img.shields.io/github/v/release/karem505/whatRust?label=release)
