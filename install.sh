@@ -75,17 +75,24 @@ EOF
     [ -n "$URL" ] || URL=$(pick '\.dmg$')
     [ -n "$URL" ] || { red "No .dmg asset in the latest release."; exit 1; }
     TMP=$(mktemp -d); DMG="${TMP}/${APP}.dmg"
+    MNT="${TMP}/mnt"
+    cleanup() {
+      hdiutil detach "$MNT" >/dev/null 2>&1 || true
+      rm -rf "$TMP"
+    }
+    trap cleanup 0
+    trap 'exit 1' 1 2 15
+    mkdir -p "$MNT"
     grn "Downloading $(basename "$URL")…"
     download "$URL" "$DMG"
-    MNT=$(hdiutil attach -nobrowse -readonly "$DMG" | grep '/Volumes/' | awk '{print $NF}' | tail -n1)
+    # Use a private mount point instead of parsing paths with spaces from hdiutil.
+    hdiutil attach -nobrowse -readonly -mountpoint "$MNT" "$DMG" >/dev/null
     BUNDLE=$(find "$MNT" -maxdepth 1 -name '*.app' | head -n1)
-    [ -n "$BUNDLE" ] || { red "No .app inside the dmg."; hdiutil detach "$MNT" >/dev/null 2>&1 || true; exit 1; }
+    [ -n "$BUNDLE" ] || { red "No .app inside the dmg."; exit 1; }
     NAME=$(basename "$BUNDLE")
     grn "Installing ${NAME} to /Applications…"
     rm -rf "/Applications/${NAME}"
     cp -R "$BUNDLE" /Applications/
-    hdiutil detach "$MNT" >/dev/null 2>&1 || true
-    rm -rf "$TMP"
     # Unsigned build: clear the quarantine flag so Gatekeeper doesn't block first launch.
     xattr -dr com.apple.quarantine "/Applications/${NAME}" 2>/dev/null || true
     grn "Installed to /Applications/${NAME}"
