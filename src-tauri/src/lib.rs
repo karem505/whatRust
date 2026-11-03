@@ -1,6 +1,7 @@
 mod accounts;
 mod applock;
 mod aumid;
+mod badge;
 mod biometric;
 mod commands;
 mod dlog;
