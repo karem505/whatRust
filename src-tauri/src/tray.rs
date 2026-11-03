@@ -216,6 +216,7 @@ pub fn apply_visibility(app: &AppHandle, visible: bool) {
 
 /// Update the tray to reflect the current (aggregate) unread count.
 pub fn update_badge(app: &AppHandle, count: u32) {
+    crate::badge::set(app, count);
     let Some(tray) = app.tray_by_id("main-tray") else {
         return;
     };

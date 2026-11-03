@@ -20,7 +20,6 @@ finish-args:
   - --talk-name=org.freedesktop.ScreenSaver
   - --talk-name=org.gnome.ScreenSaver
   - --talk-name=org.kde.ScreenSaver
-  - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
 
 modules:
   - flatpak/shared-modules/libayatana-appindicator/libayatana-appindicator-gtk3.json
