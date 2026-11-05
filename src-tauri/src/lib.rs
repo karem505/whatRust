@@ -16,6 +16,7 @@ mod menubar;
 mod notif_icon;
 mod notify;
 mod opener;
+mod scrollbars;
 #[cfg(windows)]
 mod sessions;
 mod settings;
@@ -37,6 +38,13 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // macOS: force overlay scrollers BEFORE any window/webview is created —
+    // AppKit caches NSScroller.preferredScrollerStyle on first use, and
+    // WKWebView's page scrollers are native, so web CSS cannot fix them.
+    // See scrollbars.rs. No-op on other platforms. The outcome is logged in
+    // setup, after dlog::init() (re)creates the log file.
+    let scrollers_forced = scrollbars::force_overlay_scrollers();
+
     // Linux: expose SharedArrayBuffer in the webview. WhatsApp Web's Chrome
     // codepath (which we present ourselves as — see window::CHROME_UA) runs its
     // wasm media/crypto workers on SharedArrayBuffer, and desktop Chrome exposes
@@ -225,6 +233,12 @@ pub fn run() {
             // way to see notification failures on a Windows GUI build with no
             // console. See dlog.rs.
             dlog::init();
+            #[cfg(target_os = "macos")]
+            dlog::log(if scrollers_forced {
+                "scrollers: forced overlay (AppleShowScrollBars=WhenScrolling in app domain)"
+            } else {
+                "scrollers: overlay already selected"
+            });
 
             // Windows: register our AppUserModelID so WinRT toast notifications
             // actually render for the installed app (no-op elsewhere). Must run

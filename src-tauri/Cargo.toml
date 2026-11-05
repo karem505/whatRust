@@ -61,7 +61,7 @@ tauri-winrt-notification = "0.7"
 # macOS < 14 guard for data_store_identifier (per-account isolation). Already at
 # 0.3.2 in Cargo.lock via the dependency graph; the NSProcessInfo feature must be
 # explicit. Inert on Linux/Windows. NSString + NSError added for the Touch ID backend.
-objc2-foundation = { version = "0.3", features = ["NSProcessInfo", "NSString", "NSError"] }
+objc2-foundation = { version = "0.3", features = ["NSProcessInfo", "NSString", "NSError", "NSUserDefaults"] }
 # CGRect/CGPoint/CGSize for the synchronous NSWindow frame restore in menubar.rs.
 objc2-core-foundation = "0.3.2"
 objc2-local-authentication = { version = "0.3.2", features = ["LAContext", "block2"] }
