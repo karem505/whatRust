@@ -29,6 +29,7 @@ fn main() {
             // settings window
             "get_settings",
             "set_settings",
+            "restart_app",
             "open_settings",
             "list_accounts",
             "add_account",

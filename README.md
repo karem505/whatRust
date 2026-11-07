@@ -65,6 +65,7 @@ The official WhatsApp Desktop app is built on Electron, which packs an entire Ch
 - **Download feedback** — a small toast confirms each download with **Open** and **Show in folder** buttons (programs and installers are only ever shown in their folder, never run)
 - **Launch at startup** (auto-start), optional
 - **Global keyboard shortcut** to show/hide the window (default `Ctrl/Cmd+Shift+W`; record your own by pressing the keys in Settings). On **Wayland**, bind `whatrust --toggle` to a system shortcut instead — see the FAQ.
+- **Proxy** — route all account traffic through a SOCKS5 or HTTP proxy (Settings → Network; see the FAQ)
 - **Single instance** — relaunching focuses the running window; `whatrust --toggle` from a second launch shows/hides it
 - **Remembers window size and position**
 - **One-line install** on every platform
@@ -195,6 +196,15 @@ Its native shell is lighter because it doesn't bundle a Chromium browser engine 
 
 ### Which operating systems does whatRust support?
 Linux (WebKitGTK), Windows 10/11 (WebView2), and macOS 12.1+ (WKWebView).
+
+### Can I use a proxy (SOCKS5 or HTTP)?
+
+Yes. Open **Settings → Network**, pick **SOCKS5** or **HTTP**, enter the host and port, save, and restart whatRust (the settings page has a **Restart now** button). Every account's WhatsApp page then goes through that proxy. The default is **Off**.
+
+- Proxies that need a **username and password are not supported** — the system webview engines (WebView2, WKWebView, WebKitGTK) don't accept credentials through this route, so whatRust rejects `user:pass@` rather than half-working. Use a local relay (e.g. a SOCKS5 forwarder on `127.0.0.1`) that handles the login for you.
+- macOS needs **macOS 14 or later** for the proxy; on older versions the setting is disabled.
+- If the saved proxy is ever invalid, whatRust blocks the connection instead of silently going direct.
+- whatRust itself makes no network requests outside the WhatsApp pages (no update checks), so there is nothing else to route. Links you open go to your default browser, which uses its own proxy settings.
 
 ### Is whatRust free and open source?
 Yes — whatRust is free and open source under the MIT License. The source is on [GitHub](https://github.com/karem505/whatRust).

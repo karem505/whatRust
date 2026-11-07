@@ -30,6 +30,7 @@ const PAGE_COMMANDS: &[&str] = &[
 const SETTINGS_COMMANDS: &[&str] = &[
     "get_settings",
     "set_settings",
+    "restart_app",
     "list_accounts",
     "add_account",
     "remove_account",
