@@ -16,8 +16,8 @@ mod menubar;
 mod notif_icon;
 mod notify;
 mod opener;
-mod scrollbars;
 mod proxy;
+mod scrollbars;
 #[cfg(windows)]
 mod sessions;
 mod settings;
