@@ -20,6 +20,8 @@ finish-args:
   - --talk-name=org.freedesktop.ScreenSaver
   - --talk-name=org.gnome.ScreenSaver
   - --talk-name=org.kde.ScreenSaver
+  # Unity LauncherEntry: the proxy only forwards the unread-count signal if the app may talk to this name.
+  - --talk-name=com.canonical.Unity
 
 modules:
   - flatpak/shared-modules/libayatana-appindicator/libayatana-appindicator-gtk3.json
