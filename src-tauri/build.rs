@@ -26,6 +26,7 @@ fn main() {
             "reveal_download",
             "switcher_accounts",
             "switch_account",
+            "zoom_step",
             // settings window
             "get_settings",
             "set_settings",

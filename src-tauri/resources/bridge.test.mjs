@@ -155,13 +155,14 @@ function makeHarness(options = {}) {
       return null;
     },
   };
+  const listeners = {};
   const window = {
     location: { origin: "https://web.whatsapp.com" },
     Notification: options.nativeNotification,
     ServiceWorkerRegistration: options.serviceWorkerRegistration,
     __WHATRUST_WINDOWS__: !!options.windows,
     __whatrustPreferNative: !!options.preferNative,
-    addEventListener() {},
+    addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
     __TAURI__: {
       core: {
         invoke(cmd, args) {
@@ -205,7 +206,7 @@ function makeHarness(options = {}) {
   const params = Object.keys(sandboxGlobals);
   const fn = new Function(...params, `"use strict";\n${bridgeSrc}`);
   fn(...params.map((k) => sandboxGlobals[k]));
-  return { window, document, head, mediaInput, docInput, logs, warns, invocations, navigator: sandboxGlobals.navigator };
+  return { window, listeners, document, head, mediaInput, docInput, logs, warns, invocations, navigator: sandboxGlobals.navigator };
 }
 
 // Drive the feed the way window.rs stream_drop does.
@@ -665,8 +666,59 @@ function testScrollbarsAreThinAndTranslucent() {
   );
 }
 
+function keyEvent(o) {
+  const e = { key: "", code: "", ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, isComposing: false, keyCode: 0, defaultPrevented: false, ...o };
+  e.preventDefault = () => { e.defaultPrevented = true; };
+  e.stopPropagation = () => { e.stopped = true; };
+  return e;
+}
+function press(h, o) {
+  const e = keyEvent(o);
+  for (const fn of h.listeners.keydown || []) fn(e);
+  return e;
+}
+const zooms = (h) => h.invocations.filter((c) => c.cmd === "zoom_step").map((c) => c.args.action);
+
+async function testZoomShortcuts() {
+  const h = makeHarness({ navigator: { platform: "Win32" } });
+  assert(press(h, { key: "=", ctrlKey: true }).defaultPrevented, "Ctrl+= is taken");
+  press(h, { key: "+", ctrlKey: true, shiftKey: true });
+  press(h, { key: "-", ctrlKey: true });
+  press(h, { key: "0", ctrlKey: true });
+  press(h, { key: "Add", code: "NumpadAdd", ctrlKey: true });
+  assert(zooms(h).join() === "in,in,out,reset,in", "Ctrl +/-/0 and numpad map to in/out/reset");
+  const before = h.invocations.length;
+  const passes = [
+    { key: "=" }, { key: "a", ctrlKey: true }, { key: "-", ctrlKey: true, altKey: true },
+    { key: "-", ctrlKey: true, shiftKey: true }, { key: "=", metaKey: true },
+    { key: "-", ctrlKey: true, isComposing: true }, { key: "-", ctrlKey: true, keyCode: 229 },
+  ].map((o) => press(h, o));
+  assert(passes.every((e) => !e.defaultPrevented) && h.invocations.length === before, "other keys, Alt/AltGr, Cmd on non-mac and IME composition are left alone");
+  const mac = makeHarness({ navigator: { platform: "MacIntel" } });
+  press(mac, { key: "=", metaKey: true });
+  press(mac, { key: "=", ctrlKey: true });
+  assert(zooms(mac).join() === "in", "Cmd zooms on macOS, bare Ctrl does not");
+}
+
+async function testZoomWheelCoalesces() {
+  const h = makeHarness({ navigator: { platform: "Win32" } });
+  const wheel = (o) => { const e = keyEvent({ deltaY: 0, deltaMode: 0, ...o }); for (const fn of h.listeners.wheel || []) fn(e); return e; };
+  assert(!wheel({ deltaY: -100 }).defaultPrevented, "plain wheel scrolls normally");
+  const e = wheel({ deltaY: -100, ctrlKey: true });
+  for (let i = 0; i < 20; i++) wheel({ deltaY: -100, ctrlKey: true });
+  assert(e.defaultPrevented && zooms(h).join() === "in", "a ctrl+wheel burst is one zoom-in step");
+  await sleep(200);
+  wheel({ deltaY: 100, ctrlKey: true });
+  assert(zooms(h).join() === "in,out", "the next burst steps again, downwards");
+  await sleep(200);
+  wheel({ deltaY: 5, ctrlKey: true });
+  assert(zooms(h).length === 2, "tiny deltas below the threshold do not step");
+}
+
 const tests = [
   testScrollbarsAreThinAndTranslucent,
+  testZoomShortcuts,
+  testZoomWheelCoalesces,
   testWindowsNativePreferenceAndFallback,
   testNativePermissionAndAsyncErrorFallback,
   testPersistentWindowsNotificationUsesOwnService,
