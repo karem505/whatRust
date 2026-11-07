@@ -47,7 +47,8 @@
       .badge{flex:none;min-width:16px;height:16px;padding:0 4px;border-radius:9px;background:#21c063;color:#0a0a0a;font:10px/16px system-ui;text-align:center}
       :host([data-compact="true"]) .badge{position:absolute;inset-inline-end:0;top:0}
       [hidden]{display:none!important}svg{width:24px;height:24px;flex:none;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-      dialog{color-scheme:light dark;color:light-dark(#0a0a0a,#fafafa);background:light-dark(#fff,#232626);border:1px solid #8882;border-radius:8px;box-shadow:0 2px 12px #0005;width:320px;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);overflow:auto;padding:12px 8px;inset:auto;margin:0}
+      dialog{color-scheme:light dark;color:light-dark(#0a0a0a,#fafafa);background:light-dark(#fff,#232626);border:1px solid #8882;border-radius:8px;box-shadow:0 2px 12px #0005;width:320px;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);overflow:auto;padding:12px 8px;inset:auto;margin:0;scrollbar-width:thin;scrollbar-color:rgba(134,150,160,.45) transparent}
+      dialog::-webkit-scrollbar{width:8px}dialog::-webkit-scrollbar-track{background:transparent}dialog::-webkit-scrollbar-thumb{background-color:rgba(134,150,160,.45);border:2px solid transparent;border-radius:4px;background-clip:padding-box}
       dialog::backdrop{background:transparent}dialog button{overflow-wrap:anywhere;display:block;width:100%;text-align:left;margin:5px 0;padding:10px 12px;border-radius:8px}
       h2{font-size:16px;font-weight:600;margin:4px 12px 10px}p{overflow-wrap:anywhere;font-size:12px;opacity:.65;margin:12px 12px 4px}dialog [aria-current=true]{background:#8696a01f;font-weight:600}
     `;

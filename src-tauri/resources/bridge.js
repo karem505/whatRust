@@ -4,6 +4,59 @@
   // Interface language, injected by Rust and re-set live on a language change.
   function L(pt, en) { return window.__WR_LANG === "en" ? en : pt; }
 
+  // 0a) Scrollbars (WebView2 / WebKitGTK only). WhatsApp Web's chat list and
+  //     conversation panes have no scrollbar styling of their own, so the
+  //     native webviews fall back to their unstyled system scrollbar: a
+  //     thick, opaque white/light bar. On Chromium (WebView2) and WebKitGTK
+  //     the `::-webkit-scrollbar` rules below DO take effect, so restyle
+  //     every scrollbar to a thin, translucent pill instead: WhatsApp's own
+  //     muted grey (#8696a0) at low alpha on a transparent track, so it reads
+  //     the same in light and dark themes and looks overlay-like. The `*`
+  //     selector covers the chat list (#side/#pane-side), the conversation
+  //     (#main) and any dialog without betting on WhatsApp's internal class
+  //     names, which change between releases. `!important` is scoped to the
+  //     scrollbar properties only, so WhatsApp's layout and colours are
+  //     untouched — this only replaces the webview's default scrollbar
+  //     painting. The 2px transparent border + padding-box clip makes the
+  //     visible thumb ~4px wide inside the 8px scrollbar gutter.
+  //     macOS is deliberately excluded: WKWebView's page scrollers are
+  //     native AppKit NSScrollers that ignore web CSS entirely, so styling
+  //     them from here does nothing — Rust forces overlay scrollers
+  //     process-wide instead (src/scrollbars.rs). Skipping the stylesheet
+  //     there also avoids any chance of web styling forcing legacy scrollbars
+  //     back. A Chrome UA is how Linux/Windows present themselves; the
+  //     Safari UA on macOS carries no Chrome token.
+  try {
+    var chromeUA = /Chrome\//.test(navigator.userAgent || "");
+    var SCROLLBAR_CSS = [
+      "*{scrollbar-width:thin!important;scrollbar-color:rgba(134,150,160,.45) transparent!important}",
+      "*::-webkit-scrollbar{width:8px!important;height:8px!important}",
+      "*::-webkit-scrollbar-track{background:transparent!important}",
+      "*::-webkit-scrollbar-thumb{background-color:rgba(134,150,160,.45)!important;border:2px solid transparent!important;border-radius:4px!important;background-clip:padding-box!important}",
+      "*::-webkit-scrollbar-thumb:hover{background-color:rgba(134,150,160,.8)!important}",
+      "*::-webkit-scrollbar-corner{background:transparent!important}",
+    ].join("");
+    var installScrollbars = function () {
+      try {
+        var head = document.head;
+        if (!head) return false;
+        if (document.getElementById("__whatrust_scrollbars")) return true;
+        var style = document.createElement("style");
+        style.id = "__whatrust_scrollbars";
+        style.textContent = SCROLLBAR_CSS;
+        head.appendChild(style);
+        return true;
+      } catch (e) {
+        return false;
+      }
+    };
+    // An initialization script runs before <head> exists, so in practice
+    // this lands on DOMContentLoaded; if <head> is already there, go now.
+    if (chromeUA && !installScrollbars() && typeof document.addEventListener === "function") {
+      document.addEventListener("DOMContentLoaded", installScrollbars, { once: true });
+    }
+  } catch (e) {}
+
   // A rejected command used to vanish here without a trace, which is how every
   // notify/set_unread call being refused by the IPC permission check went
   // unnoticed (issues #3, #32). Warn once per command in the page console
@@ -464,7 +517,8 @@
       var style = document.createElement("style");
       style.textContent = [
         ":host{all:initial}",
-        ".stack{position:fixed;left:16px;bottom:16px;z-index:2147483647;display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 32px);overflow-y:auto;",
+        ".stack{position:fixed;left:16px;bottom:16px;z-index:2147483647;display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 32px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(134,150,160,.45) transparent}",
+        ".stack::-webkit-scrollbar{width:8px}.stack::-webkit-scrollbar-track{background:transparent}.stack::-webkit-scrollbar-thumb{background-color:rgba(134,150,160,.45);border:2px solid transparent;border-radius:4px;background-clip:padding-box}",
         "font:14px/1.35 system-ui,-apple-system,'Segoe UI',Roboto,Ubuntu,sans-serif;max-width:min(380px,calc(100vw - 32px))}",
         ".toast{display:flex;align-items:center;gap:12px;padding:10px 10px 10px 14px;border-radius:10px;",
         "background:#233138;color:#e9edef;box-shadow:0 4px 18px rgba(0,0,0,.35)}",

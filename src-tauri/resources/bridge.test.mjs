@@ -132,9 +132,14 @@ function makeHarness(options = {}) {
   docInput.onchange = onChange;
   const body = new FakeElement("body");
   body.isRoot = true;
+  const head = new FakeElement("head");
   const document = {
     body,
-    getElementById() { return null; },
+    ...(options.head === false ? {} : { head }),
+    getElementById(id) {
+      const all = [...body.all(), ...(head ? head.all() : [])];
+      return all.find((e) => e.id === id) || null;
+    },
     createElement: (tag) => new FakeElement(tag),
     title: "WhatsApp",
     readyState: "complete",
@@ -200,7 +205,7 @@ function makeHarness(options = {}) {
   const params = Object.keys(sandboxGlobals);
   const fn = new Function(...params, `"use strict";\n${bridgeSrc}`);
   fn(...params.map((k) => sandboxGlobals[k]));
-  return { window, document, mediaInput, docInput, logs, warns, invocations, navigator: sandboxGlobals.navigator };
+  return { window, document, head, mediaInput, docInput, logs, warns, invocations, navigator: sandboxGlobals.navigator };
 }
 
 // Drive the feed the way window.rs stream_drop does.
@@ -631,7 +636,37 @@ async function testDelayedIconRetainsDetectionEpoch(){
  assert(h.invocations.filter(c=>c.cmd==="notify").length===before,"locked page bridge does not forward message notifications");
 }
 
+function testScrollbarsAreThinAndTranslucent() {
+  console.log("scrollbars are restyled thin/translucent instead of the webview's white default");
+  const chromeNav = {
+    userAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+  };
+  const { head } = makeHarness({ navigator: chromeNav });
+  const styles = head.children.filter((e) => e.id === "__whatrust_scrollbars");
+  assert(styles.length === 1, `one scrollbar stylesheet injected (got ${styles.length})`);
+  const css = styles[0] ? styles[0].textContent : "";
+  assert(css.includes("*::-webkit-scrollbar{width:8px"), "scrollbar is 8px wide, not the thick system bar");
+  assert(css.includes("background:transparent"), "track is transparent, not an opaque white slab");
+  assert(css.includes("rgba(134,150,160,.45)"), "thumb is WhatsApp's muted grey at low alpha");
+  assert(css.includes("scrollbar-width:thin"), "standard scrollbar-width is thin too");
+  assert(!/background:#fff|background-color:#fff/.test(css), "no opaque white scrollbar colour");
+  // An initialization script can run before <head> exists: that must not throw.
+  const noHead = makeHarness({ head: false, navigator: chromeNav });
+  assert(!!noHead.window, "bridge loads when document.head is not there yet");
+  // macOS presents a Safari UA: WKWebView scrollers are native, so the page
+  // stylesheet is skipped entirely (Rust forces overlay scrollers instead).
+  const safariNav = {
+    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
+  };
+  const safari = makeHarness({ navigator: safariNav });
+  assert(
+    safari.head.children.every((e) => e.id !== "__whatrust_scrollbars"),
+    "Safari UA gets no scrollbar stylesheet (native overlay scrollers instead)"
+  );
+}
+
 const tests = [
+  testScrollbarsAreThinAndTranslucent,
   testWindowsNativePreferenceAndFallback,
   testNativePermissionAndAsyncErrorFallback,
   testPersistentWindowsNotificationUsesOwnService,

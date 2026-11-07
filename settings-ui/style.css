@@ -27,6 +27,15 @@
 }
 :root[data-theme="light"] { color-scheme:light; }
 * { box-sizing: border-box; }
+/* Thin, translucent scrollbars to match the chat panes (see bridge.js):
+   the native webviews otherwise render a thick unstyled system scrollbar
+   that clashes with the dark theme. Same muted grey, transparent track. */
+* { scrollbar-width: thin; scrollbar-color: rgba(134,150,160,.45) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background-color: rgba(134,150,160,.45); border: 2px solid transparent; border-radius: 4px; background-clip: padding-box; }
+*::-webkit-scrollbar-thumb:hover { background-color: rgba(134,150,160,.8); }
+*::-webkit-scrollbar-corner { background: transparent; }
 html, body { height: 100%; }
 body {
   margin: 0; display: flex; flex-direction: column;
