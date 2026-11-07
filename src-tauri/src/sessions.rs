@@ -1,12 +1,41 @@
-//! Windows account ownership. One live WebView per profile; detach moves it.
+//! Single-window account ownership. One live WebView per profile; on Windows
+//! detach moves it into its own window.
+//!
+//! Always on for Windows. On Linux and macOS it is the opt-in "Show all accounts
+//! in one window" mode (see [`enabled`]); detach/attach and the native window
+//! menu stay Windows-only.
+#![cfg_attr(not(windows), allow(dead_code))]
 use crate::accounts::{self, Account, ActiveAccount};
 use crate::i18n::tr;
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use tauri::{
-    menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder},
-    AppHandle, Manager, WebviewBuilder, WebviewUrl, Window, WindowBuilder,
-};
+#[cfg(windows)]
+use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+use tauri::{AppHandle, Manager, WebviewBuilder, WebviewUrl, Window, WindowBuilder};
+
+/// Whether this process hosts every account in one window. Fixed at startup:
+/// changing the setting needs a restart, so no live window set is ever
+/// converted between the two models.
+static ENABLED: AtomicBool = AtomicBool::new(cfg!(windows));
+
+/// Windows always uses the single window. Elsewhere it is the value chosen by
+/// [`init_mode`] at startup, `false` until then.
+pub fn enabled() -> bool {
+    cfg!(windows) || ENABLED.load(Ordering::Relaxed)
+}
+
+/// Decide the window model for this run from the saved settings. Menu-bar-only
+/// mode (macOS) wins over single-window; macOS older than 14 cannot isolate
+/// accounts, so it keeps the one-account-per-window path.
+pub fn init_mode(s: &crate::settings::Settings) {
+    if cfg!(windows) {
+        return;
+    }
+    let menubar = cfg!(target_os = "macos") && s.menubar_only && crate::menubar::supported();
+    let isolated = crate::window::ensure_isolation_supported().is_ok();
+    ENABLED.store(s.single_window && !menubar && isolated, Ordering::Relaxed);
+}
 
 #[derive(Default)]
 pub struct Sessions {
@@ -39,6 +68,9 @@ fn set_view_visible(app: &AppHandle, view: &tauri::Webview, visible: bool) {
                 .unwrap()
                 .remove(view.label());
         }
+        #[cfg(target_os = "linux")]
+        let result = set_gtk_visible(view, visible);
+        #[cfg(not(target_os = "linux"))]
         let result = if visible { view.show() } else { view.hide() };
         if result.is_err() {
             state(app)
@@ -107,16 +139,22 @@ pub fn initialize(app: &AppHandle, hidden: bool) -> tauri::Result<Window> {
         .icon(crate::appicon::current(app))?
         .visible(!hidden)
         .build()?;
+    #[cfg(windows)]
     install_menu(app, &w)?;
     let shell = WebviewBuilder::new("shell-main", WebviewUrl::App("shell.html".into()))
         .initialization_script(crate::i18n::init_script())
         .data_directory(app.path().app_data_dir()?.join("management"))
         .on_navigation(crate::integration::local_url);
-    w.add_child(
+    let shell_view = w.add_child(
         shell,
         tauri::LogicalPosition::new(0., 0.),
         tauri::LogicalSize::new(1100., 800.),
     )?;
+    prepare_view(&shell_view);
+    #[cfg(target_os = "linux")]
+    pin_shell_height(&shell_view);
+    #[cfg(not(target_os = "linux"))]
+    let _ = shell_view;
     let a = app.clone();
     w.on_window_event(move |event| match event {
         tauri::WindowEvent::Resized(_) | tauri::WindowEvent::ScaleFactorChanged { .. } => {
@@ -156,7 +194,72 @@ pub fn initialize(app: &AppHandle, hidden: bool) -> tauri::Result<Window> {
     Ok(w)
 }
 
+/// wry's `set_visible(true)` calls `show_all`, a no-op on the `no_show_all`
+/// views from [`prepare_view`], so flip the GTK widget directly.
+#[cfg(target_os = "linux")]
+fn set_gtk_visible(view: &tauri::Webview, visible: bool) -> tauri::Result<()> {
+    view.with_webview(move |platform| {
+        use gtk::prelude::{StaticType, WidgetExt};
+        let wv = platform.inner();
+        // The recovery bar lives in a pinned scrolled-window wrapper.
+        let wrap = wv.ancestor(gtk::ScrolledWindow::static_type());
+        if visible {
+            if let Some(w) = &wrap {
+                w.show();
+            }
+            wv.show();
+        } else {
+            wv.hide();
+            if let Some(w) = &wrap {
+                w.hide();
+            }
+        }
+    })
+}
+
+/// GTK: `Window::show` runs `show_all`, which would re-show every child view
+/// we deliberately hid (all accounts stacked in the box). Exempt the view so
+/// only our explicit `show()`/`hide()` calls change its visibility.
+pub(crate) fn prepare_view(view: &tauri::Webview) {
+    #[cfg(target_os = "linux")]
+    {
+        let _ = view.with_webview(|platform| {
+            use gtk::prelude::WidgetExt;
+            platform.inner().set_no_show_all(true);
+        });
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = view;
+}
+
+/// GTK packs child webviews into a vertical box, so bounds do not apply, and a
+/// WebKit view reports a large natural height that a plain size request cannot
+/// shrink. Wrap the recovery bar in a non-propagating scrolled window pinned to
+/// its slim height, packed first (top) and not expanding.
+#[cfg(target_os = "linux")]
+fn pin_shell_height(view: &tauri::Webview) {
+    let _ = view.with_webview(|platform| {
+        use gtk::prelude::{BoxExt, Cast, ContainerExt, ScrolledWindowExt, WidgetExt};
+        let wv = platform.inner();
+        let Some(parent) = wv.parent().and_then(|p| p.downcast::<gtk::Box>().ok()) else {
+            return;
+        };
+        let wrap = gtk::ScrolledWindow::new(gtk::Adjustment::NONE, gtk::Adjustment::NONE);
+        wrap.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+        wrap.set_min_content_height(48);
+        wrap.set_propagate_natural_height(false);
+        wrap.set_vexpand(false);
+        wrap.set_no_show_all(true);
+        parent.remove(&wv);
+        wrap.add(&wv);
+        parent.pack_start(&wrap, false, false, 0);
+        parent.reorder_child(&wrap, 0);
+        wv.set_vexpand(false);
+    });
+}
+
 /// Rebuild the native window menu after a language change.
+#[cfg(windows)]
 pub fn refresh_menus(app: &AppHandle) {
     for (label, w) in app.windows() {
         if label == "main" || label.starts_with("detached-") {
@@ -165,6 +268,7 @@ pub fn refresh_menus(app: &AppHandle) {
     }
 }
 
+#[cfg(windows)]
 fn install_menu(app: &AppHandle, w: &Window) -> tauri::Result<()> {
     let accounts = MenuItemBuilder::with_id("app.accounts", tr("Contas"))
         .accelerator("Ctrl+Shift+A")
@@ -403,6 +507,10 @@ fn layout_on_main(app: &AppHandle, parent: &str) {
 // Changing menus inside layout re-enters that mutex and freezes the UI thread.
 // Record transitions before invoking native APIs; resize only changes bounds.
 fn sync_menu(app: &AppHandle, parent: &str) {
+    // The native window menu exists on Windows only.
+    if !cfg!(windows) {
+        return;
+    }
     let _health = crate::ui_health::enter("native menu");
     let hidden = selected(app, parent).is_some_and(|label| {
         app.state::<crate::integration::Integration>()
@@ -467,6 +575,7 @@ pub fn detach(app: &AppHandle, id: &str) -> Result<(), String> {
         .visible(false)
         .build()
         .map_err(|e| e.to_string())?;
+    #[cfg(windows)]
     install_menu(app, &w).map_err(|e| e.to_string())?;
     reparent_on_ui(app, &v, &w)?;
     let a = app.clone();
@@ -676,6 +785,11 @@ pub fn open_panel(app: &AppHandle, parent: Option<&str>) -> tauri::Result<()> {
         owner.add_child(
             WebviewBuilder::new("settings", WebviewUrl::App("index.html".into()))
                 .initialization_script(crate::i18n::init_script())
+                .initialization_script(if cfg!(windows) {
+                    ""
+                } else {
+                    "window.__WHATRUST_SINGLE__=true;"
+                })
                 .initialization_script(format!(r#"document.addEventListener("DOMContentLoaded",function(){{{theme_script}}},{{once:true}})"#))
                 .data_directory(app.path().app_data_dir()?.join("management"))
                 .on_navigation(crate::integration::local_url),
@@ -683,6 +797,7 @@ pub fn open_panel(app: &AppHandle, parent: Option<&str>) -> tauri::Result<()> {
             tauri::LogicalSize::new(800., 600.),
         )?
     };
+    prepare_view(&panel);
     let _ = panel.eval(theme_script);
     for (l, v) in app.webviews() {
         if l.starts_with("wa-") && v.window().label() == owner.label() {
@@ -744,6 +859,21 @@ pub fn restore_pending(app: &AppHandle) {
     if let Some(label) = label {
         activate(app, &label);
     }
+}
+
+/// Whether an OS file drop on `label`'s view may be delivered: only the account
+/// the user is looking at (selected in the visible main window, no panel over
+/// it). GTK would not deliver to a hidden child anyway; this is the safety net.
+#[cfg(target_os = "linux")]
+pub fn drop_target(app: &AppHandle, label: &str) -> bool {
+    app.get_webview(label).is_some_and(|v| {
+        let parent = v.window();
+        parent.is_visible().unwrap_or(false)
+            && !parent.is_minimized().unwrap_or(false)
+            && selected(app, parent.label()).as_deref() == Some(label)
+            && crate::lock::guard(&state(app).panel_parent).as_deref() != Some(parent.label())
+            && crate::lock::is_unlocked(app)
+    })
 }
 
 pub fn account_focused(app: &AppHandle, label: &str) -> bool {

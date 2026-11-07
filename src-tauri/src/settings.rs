@@ -22,6 +22,11 @@ pub struct Settings {
     /// standard window. Every account stays connected in the background and
     /// opens as a panel from the tray. Off by default. Ignored on other platforms.
     pub menubar_only: bool,
+    /// Linux/macOS: host every account in one window with a switcher instead
+    /// of one window per account. Off by default; applies after a restart.
+    /// Windows always uses a single window. Menu-bar-only mode wins if both
+    /// are on.
+    pub single_window: bool,
     /// macOS only: hide the Dock icon but keep the normal main window. The
     /// menu bar icon is forced on, since it becomes the way back to the app.
     pub hide_dock_icon: bool,
@@ -62,6 +67,7 @@ impl Default for Settings {
             notify_active_chat: true,
             respect_muted: true,
             menubar_only: false,
+            single_window: false,
             hide_dock_icon: false,
             zoom: 1.0,
             menu_bar_icon: true,
@@ -298,7 +304,9 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
     // (macOS 14+); elsewhere the setting is ignored rather than dropping every
     // account's session the moment it is enabled.
     #[cfg(target_os = "macos")]
-    let menubar_only = s.menubar_only && crate::menubar::supported();
+    // Single-window mode keeps its window set for the whole run, so a live
+    // menu-bar toggle only takes effect after a restart (menu-bar wins then).
+    let menubar_only = s.menubar_only && crate::menubar::supported() && !crate::sessions::enabled();
     #[cfg(target_os = "macos")]
     let hide_dock = menubar_only || s.hide_dock_icon;
 

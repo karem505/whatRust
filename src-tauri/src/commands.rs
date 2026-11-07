@@ -120,8 +120,12 @@ pub fn set_unread(
     // whatRust can't see it (issue #3). Covered by a real notification, this
     // stays silent; see notify::unread_increased. A dismissed menu-bar panel
     // is a hidden window, so `is_visible()` already says nobody is watching.
-    let focused = window.window().is_focused().unwrap_or(false)
-        && window.window().is_visible().unwrap_or(false);
+    let focused = if crate::sessions::enabled() {
+        crate::sessions::account_focused(&app, window.label())
+    } else {
+        window.window().is_focused().unwrap_or(false)
+            && window.window().is_visible().unwrap_or(false)
+    };
     if !cfg!(windows)
         && crate::notify::fallback_due(previous, count, focused, settled.unwrap_or(false))
     {
@@ -146,6 +150,12 @@ pub struct SettingsView {
     pub proxy_in_use: String,
     /// Whether the webview engine can proxy (false on macOS < 14).
     pub proxy_supported: bool,
+    /// Whether this run actually hosts all accounts in one window (the saved
+    /// `single_window` only applies after a restart).
+    pub single_window_active: bool,
+    /// Whether the single-window option is offered (not on Windows, where it is
+    /// always on; not on macOS < 14, which stays single-account).
+    pub single_window_supported: bool,
 }
 
 #[tauri::command]
@@ -160,6 +170,9 @@ pub fn get_settings(window: tauri::Webview, app: tauri::AppHandle) -> Result<Set
         menubar_supported: crate::menubar::supported(),
         proxy_in_use: crate::proxy::in_use(),
         proxy_supported: crate::proxy::engine_supported(),
+        single_window_active: crate::sessions::enabled(),
+        single_window_supported: !cfg!(windows)
+            && crate::window::ensure_isolation_supported().is_ok(),
     })
 }
 
@@ -515,7 +528,13 @@ pub async fn remove_account(
         #[cfg(windows)]
         crate::sessions::remove_view(&app, &removed.id).map_err(|e| e.to_string())?;
         #[cfg(not(windows))]
-        let _ = _w.close();
+        {
+            if crate::sessions::enabled() {
+                crate::sessions::remove_view(&app, &removed.id).map_err(|e| e.to_string())?;
+            } else {
+                let _ = _w.close();
+            }
+        }
     }
     // Drop the per-account unread count.
     {
@@ -529,7 +548,7 @@ pub async fn remove_account(
     // so toggle/show don't target a window that no longer exists. (On Windows
     // the active view is tracked by sessions.rs instead.)
     #[cfg(not(windows))]
-    if let Some(active) = app.try_state::<ActiveAccount>() {
+    if let (false, Some(active)) = (crate::sessions::enabled(), app.try_state::<ActiveAccount>()) {
         let mut label = active.lock().unwrap_or_else(|e| e.into_inner());
         if *label == accounts::window_label(&removed.id) {
             if let Some(next) = accounts::startup_account(&f) {
@@ -576,7 +595,8 @@ pub async fn rename_account(
         let visible_account =
             crate::sessions::selected(&app, w.window().label()).as_deref() == Some(w.label());
         #[cfg(not(windows))]
-        let visible_account = true;
+        let visible_account = !crate::sessions::enabled()
+            || crate::sessions::selected(&app, w.window().label()).as_deref() == Some(w.label());
         if visible_account {
             let _ = w.window().set_title(&format!("whatRust — {name}"));
         }

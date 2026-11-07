@@ -19,13 +19,11 @@ mod notify;
 mod opener;
 mod proxy;
 mod scrollbars;
-#[cfg(windows)]
 mod sessions;
 mod settings;
 #[cfg(all(windows, debug_assertions))]
 mod smoke;
 mod tray;
-#[cfg(windows)]
 mod ui_health;
 mod unread;
 mod window;
@@ -187,7 +185,6 @@ pub fn run() {
             ));
     }
 
-    #[cfg(windows)]
     let builder = builder.manage(sessions::Sessions::default());
 
     builder
@@ -276,6 +273,8 @@ pub fn run() {
                 s.start_minimized = true;
                 settings::save(handle, &s)?;
             }
+            // Window model for this run (Linux/macOS opt-in; Windows always single).
+            sessions::init_mode(&s);
             let args: Vec<String> = std::env::args().collect();
             let start_hidden = settings::start_hidden(s.start_minimized, &args);
 

@@ -28,6 +28,9 @@ argon2 = { version = "0.5.3", features = ["std"] }  # Argon2id password hashing 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Version-matched to wry 0.55's webkit2gtk so PlatformWebview::inner() types unify.
 webkit2gtk = "=2.0.2"
+# Already in the tree through tauri/wry; named directly to pin the single-window
+# recovery bar (GtkBox child packing). Same 0.18 line wry uses.
+gtk = "0.18"
 zbus = "5"
 zbus_polkit = "5.0.0"
 

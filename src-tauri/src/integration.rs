@@ -110,11 +110,8 @@ pub fn broadcast(app: &AppHandle) {
         } else if label == "settings" {
             let _ = v.eval("typeof loadAccounts === 'function' && !accountsBusy && loadAccounts()");
         } else if label.starts_with("shell-") {
-            #[cfg(windows)]
             let current = crate::sessions::selected(app, v.window().label())
                 .and_then(|label| accounts::id_from_label(&label).map(str::to_owned));
-            #[cfg(not(windows))]
-            let current: Option<String> = None;
             if let Ok(json) = serde_json::to_string(&current) {
                 let _ = v.eval(format!("window.refresh && window.refresh({json})"));
             }
@@ -143,7 +140,6 @@ pub fn report_integration(
             last_signal: None,
             signals: 0,
         });
-    #[cfg(windows)]
     crate::sessions::integration_changed(&app, window.label(), mounted);
     crate::dlog::log(&format!(
         "integration: layout completed controls_mounted={mounted} detector={detector}"
@@ -200,19 +196,17 @@ pub async fn open_app_panel(window: Webview, app: AppHandle) -> Result<(), Strin
     } else {
         local(&window, &app)?;
     }
-    #[cfg(windows)]
-    {
+    if crate::sessions::enabled() {
         crate::sessions::open_panel(&app, Some(window.window().label()))
             .map_err(|e| e.to_string())?;
+    } else {
+        crate::window::open_settings_window(&app);
     }
-    #[cfg(not(windows))]
-    crate::window::open_settings_window(&app);
     Ok(())
 }
 #[tauri::command]
 pub fn close_app_panel(window: Webview, app: AppHandle) -> Result<(), String> {
     local(&window, &app)?;
-    #[cfg(windows)]
     crate::sessions::close_panel(&app);
     Ok(())
 }

@@ -1,7 +1,8 @@
 const invoke = window.__TAURI__.core.invoke;
 const LANGS = ["pt-BR", "en"];
-const BOOLS = ["close_to_tray", "start_minimized", "autostart", "notifications", "hotkey_enabled", "blur_hotkey_enabled", "menu_bar_icon", "menubar_only", "hide_dock_icon", "notify_when_focused", "notify_active_chat", "respect_muted"];
+const BOOLS = ["close_to_tray", "start_minimized", "autostart", "notifications", "hotkey_enabled", "blur_hotkey_enabled", "menu_bar_icon", "menubar_only", "hide_dock_icon", "notify_when_focused", "notify_active_chat", "respect_muted", "single_window"];
 const ZOOM_DEFAULT = 1;
+const SINGLE_WINDOW_SUBTITLE = "Uma janela com um seletor de contas; as contas ocultas continuam conectadas. Requer reiniciar o whatRust.";
 
 // The menu-bar rows are macOS-only. get_settings reports the OS this build targets
 // in `platform`; the rows start hidden and appear here once it is known.
@@ -125,6 +126,17 @@ async function load() {
     menubarOnly.checked = false;
     document.getElementById("menubar_only_subtitle").textContent =
       "Requer macOS 14 (Sonoma) ou superior — este Mac não consegue manter um painel oculto conectado";
+  }
+  // Single-window mode (Linux/macOS): applies after a restart; menu-bar-only wins.
+  const swRow = document.getElementById("single_window_row");
+  swRow.hidden = !s.single_window_supported;
+  const swNote = document.getElementById("single_window_subtitle");
+  if (s.single_window_supported && !!s.single_window !== !!s.single_window_active) {
+    swNote.textContent = s.single_window && s.menubar_only
+      ? "Reinicie o whatRust para aplicar. O modo somente barra de menus tem prioridade sobre esta opção."
+      : "Reinicie o whatRust para aplicar a mudança.";
+  } else {
+    swNote.textContent = SINGLE_WINDOW_SUBTITLE;
   }
   document.getElementById("hotkey").value = s.hotkey || "CmdOrCtrl+Shift+W";
   document.getElementById("blur_hotkey").value = s.blur_hotkey || "CmdOrCtrl+Shift+B";

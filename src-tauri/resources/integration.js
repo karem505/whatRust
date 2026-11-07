@@ -1,7 +1,7 @@
 (function () {
   "use strict";
   function L(pt, en) { return window.__WR_LANG === "en" ? en : pt; }
-  if (!window.__WHATRUST_WINDOWS__ || location.origin !== "https://web.whatsapp.com") return;
+  if (!(window.__WHATRUST_WINDOWS__ || window.__WHATRUST_SINGLE__) || location.origin !== "https://web.whatsapp.com") return;
   var state = { accounts: [], current_id: "", native_notifications: false };
   var host, root, menu, gear, accountButton, accountName, accountBadge, status, lastReport = "", observer, scheduled, resizeObserver, resizeTarget, themeObserver;
   function call(cmd, args) { var t=window.__TAURI__;if(!t||!t.core)return Promise.resolve(null);return t.core.invoke(cmd, args).catch(function () { return null; }); }
