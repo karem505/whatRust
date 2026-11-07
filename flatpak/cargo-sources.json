@@ -3850,6 +3850,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/rfd/rfd-0.16.1.crate",
+        "sha256": "f4fe518b6db89699d59862e4d1e3a0226316090f4e4ec09f7dd686be25634c7c",
+        "dest": "cargo/vendor/rfd-0.16.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"f4fe518b6db89699d59862e4d1e3a0226316090f4e4ec09f7dd686be25634c7c\", \"files\": {}}",
+        "dest": "cargo/vendor/rfd-0.16.1",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/rustc-hash/rustc-hash-2.1.2.crate",
         "sha256": "94300abf3f1ae2e2b8ffb7b58043de3d399c73fa6f4b73826402a5c457614dbe",
         "dest": "cargo/vendor/rustc-hash-2.1.2"
@@ -4599,6 +4612,32 @@
         "type": "inline",
         "contents": "{\"package\": \"459383cebc193cdd03d1ba4acc40f2c408a7abce419d64bdcd2d745bc2886f70\", \"files\": {}}",
         "dest": "cargo/vendor/tauri-plugin-autostart-2.5.1",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/tauri-plugin-dialog/tauri-plugin-dialog-2.7.3.crate",
+        "sha256": "61854a36651aa48381e5e209f69a01273b77f3f9f91f0c430b1b98d33bd47229",
+        "dest": "cargo/vendor/tauri-plugin-dialog-2.7.3"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"61854a36651aa48381e5e209f69a01273b77f3f9f91f0c430b1b98d33bd47229\", \"files\": {}}",
+        "dest": "cargo/vendor/tauri-plugin-dialog-2.7.3",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/tauri-plugin-fs/tauri-plugin-fs-2.5.2.crate",
+        "sha256": "de22eef34fd78c0da050e748710edd50bf127e651d02ea1b2bfada1523cc5c51",
+        "dest": "cargo/vendor/tauri-plugin-fs-2.5.2"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"de22eef34fd78c0da050e748710edd50bf127e651d02ea1b2bfada1523cc5c51\", \"files\": {}}",
+        "dest": "cargo/vendor/tauri-plugin-fs-2.5.2",
         "dest-filename": ".cargo-checksum.json"
     },
     {

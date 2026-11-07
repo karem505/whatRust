@@ -174,6 +174,17 @@ pub fn set_settings(
     }
     lock::require_unlocked(&app)?;
     let mut settings = settings.sanitized();
+    let stored = crate::settings::load(&app);
+    // A newly chosen download folder must work now. An unchanged one is not
+    // re-checked: if it has since gone away, downloads fall back to Downloads
+    // (see downloads::configured_dir) and other settings must still save.
+    if settings.download_dir != stored.download_dir {
+        if let Some(dir) = &settings.download_dir {
+            crate::downloads::validate_dir(std::path::Path::new(dir))?;
+        }
+    }
+    // The icon is only switched through choose_app_icon / reset_app_icon.
+    settings.custom_icon = stored.custom_icon;
     crate::proxy::validate(&mut settings)?;
     crate::settings::save(&app, &settings).map_err(|e| e.to_string())?;
     Ok(crate::settings::apply(&app, &settings))
@@ -188,6 +199,84 @@ pub fn restart_app(window: tauri::Webview, app: tauri::AppHandle) -> Result<(), 
     }
     lock::require_unlocked(&app)?;
     app.restart();
+}
+
+/// Ask for a download folder with the system's folder picker. Returns the
+/// chosen path (already checked as writable), or `None` if cancelled. The UI
+/// saves it with the other settings. In the Flatpak the picker is the
+/// xdg-desktop-portal one, so the folder is exported into the sandbox.
+#[tauri::command]
+pub async fn pick_download_dir(
+    window: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<Option<String>, String> {
+    if is_remote(&window) {
+        return Err("forbidden".into());
+    }
+    lock::require_unlocked(&app)?;
+    use tauri_plugin_dialog::DialogExt;
+    let mut dialog = app.dialog().file().set_title(tr("Pasta de downloads"));
+    if let Some(dir) = app.path().download_dir().ok().filter(|d| d.is_dir()) {
+        dialog = dialog.set_directory(dir);
+    }
+    let Some(picked) = dialog.set_parent(&window.window()).blocking_pick_folder() else {
+        return Ok(None);
+    };
+    let path = picked.into_path().map_err(|e| e.to_string())?;
+    crate::downloads::validate_dir(&path)?;
+    Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+/// Pick a PNG, validate it, keep a copy and use it as the app icon.
+/// `false` means the picker was cancelled.
+#[tauri::command]
+pub async fn choose_app_icon(
+    window: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<bool, String> {
+    if is_remote(&window) {
+        return Err("forbidden".into());
+    }
+    lock::require_unlocked(&app)?;
+    use tauri_plugin_dialog::DialogExt;
+    let Some(picked) = app
+        .dialog()
+        .file()
+        .set_title(tr("Ícone do aplicativo"))
+        .add_filter("PNG", &["png"])
+        .set_parent(&window.window())
+        .blocking_pick_file()
+    else {
+        return Ok(false);
+    };
+    let path = picked.into_path().map_err(|e| e.to_string())?;
+    // Refuse before reading a huge file into memory.
+    let len = std::fs::metadata(&path).map_err(|e| e.to_string())?.len();
+    if len > crate::appicon::MAX_BYTES as u64 {
+        return Err(tr("A imagem tem mais de 5 MB.").into_owned());
+    }
+    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    crate::appicon::set_custom(&app, &bytes)?;
+    let mut s = crate::settings::load(&app);
+    s.custom_icon = true;
+    crate::settings::save(&app, &s).map_err(|e| e.to_string())?;
+    crate::appicon::apply(&app, true, true);
+    Ok(true)
+}
+
+/// Go back to the built-in icon and delete the stored copy.
+#[tauri::command]
+pub fn reset_app_icon(window: tauri::Webview, app: tauri::AppHandle) -> Result<(), String> {
+    if is_remote(&window) {
+        return Err("forbidden".into());
+    }
+    lock::require_unlocked(&app)?;
+    let mut s = crate::settings::load(&app);
+    s.custom_icon = false;
+    crate::settings::save(&app, &s).map_err(|e| e.to_string())?;
+    crate::appicon::apply(&app, false, true);
+    crate::appicon::clear_custom(&app);
+    Ok(())
 }
 
 // Commands that build a window are `async`. Tauri runs a synchronous command

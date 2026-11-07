@@ -72,6 +72,7 @@ block2 = "0.6"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-notification = "2"
+tauri-plugin-dialog = "2"  # native folder/PNG pickers, called from Rust only (no JS permission): custom download folder + app icon
 tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-global-shortcut = "2"

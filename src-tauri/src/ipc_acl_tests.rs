@@ -31,6 +31,9 @@ const PAGE_COMMANDS: &[&str] = &[
 const SETTINGS_COMMANDS: &[&str] = &[
     "get_settings",
     "set_settings",
+    "pick_download_dir",
+    "choose_app_icon",
+    "reset_app_icon",
     "restart_app",
     "list_accounts",
     "add_account",

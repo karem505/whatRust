@@ -48,6 +48,63 @@ function selectNearestZoom(value) {
   sel.value = opt.value;
 }
 
+// The chosen download folder (null = the system Downloads folder). Kept here
+// because save() rebuilds the whole settings object from the page.
+let downloadDir = null;
+
+function showDownloadDir() {
+  const sub = document.getElementById("download_dir_subtitle");
+  sub.textContent = downloadDir || "Pasta Downloads do sistema";
+  sub.title = downloadDir || "";
+  document.getElementById("reset_download_dir").disabled = !downloadDir;
+}
+
+function showIcon(custom) {
+  document.getElementById("icon_subtitle").textContent = custom ? "Personalizado" : "Padrão";
+  document.getElementById("reset_icon").disabled = !custom;
+}
+
+function flash(message, ms = 4000) {
+  const note = document.getElementById("note");
+  note.textContent = message;
+  setTimeout(() => { if (note.textContent === message) note.textContent = ""; }, ms);
+}
+
+async function chooseDownloadDir() {
+  try {
+    const dir = await invoke("pick_download_dir");
+    if (!dir) return;
+    const previous = downloadDir;
+    downloadDir = dir;
+    showDownloadDir();
+    // save() shows a refusal in the note; then go back to what is stored.
+    if (!(await save())) {
+      downloadDir = previous;
+      showDownloadDir();
+    }
+  } catch (e) { flash(String(e)); }
+}
+
+async function resetDownloadDir() {
+  downloadDir = null;
+  showDownloadDir();
+  await save();
+}
+
+async function chooseIcon() {
+  try {
+    if (await invoke("choose_app_icon")) { showIcon(true); flash("Alterações salvas ✓", 1500); }
+  } catch (e) { flash(String(e), 6000); }
+}
+
+async function resetIcon() {
+  try {
+    await invoke("reset_app_icon");
+    showIcon(false);
+    flash("Alterações salvas ✓", 1500);
+  } catch (e) { flash(String(e), 6000); }
+}
+
 async function load() {
   const s = await invoke("get_settings");
   setMacRows(s.platform === "macos");
@@ -77,6 +134,9 @@ async function load() {
   if (I18n.lang() !== lang) I18n.setLang(lang);
   menuBarIconChecked = document.getElementById("menu_bar_icon").checked;
   syncMenuBarIconRow();
+  downloadDir = s.download_dir || null;
+  showDownloadDir();
+  showIcon(!!s.custom_icon);
   loadProxy(s);
 }
 
@@ -131,6 +191,7 @@ async function save() {
   s.blur_hotkey = document.getElementById("blur_hotkey").value.trim() || "CmdOrCtrl+Shift+B";
   s.zoom = parseFloat(document.getElementById("zoom").value) || ZOOM_DEFAULT;
   s.language = document.getElementById("language").value;
+  s.download_dir = downloadDir;
   if (proxySupported) {
     s.proxy_mode = document.getElementById("proxy_mode").value;
     s.proxy_host = document.getElementById("proxy_host").value.trim();
@@ -152,8 +213,10 @@ async function save() {
       note.textContent = "Alterações salvas ✓";
       setTimeout(() => (note.textContent = ""), 1500);
     }
+    return true;
   } catch (e) {
     note.textContent = String(e);
+    return false;
   }
 }
 
@@ -291,6 +354,10 @@ window.addEventListener("DOMContentLoaded", () => {
   });
   document.getElementById("record_hotkey").addEventListener("click", () => toggleRecording("hotkey", "record_hotkey"));
   document.getElementById("record_blur_hotkey").addEventListener("click", () => toggleRecording("blur_hotkey", "record_blur_hotkey"));
+  document.getElementById("choose_download_dir").addEventListener("click", chooseDownloadDir);
+  document.getElementById("reset_download_dir").addEventListener("click", resetDownloadDir);
+  document.getElementById("choose_icon").addEventListener("click", chooseIcon);
+  document.getElementById("reset_icon").addEventListener("click", resetIcon);
   // Zoom saves on change rather than on Save: picking a size you cannot see the
   // effect of is guesswork, and the webview applies it immediately.
   document.getElementById("zoom").addEventListener("change", save);

@@ -10,7 +10,8 @@ commands.allow = ["notify", "set_unread", "dlog", "switcher_accounts", "switch_a
 identifier = "allow-settings-commands"
 description = "Manage settings and accounts from the bundled settings window."
 commands.allow = [
-  "get_settings", "set_settings", "open_settings", "list_accounts",
+  "get_settings", "set_settings", "open_settings", "pick_download_dir", "choose_app_icon",
+  "reset_app_icon", "list_accounts",
   "add_account", "remove_account", "rename_account", "open_account", "set_default_account",
   "get_lock_status", "set_app_lock_password", "change_app_lock_password",
   "disable_app_lock", "set_app_lock_options", "set_biometric_enabled", "lock_app"
