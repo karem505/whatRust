@@ -864,6 +864,7 @@ pub fn restore_pending(app: &AppHandle) {
 /// Whether an OS file drop on `label`'s view may be delivered: only the account
 /// the user is looking at (selected in the visible main window, no panel over
 /// it). GTK would not deliver to a hidden child anyway; this is the safety net.
+#[cfg(target_os = "linux")]
 pub fn drop_target(app: &AppHandle, label: &str) -> bool {
     app.get_webview(label).is_some_and(|v| {
         let parent = v.window();
