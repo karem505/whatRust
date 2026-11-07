@@ -295,9 +295,14 @@ pub fn from_event(
     #[cfg(windows)]
     let focused = crate::sessions::account_focused(app, label);
     #[cfg(not(windows))]
-    let focused = app.get_webview(label).is_some_and(|v| {
-        v.window().is_focused().unwrap_or(false) && v.window().is_visible().unwrap_or(false)
-    });
+    let focused = if crate::sessions::enabled() {
+        // One shared window: only the selected account counts as being looked at.
+        crate::sessions::account_focused(app, label)
+    } else {
+        app.get_webview(label).is_some_and(|v| {
+            v.window().is_focused().unwrap_or(false) && v.window().is_visible().unwrap_or(false)
+        })
+    };
     let s = crate::settings::load(app);
     let id = event_id();
     let r = app.state::<Recent>();

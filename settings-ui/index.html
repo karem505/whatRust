@@ -21,6 +21,13 @@
           <span class="row-text"><span class="row-title">Conta ao iniciar</span></span>
           <select id="startup_account" aria-label="Conta ao iniciar"></select>
         </label>
+        <div class="boxed-list" id="single_window_row" hidden>
+          <label class="row">
+            <span class="row-text"><span class="row-title">Mostrar todas as contas em uma janela</span>
+              <span class="row-subtitle" id="single_window_subtitle">Uma janela com um seletor de contas; as contas ocultas continuam conectadas. Requer reiniciar o whatRust.</span></span>
+            <input type="checkbox" class="switch" id="single_window" />
+          </label>
+        </div>
         <div id="accounts-list" class="boxed-list"></div>
         <div class="add-row">
           <input type="text" id="new_account_name" placeholder="Nome da nova conta" aria-label="Nome da nova conta" />

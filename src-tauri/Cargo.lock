@@ -4768,6 +4768,7 @@ dependencies = [
  "argon2",
  "block2",
  "dispatch2",
+ "gtk",
  "objc2",
  "objc2-core-foundation",
  "objc2-foundation",

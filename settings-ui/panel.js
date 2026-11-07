@@ -1,7 +1,7 @@
 "use strict";
 (function(){
   const invoke=window.__TAURI__.core.invoke, isWindows=/Win/.test(navigator.platform||navigator.userAgent);
-  const back=document.getElementById("back-to-chat");back.hidden=!isWindows;
+  const back=document.getElementById("back-to-chat");const single=isWindows||!!window.__WHATRUST_SINGLE__;back.hidden=!single;
   let dirty=false, diagnosticsBusy=false, timer;
   document.querySelector(".prefs").addEventListener("input",e=>{if(e.target.id!=="new_account_name")dirty=true;});
   document.getElementById("save").addEventListener("click",()=>{setTimeout(()=>{if(/^(Alterações salvas|Changes saved)/.test(document.getElementById("note").textContent))dirty=false;},400);});
@@ -24,7 +24,7 @@
   }
   document.getElementById("test-notification").onclick=async()=>{try{document.getElementById("diagnostic-note").textContent=await invoke("test_notification");await diagnostics();}catch(e){document.getElementById("diagnostic-note").textContent=String(e);}};
   document.getElementById("windows-notifications").onclick=()=>invoke("open_notification_settings").catch(e=>{document.getElementById("diagnostic-note").textContent=String(e);});
-  if(!isWindows){document.getElementById("windows-notifications").hidden=true;back.hidden=true;}
+  if(!isWindows){document.getElementById("windows-notifications").hidden=true;}
   const paths={contas:'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2 M17 3a4 4 0 0 1 0 8 M23 21v-2a4 4 0 0 0-3-3.87 M13 7a4 4 0 1 1-8 0a4 4 0 0 1 8 0',notificacoes:'M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9 M10 21h4',aparencia:'M12 3a9 9 0 1 0 0 18a3 3 0 0 0 0-6h-1a2 2 0 0 1 0-4h5a5 5 0 0 0-4-8',seguranca:'M12 3l8 4v6c0 5-8 8-8 8s-8-3-8-8V7z M9 12l2 2l4-4',sistema:'M12 2v10 M6 5a9 9 0 1 0 12 0',atalhos:'M3 5h18v14H3z M6 9h1 M10 9h1 M14 9h1 M18 9h1 M6 13h1 M10 13h1 M14 13h4',rede:'M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20 M12 2a14.5 14.5 0 0 0 0 20a14.5 14.5 0 0 0 0-20 M2 12h20',diagnostico:'M3 12h4l3-8l4 16l3-8h4'};
   function showSection(id){if(!document.getElementById(id))id='sec-contas';for(const group of document.querySelectorAll('.prefs>.group'))group.hidden=group.id!==id;for(const link of document.querySelectorAll('.settings-nav a'))link.setAttribute('aria-current',link.hash==='#'+id?'page':'false');document.querySelector('.prefs').scrollTop=0;}
   for(const link of document.querySelectorAll('.settings-nav a')){const key=link.hash.replace('#sec-',''),svg=document.createElementNS('http://www.w3.org/2000/svg','svg'),path=document.createElementNS('http://www.w3.org/2000/svg','path');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');path.setAttribute('d',paths[key]);svg.appendChild(path);link.prepend(svg);link.onclick=e=>{e.preventDefault();history.replaceState(null,'',link.hash);showSection(link.hash.slice(1));};}

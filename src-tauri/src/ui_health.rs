@@ -14,6 +14,7 @@ impl Drop for Span {
         *ACTION.lock().unwrap_or_else(|e| e.into_inner()) = self.0;
     }
 }
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn start(app: &tauri::AppHandle) {
     let handle = app.clone();
     std::thread::spawn(move || loop {

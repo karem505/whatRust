@@ -165,8 +165,9 @@ fn lock_on_main(app: &AppHandle, prompt: bool) {
     for (label, w) in app.windows() {
         if should_hide(&label) && w.is_visible().unwrap_or(false) {
             let _ = w.hide();
-            #[cfg(windows)]
-            crate::sessions::layout(app, &label);
+            if crate::sessions::enabled() {
+                crate::sessions::layout(app, &label);
+            }
             hidden.push(label);
         }
     }
@@ -220,13 +221,15 @@ fn unlock_on_main(app: &AppHandle) {
             }
             if let Some(w) = app.get_window(&label) {
                 let _ = w.show();
-                #[cfg(windows)]
-                crate::sessions::layout(app, &label);
+                if crate::sessions::enabled() {
+                    crate::sessions::layout(app, &label);
+                }
             }
         }
     }
-    #[cfg(windows)]
-    crate::sessions::restore_pending(app);
+    if crate::sessions::enabled() {
+        crate::sessions::restore_pending(app);
+    }
     crate::integration::broadcast(app);
 }
 

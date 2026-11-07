@@ -531,7 +531,7 @@ pub fn supported() -> bool {
 /// gate keeps a settings file (or a build that ran on macOS 14+) from putting
 /// an older Mac into a mode whose webviews would be suspended when hidden.
 pub fn enabled(app: &tauri::AppHandle) -> bool {
-    supported() && crate::settings::load(app).menubar_only
+    supported() && !crate::sessions::enabled() && crate::settings::load(app).menubar_only
 }
 
 /// Whether `major` is a macOS version whose WKWebView honours the

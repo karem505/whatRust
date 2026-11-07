@@ -117,7 +117,7 @@
   // A small, keyboard-accessible account switcher owned by whatRust. It exposes
   // only account names/unread counts and a request to focus an existing account.
   function mountAccountSwitcher() {
-    if (window.__WHATRUST_WINDOWS__) return;
+    if (window.__WHATRUST_WINDOWS__ || window.__WHATRUST_SINGLE__) return;
     if (!document.body || document.getElementById("__whatrust_accounts")) return;
     // Join the WhatsApp header's normal layout, so the control never covers
     // the navigation icons or conversations. Wait until the header is mounted.
