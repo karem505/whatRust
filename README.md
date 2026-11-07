@@ -68,6 +68,7 @@ The official WhatsApp Desktop app is built on Electron, which packs an entire Ch
 - **Launch at startup** (auto-start), optional
 - **Global keyboard shortcut** to show/hide the window (default `Ctrl/Cmd+Shift+W`; record your own by pressing the keys in Settings). On **Wayland**, bind `whatrust --toggle` to a system shortcut instead — see the FAQ.
 - **Proxy** — route all account traffic through a SOCKS5 or HTTP proxy (Settings → Network; see the FAQ)
+- **Automatic updates** — whatRust checks GitHub for a newer release shortly after start and every 6 hours, tells you, and installs it after checking its SHA-256 (Settings → Updates; see the FAQ). Turn it off in Settings → Updates
 - **Single instance** — relaunching focuses the running window; `whatrust --toggle` from a second launch shows/hides it
 - **Remembers window size and position**
 - **One-line install** on every platform
@@ -206,7 +207,25 @@ Yes. Open **Settings → Network**, pick **SOCKS5** or **HTTP**, enter the host 
 - Proxies that need a **username and password are not supported** — the system webview engines (WebView2, WKWebView, WebKitGTK) don't accept credentials through this route, so whatRust rejects `user:pass@` rather than half-working. Use a local relay (e.g. a SOCKS5 forwarder on `127.0.0.1`) that handles the login for you.
 - macOS needs **macOS 14 or later** for the proxy; on older versions the setting is disabled.
 - If the saved proxy is ever invalid, whatRust blocks the connection instead of silently going direct.
-- whatRust itself makes no network requests outside the WhatsApp pages (no update checks), so there is nothing else to route. Links you open go to your default browser, which uses its own proxy settings.
+- The update check and update download (see below) use the same proxy. If the saved proxy is invalid they fail instead of connecting directly. Links you open go to your default browser, which uses its own proxy settings.
+
+### Does whatRust update itself? What does it send?
+
+Yes, by default. A minute after start and then every 6 hours, whatRust asks `api.github.com` for the latest published release of `karem505/whatRust` (one anonymous request that sends only a `whatRust/<version>` User-Agent, no account, identifiers or usage data). If there is a newer version you get a notification (on Windows clicking it opens the page), an **Update to X.Y.Z** item in the tray menu, and **Settings → Updates** shows the release notes with **Download and install**. Files are downloaded from `github.com` and checked against the `SHA256SUMS` published with the release before anything is replaced or started; a mismatch, or a release without `SHA256SUMS`, is refused and the installed copy stays as it is.
+
+How it installs depends on how you installed whatRust:
+
+| Installed with | What happens |
+|---|---|
+| AppImage | replaced in place in the background; the new version starts the next time you open the app (or press **Restart now**) |
+| macOS `.app` | replaced in place (the old bundle is kept until the swap succeeds); if its folder is not writable the `.dmg` is saved to Downloads and opened |
+| Windows `.exe` setup | downloaded and verified in the background; the installer runs when you click **Restart and install** |
+| Windows `.msi` | the MSI runs after you click **Download and install** |
+| `.deb` | after you click **Download and install**; asks for your administrator password (`pkexec dpkg -i`) |
+| Flatpak | the verified bundle is saved to Downloads and opened in your software center (the sandbox cannot update itself), or run `curl -fsSL https://raw.githubusercontent.com/karem505/whatRust/master/install-flatpak.sh \| sh` |
+| built from source | only reported |
+
+To turn it off, untick **Check for updates automatically** in **Settings → Updates** (the **Check now** button still works). **Install updates automatically** only applies where no password is needed; untick it to be asked first. Versions 0.6.10 and older do not have the updater: install the newest release by hand once.
 
 ### Is whatRust free and open source?
 Yes — whatRust is free and open source under the MIT License. The source is on [GitHub](https://github.com/karem505/whatRust).
