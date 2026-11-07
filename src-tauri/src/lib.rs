@@ -44,6 +44,8 @@ pub fn run() {
     // See scrollbars.rs. No-op on other platforms. The outcome is logged in
     // setup, after dlog::init() (re)creates the log file.
     let scrollers_forced = scrollbars::force_overlay_scrollers();
+    #[cfg(not(target_os = "macos"))]
+    let _ = scrollers_forced;
 
     // Linux: expose SharedArrayBuffer in the webview. WhatsApp Web's Chrome
     // codepath (which we present ourselves as — see window::CHROME_UA) runs its

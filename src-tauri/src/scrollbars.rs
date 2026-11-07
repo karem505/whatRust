@@ -21,13 +21,16 @@
 
 /// The preference `NSScroller` resolves its style from, and the value that
 /// selects overlay scrollers.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const SCROLL_BARS_KEY: &str = "AppleShowScrollBars";
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const OVERLAY_VALUE: &str = "WhenScrolling";
 
 /// Does the resolved (merged-domain) preference already give overlay
 /// scrollers? Anything else — "Always", "Automatic", or unset — can leave
 /// WKWebView with a persistent legacy scroller, so the app-domain override
 /// is written.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn overlay_needed(current: Option<&str>) -> bool {
     current != Some(OVERLAY_VALUE)
 }
