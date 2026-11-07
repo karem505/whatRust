@@ -81,6 +81,8 @@
     "Sem ícone no Dock nem janela principal — todas as contas continuam conectadas para notificações e cada uma abre como painel pela bandeja": "No Dock icon or main window — every account stays connected for notifications, and each opens as its own panel from the tray",
     "O ícone da bandeja é o único ponto de entrada no modo somente barra de menus, por isso permanece visível": "The tray icon is the only entry point in menu-bar-only mode, so it stays visible",
     "Requer macOS 14 (Sonoma) ou superior — este Mac não consegue manter um painel oculto conectado": "Requires macOS 14 (Sonoma) or later — this Mac cannot keep a hidden panel connected",
+    "Ocultar ícone do Dock": "Hide Dock icon",
+    "Mantém a janela principal; o ícone da barra de menus passa a ser a forma de reabrir o whatRust": "Keeps the main window; the menu bar icon becomes the way to reopen whatRust",
     "Idioma": "Language",
     "Idioma da interface do whatRust.": "Language of the whatRust interface.",
     // shortcuts
@@ -88,6 +90,8 @@
     "Uma combinação de teclas para mostrar ou ocultar o aplicativo": "A key combination to show or hide the app",
     "Atalho": "Shortcut",
     "Gravar": "Record",
+    "Atalho para desfocar": "Privacy blur shortcut",
+    "Liga ou desliga o desfoque de privacidade em todas as contas. Para escolher o que é desfocado, pressione Ctrl+Shift+P (⌘+Shift+P no Mac) numa janela do WhatsApp.": "Turns the privacy blur on or off in every account. To choose what gets blurred, press Ctrl+Shift+P (⌘+Shift+P on a Mac) in a WhatsApp window.",
     "No Linux/Wayland, configure": "On Linux/Wayland, set",
     "nos atalhos do sistema.": "in the system shortcuts.",
     "Pressione as teclas… (Esc cancela)": "Press the keys… (Esc cancels)",

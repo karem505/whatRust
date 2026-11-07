@@ -153,11 +153,17 @@ pub fn run() {
             )
             .plugin(
                 tauri_plugin_global_shortcut::Builder::new()
-                    .with_handler(|app, _shortcut, event| {
+                    .with_handler(|app, shortcut, event| {
                         // In-process global hotkey (X11 / Windows / macOS). On Wayland
                         // this won't fire — use `whatrust --toggle` via an OS shortcut.
                         if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                            window::toggle_active(app);
+                            let s = settings::load(app);
+                            let is_blur = settings::is_blur_shortcut(&s, shortcut);
+                            if is_blur {
+                                window::toggle_privacy_blur(app);
+                            } else {
+                                window::toggle_active(app);
+                            }
                         }
                     })
                     .build(),
@@ -225,7 +231,7 @@ pub fn run() {
             // below) so the Dock icon can be dropped before the app starts presenting.
             let mut s = settings::load(app.handle());
             #[cfg(target_os = "macos")]
-            if s.menubar_only {
+            if s.menubar_only || s.hide_dock_icon {
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
 

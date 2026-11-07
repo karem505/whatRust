@@ -1,6 +1,6 @@
 const invoke = window.__TAURI__.core.invoke;
 const LANGS = ["pt-BR", "en"];
-const BOOLS = ["close_to_tray", "start_minimized", "autostart", "notifications", "hotkey_enabled", "menu_bar_icon", "menubar_only", "notify_when_focused", "notify_active_chat", "respect_muted"];
+const BOOLS = ["close_to_tray", "start_minimized", "autostart", "notifications", "hotkey_enabled", "blur_hotkey_enabled", "menu_bar_icon", "menubar_only", "hide_dock_icon", "notify_when_focused", "notify_active_chat", "respect_muted"];
 const ZOOM_DEFAULT = 1;
 
 // The menu-bar rows are macOS-only. get_settings reports the OS this build targets
@@ -18,7 +18,7 @@ const MENU_ICON_SUBTITLE = "Quando desativado, clique no ícone do Dock para abr
 let menuBarIconChecked = true;
 
 function syncMenuBarIconRow() {
-  const only = document.getElementById("menubar_only").checked;
+  const only = document.getElementById("menubar_only").checked || document.getElementById("hide_dock_icon").checked;
   const icon = document.getElementById("menu_bar_icon");
   icon.disabled = only;
   icon.checked = only ? true : menuBarIconChecked;
@@ -58,6 +58,7 @@ async function load() {
       "Requer macOS 14 (Sonoma) ou superior — este Mac não consegue manter um painel oculto conectado";
   }
   document.getElementById("hotkey").value = s.hotkey || "CmdOrCtrl+Shift+W";
+  document.getElementById("blur_hotkey").value = s.blur_hotkey || "CmdOrCtrl+Shift+B";
   selectNearestZoom(Number.isFinite(s.zoom) ? s.zoom : ZOOM_DEFAULT);
   const lang = LANGS.includes(s.language) ? s.language : "en";
   document.getElementById("language").value = lang;
@@ -74,6 +75,7 @@ async function save() {
   }
   const hk = document.getElementById("hotkey").value.trim();
   s.hotkey = hk || "CmdOrCtrl+Shift+W";
+  s.blur_hotkey = document.getElementById("blur_hotkey").value.trim() || "CmdOrCtrl+Shift+B";
   s.zoom = parseFloat(document.getElementById("zoom").value) || ZOOM_DEFAULT;
   s.language = document.getElementById("language").value;
   const note = document.getElementById("note");
@@ -201,6 +203,7 @@ async function addAccount() {
 window.addEventListener("DOMContentLoaded", () => {
   // The macOS rows stay hidden until load() knows the platform.
   document.getElementById("menubar_only").addEventListener("change", syncMenuBarIconRow);
+  document.getElementById("hide_dock_icon").addEventListener("change", syncMenuBarIconRow);
   load();
   loadAccounts();
   loadLock();
@@ -214,7 +217,8 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("new_account_name").addEventListener("keydown", (e) => {
     if (e.key === "Enter") addAccount();
   });
-  document.getElementById("record_hotkey").addEventListener("click", toggleRecording);
+  document.getElementById("record_hotkey").addEventListener("click", () => toggleRecording("hotkey", "record_hotkey"));
+  document.getElementById("record_blur_hotkey").addEventListener("click", () => toggleRecording("blur_hotkey", "record_blur_hotkey"));
   // Zoom saves on change rather than on Save: picking a size you cannot see the
   // effect of is guesswork, and the webview applies it immediately.
   document.getElementById("zoom").addEventListener("change", save);
@@ -332,6 +336,8 @@ function wireLock() {
 
 let recordingHotkey = false;
 let hotkeyPrev = "";
+let recordInputId = "hotkey";
+let recordBtnId = "record_hotkey";
 const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta"]);
 
 function setHotkeyHint(msg) {
@@ -345,10 +351,10 @@ function stopRecording(restore) {
   recordingHotkey = false;
   window.removeEventListener("keydown", onRecordKeydown, true);
   window.removeEventListener("blur", onRecordBlur, true);
-  const btn = document.getElementById("record_hotkey");
+  const btn = document.getElementById(recordBtnId);
   btn.textContent = "Gravar";
   btn.classList.remove("recording");
-  if (restore) document.getElementById("hotkey").value = hotkeyPrev;
+  if (restore) document.getElementById(recordInputId).value = hotkeyPrev;
 }
 
 function onRecordBlur() { setHotkeyHint(""); stopRecording(true); }
@@ -365,16 +371,18 @@ function onRecordKeydown(e) {
     setHotkeyHint("Inclua Ctrl, Alt ou Shift.");
     return;
   }
-  document.getElementById("hotkey").value = accel;
+  document.getElementById(recordInputId).value = accel;
   setHotkeyHint("");
   stopRecording(false);
 }
 
-function toggleRecording() {
+function toggleRecording(inputId, btnId) {
   if (recordingHotkey) { setHotkeyHint(""); stopRecording(true); return; }
   recordingHotkey = true;
-  hotkeyPrev = document.getElementById("hotkey").value;
-  const btn = document.getElementById("record_hotkey");
+  recordInputId = inputId;
+  recordBtnId = btnId;
+  hotkeyPrev = document.getElementById(inputId).value;
+  const btn = document.getElementById(btnId);
   btn.textContent = "Pressione as teclas… (Esc cancela)";
   btn.classList.add("recording");
   setHotkeyHint("");

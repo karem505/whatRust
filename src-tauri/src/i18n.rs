@@ -235,6 +235,7 @@ static EN_TABLE: &[(&str, &str)] = &[
     // settings side effects
     ("Não foi possível atualizar a inicialização automática: {0}", "Could not update automatic startup: {0}"),
     ("Não foi possível registrar o atalho (ele pode estar em uso): {0}", "Could not register the shortcut (it may be in use): {0}"),
+    ("O atalho para desfocar não pode ser igual ao atalho de mostrar/ocultar: {0}", "The blur shortcut can't be the same as the show/hide shortcut: {0}"),
     // tray and menus
     ("Contas…", "Accounts…"),
     ("Contas", "Accounts"),

@@ -59,6 +59,11 @@
               <span class="row-subtitle" id="menubar_only_subtitle">Sem ícone no Dock nem janela principal — todas as contas continuam conectadas para notificações e cada uma abre como painel pela bandeja</span></span>
             <input type="checkbox" class="switch" id="menubar_only" />
           </label>
+          <label class="row mac-only" hidden>
+            <span class="row-text"><span class="row-title">Ocultar ícone do Dock</span>
+              <span class="row-subtitle">Mantém a janela principal; o ícone da barra de menus passa a ser a forma de reabrir o whatRust</span></span>
+            <input type="checkbox" class="switch" id="hide_dock_icon" />
+          </label>
         </div>
       </section>
 
@@ -99,6 +104,18 @@
             <div class="hotkey-row">
               <input type="text" id="hotkey" placeholder="CmdOrCtrl+Shift+W" aria-label="Atalho" />
               <button type="button" id="record_hotkey" class="secondary">Gravar</button>
+            </div>
+          </div>
+          <label class="row">
+            <span class="row-text"><span class="row-title">Atalho para desfocar</span>
+              <span class="row-subtitle">Liga ou desliga o desfoque de privacidade em todas as contas. Para escolher o que é desfocado, pressione Ctrl+Shift+P (⌘+Shift+P no Mac) numa janela do WhatsApp.</span></span>
+            <input type="checkbox" class="switch" id="blur_hotkey_enabled" />
+          </label>
+          <div class="row">
+            <span class="row-text"><span class="row-title">Atalho</span></span>
+            <div class="hotkey-row">
+              <input type="text" id="blur_hotkey" placeholder="CmdOrCtrl+Shift+B" aria-label="Atalho" />
+              <button type="button" id="record_blur_hotkey" class="secondary">Gravar</button>
             </div>
           </div>
         </div>

@@ -93,6 +93,7 @@ macro_rules! account_webview {
             })
             .initialization_script(include_str!("../resources/integration.js"))
             .initialization_script(BRIDGE_JS)
+            .initialization_script(include_str!("../resources/privacy.js"))
             // Drag-and-drop is done by capturing the OS drop in Rust and streaming the file
             // into the page (see `register_drop_handler` + bridge.js `__whatrustDropFeed`).
             // We deliberately KEEP Tauri's drag-drop handler enabled (except on Windows, see
@@ -1478,6 +1479,15 @@ pub fn toggle_decision(active_visible: Option<bool>) -> ToggleAct {
     match active_visible {
         Some(true) => ToggleAct::Hide,
         _ => ToggleAct::Show,
+    }
+}
+
+/// Flip the privacy blur in every account webview (not settings/lock).
+pub fn toggle_privacy_blur(app: &AppHandle) {
+    for (label, view) in app.webviews() {
+        if crate::accounts::id_from_label(&label).is_some() {
+            let _ = view.eval("window.__whatrustPrivacy&&window.__whatrustPrivacy.toggle()");
+        }
     }
 }
 

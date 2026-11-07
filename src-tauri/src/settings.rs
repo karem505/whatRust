@@ -9,6 +9,11 @@ pub struct Settings {
     pub autostart: bool,
     pub hotkey_enabled: bool,
     pub hotkey: String,
+    /// Global shortcut that toggles the privacy blur in every account window.
+    /// Off by default: a new global shortcut must not grab a key combination
+    /// (Ctrl+Shift+B is the browsers' bookmarks bar) from users who never asked.
+    pub blur_hotkey_enabled: bool,
+    pub blur_hotkey: String,
     pub notifications: bool,
     pub notify_when_focused: bool,
     pub notify_active_chat: bool,
@@ -17,6 +22,9 @@ pub struct Settings {
     /// standard window. Every account stays connected in the background and
     /// opens as a panel from the tray. Off by default. Ignored on other platforms.
     pub menubar_only: bool,
+    /// macOS only: hide the Dock icon but keep the normal main window. The
+    /// menu bar icon is forced on, since it becomes the way back to the app.
+    pub hide_dock_icon: bool,
     /// Display zoom for the WhatsApp webview, 1.0 = the site's own sizing.
     pub zoom: f64,
     /// macOS only (issue #44): show the icon in the menu bar. With it off, the
@@ -36,16 +44,43 @@ impl Default for Settings {
             autostart: false,
             hotkey_enabled: true,
             hotkey: "CmdOrCtrl+Shift+W".to_string(),
+            blur_hotkey_enabled: false,
+            blur_hotkey: "CmdOrCtrl+Shift+B".to_string(),
             notifications: true,
             notify_when_focused: true,
             notify_active_chat: true,
             respect_muted: true,
             menubar_only: false,
+            hide_dock_icon: false,
             zoom: 1.0,
             menu_bar_icon: true,
             language: crate::i18n::system_default().to_string(),
         }
     }
+}
+
+/// Do two accelerator strings name the same key combination? Compared after
+/// parsing, so "CmdOrCtrl+Shift+B" and "Shift+CmdOrCtrl+B" match. Unparseable
+/// strings never match (registration reports those separately).
+#[cfg(desktop)]
+pub fn same_shortcut(a: &str, b: &str) -> bool {
+    use tauri_plugin_global_shortcut::Shortcut;
+    match (a.trim().parse::<Shortcut>(), b.trim().parse::<Shortcut>()) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => false,
+    }
+}
+
+/// Is `pressed` the privacy-blur shortcut (enabled, valid, and distinct from
+/// the show/hide shortcut, which always wins a tie)?
+#[cfg(desktop)]
+pub fn is_blur_shortcut(s: &Settings, pressed: &tauri_plugin_global_shortcut::Shortcut) -> bool {
+    s.blur_hotkey_enabled
+        && !same_shortcut(&s.blur_hotkey, &s.hotkey)
+        && s.blur_hotkey
+            .trim()
+            .parse::<tauri_plugin_global_shortcut::Shortcut>()
+            .is_ok_and(|b| &b == pressed)
 }
 
 pub fn start_hidden(preference: bool, args: &[String]) -> bool {
@@ -200,11 +235,13 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
     // account's session the moment it is enabled.
     #[cfg(target_os = "macos")]
     let menubar_only = s.menubar_only && crate::menubar::supported();
+    #[cfg(target_os = "macos")]
+    let hide_dock = menubar_only || s.hide_dock_icon;
 
     // In menu-bar-only mode the tray icon is the app's only entry point, so
     // it can never be hidden.
     #[cfg(target_os = "macos")]
-    crate::tray::apply_visibility(app, s.menu_bar_icon || menubar_only);
+    crate::tray::apply_visibility(app, s.menu_bar_icon || hide_dock);
     #[cfg(not(target_os = "macos"))]
     crate::tray::apply_visibility(app, s.menu_bar_icon);
 
@@ -226,7 +263,7 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
         }
 
         // Menu-bar-only apps have no Dock presence.
-        let policy = if menubar_only {
+        let policy = if hide_dock {
             tauri::ActivationPolicy::Accessory
         } else {
             tauri::ActivationPolicy::Regular
@@ -284,6 +321,19 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
         let _ = gs.unregister_all();
         if s.hotkey_enabled && !s.hotkey.trim().is_empty() {
             if let Err(e) = gs.register(s.hotkey.as_str()) {
+                warnings.push(trf(
+                    "Não foi possível registrar o atalho (ele pode estar em uso): {0}",
+                    &[&e],
+                ));
+            }
+        }
+        if s.blur_hotkey_enabled && !s.blur_hotkey.trim().is_empty() {
+            if same_shortcut(&s.blur_hotkey, &s.hotkey) {
+                warnings.push(trf(
+                    "O atalho para desfocar não pode ser igual ao atalho de mostrar/ocultar: {0}",
+                    &[&s.blur_hotkey],
+                ));
+            } else if let Err(e) = gs.register(s.blur_hotkey.as_str()) {
                 warnings.push(trf(
                     "Não foi possível registrar o atalho (ele pode estar em uso): {0}",
                     &[&e],
@@ -435,5 +485,48 @@ mod tests {
             true,
             &["--autostart".into(), "--show".into()]
         ));
+    }
+}
+
+#[cfg(all(test, desktop))]
+mod blur_shortcut_tests {
+    use super::{is_blur_shortcut, same_shortcut, Settings};
+    use tauri_plugin_global_shortcut::Shortcut;
+
+    #[test]
+    fn blur_shortcut_is_off_by_default() {
+        let s = Settings::default();
+        assert!(!s.blur_hotkey_enabled);
+        let b: Shortcut = s.blur_hotkey.parse().unwrap();
+        assert!(!is_blur_shortcut(&s, &b));
+    }
+
+    #[test]
+    fn enabled_blur_shortcut_matches_only_itself() {
+        let s = Settings {
+            blur_hotkey_enabled: true,
+            ..Settings::default()
+        };
+        let blur: Shortcut = "CmdOrCtrl+Shift+B".parse().unwrap();
+        let toggle: Shortcut = s.hotkey.parse().unwrap();
+        assert!(is_blur_shortcut(&s, &blur));
+        assert!(!is_blur_shortcut(&s, &toggle));
+    }
+
+    #[test]
+    fn show_hide_shortcut_wins_a_tie() {
+        let s = Settings {
+            blur_hotkey_enabled: true,
+            blur_hotkey: "Shift+CmdOrCtrl+W".into(),
+            ..Settings::default()
+        };
+        assert!(same_shortcut(&s.blur_hotkey, &s.hotkey));
+        let pressed: Shortcut = s.hotkey.parse().unwrap();
+        assert!(!is_blur_shortcut(&s, &pressed));
+    }
+
+    #[test]
+    fn unparseable_shortcuts_never_match() {
+        assert!(!same_shortcut("not a key", "not a key"));
     }
 }
