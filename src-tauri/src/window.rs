@@ -77,7 +77,13 @@ pub fn open_account_window(app: &AppHandle, account: &Account, hidden: bool) -> 
 // Keep navigation, injection and download hooks identical across platform builders.
 macro_rules! account_webview {
     ($builder:expr, $app:ident, $label:ident) => {
-        $builder
+        // Proxy (issue #52): every account webview gets the same proxy, so no
+        // account bypasses it and WebView2 sees identical browser arguments on
+        // every webview that shares an environment.
+        (match crate::proxy::webview_url(&crate::settings::load($app)) {
+            Some(url) => $builder.proxy_url(url),
+            None => $builder,
+        })
             .user_agent(&user_agent())
             // Keep the page running while hidden or minimized: WebKit suspends an
             // inactive WKWebView, which drops WhatsApp's socket after a few
@@ -231,6 +237,7 @@ pub(crate) fn build_account_window(
     if let Some(w) = app.get_webview_window(&label) {
         return Ok(w);
     }
+    crate::proxy::check_platform(&crate::settings::load(app))?;
 
     let url = "https://web.whatsapp.com/".parse().expect("valid url");
     let icon = tauri::image::Image::from_bytes(APP_ICON)?;
@@ -297,6 +304,7 @@ pub(crate) fn build_account_view(
     account: &Account,
 ) -> tauri::Result<tauri::Webview> {
     let label = accounts::window_label(&account.id);
+    crate::proxy::check_platform(&crate::settings::load(app))?;
     let builder = tauri::WebviewBuilder::new(
         &label,
         WebviewUrl::External("https://web.whatsapp.com/".parse().expect("valid url")),

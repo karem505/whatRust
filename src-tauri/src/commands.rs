@@ -141,6 +141,11 @@ pub struct SettingsView {
     /// `menubar::supported`). The UI disables the switch elsewhere rather
     /// than letting the user opt into a mode that would drop the session.
     pub menubar_supported: bool,
+    /// The proxy URL the running webviews were created with (`""` = none). When
+    /// it differs from the saved settings, a restart is pending.
+    pub proxy_in_use: String,
+    /// Whether the webview engine can proxy (false on macOS < 14).
+    pub proxy_supported: bool,
 }
 
 #[tauri::command]
@@ -153,6 +158,8 @@ pub fn get_settings(window: tauri::Webview, app: tauri::AppHandle) -> Result<Set
         settings: crate::settings::load(&app),
         platform: std::env::consts::OS,
         menubar_supported: crate::menubar::supported(),
+        proxy_in_use: crate::proxy::in_use(),
+        proxy_supported: crate::proxy::engine_supported(),
     })
 }
 
@@ -166,9 +173,21 @@ pub fn set_settings(
         return Err("forbidden".into());
     }
     lock::require_unlocked(&app)?;
-    let settings = settings.sanitized();
+    let mut settings = settings.sanitized();
+    crate::proxy::validate(&mut settings)?;
     crate::settings::save(&app, &settings).map_err(|e| e.to_string())?;
     Ok(crate::settings::apply(&app, &settings))
+}
+
+/// Relaunch the app (the proxy applies when webviews are created). Local
+/// settings window only, and not while locked.
+#[tauri::command]
+pub fn restart_app(window: tauri::Webview, app: tauri::AppHandle) -> Result<(), String> {
+    if is_remote(&window) {
+        return Err("forbidden".into());
+    }
+    lock::require_unlocked(&app)?;
+    app.restart();
 }
 
 // Commands that build a window are `async`. Tauri runs a synchronous command

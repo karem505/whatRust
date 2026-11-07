@@ -6,6 +6,7 @@
     "core:default",
     "allow-get-settings",
     "allow-set-settings",
+    "allow-restart-app",
     "allow-list-accounts",
     "allow-add-account",
     "allow-remove-account",

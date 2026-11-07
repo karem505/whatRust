@@ -34,6 +34,11 @@ pub struct Settings {
     /// Interface language: `en` or `pt-BR`. Defaults to the OS language
     /// (Portuguese for a Portuguese system, English otherwise).
     pub language: String,
+    /// Network proxy for the WhatsApp webviews: `off`, `socks5` or `http`
+    /// (issue #52). Applied when a webview is created, so changes need a restart.
+    pub proxy_mode: String,
+    pub proxy_host: String,
+    pub proxy_port: u32,
 }
 
 impl Default for Settings {
@@ -55,6 +60,9 @@ impl Default for Settings {
             zoom: 1.0,
             menu_bar_icon: true,
             language: crate::i18n::system_default().to_string(),
+            proxy_mode: crate::proxy::MODE_OFF.to_string(),
+            proxy_host: String::new(),
+            proxy_port: 0,
         }
     }
 }
