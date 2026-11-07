@@ -236,7 +236,8 @@ whatRust doesn't talk to WhatsApp's servers itself: it shows the official `web.w
 
 ## Limitations
 
-- **Windows unread count**: Windows tray icons ignore text labels, so the unread *number* appears only in the hover tooltip (the icon still switches to a badged variant). macOS and Linux show the count.
+- **Windows unread count**: Windows tray icons ignore text labels, so the unread *number* appears only in the hover tooltip (the icon still switches to a badged variant). macOS shows the count on the Dock icon and Linux on the tray icon.
+- **Linux launcher/dock badge**: the unread count is also sent to the launcher icon via the Unity `LauncherEntry` D-Bus API (.deb, AppImage with its `install.sh` desktop entry, and Flatpak). It shows on KDE Plasma's task manager, Dash to Dock / Ubuntu Dock, Plank and Latte; stock GNOME shows no app-icon badge without one of those extensions.
 - **Notification click** focuses the window on Windows only — elsewhere use the tray icon or the global shortcut.
 - **macOS** builds are unsigned and currently Apple Silicon (arm64) only.
 - **macOS and Windows file drops** go directly to WhatsApp through the native webview. Drag files from Finder/File Explorer onto the open conversation; use the attach (+) button if a drag source does not provide a file the webview can read.
