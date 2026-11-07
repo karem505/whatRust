@@ -74,6 +74,46 @@
     return Promise.resolve();
   }
 
+  // Zoom shortcuts: Ctrl (Cmd on macOS) with + / - / 0, and Ctrl+wheel. The page
+  // only names the action; Rust steps the saved zoom and applies it to every
+  // account (zoom_step). Native webview zoom is switched off in window.rs, so
+  // there is no second zoom to fight with. Only exact modifier combos are taken
+  // (never Alt/AltGr, never mid-composition), everything else reaches WhatsApp.
+  var IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || "");
+  function zoomKeyAction(e) {
+    if (e.isComposing || e.keyCode === 229 || e.altKey) return null;
+    if (!(IS_MAC ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey)) return null;
+    var k = e.key, c = e.code;
+    if (k === "+" || k === "=" || c === "NumpadAdd") return "in";
+    if (!e.shiftKey && (k === "-" || c === "NumpadSubtract")) return "out";
+    if (!e.shiftKey && (k === "0" || c === "Numpad0")) return "reset";
+    return null;
+  }
+  window.addEventListener("keydown", function (e) {
+    if (e.defaultPrevented) return;
+    var action = zoomKeyAction(e);
+    if (!action) return;
+    e.preventDefault();
+    e.stopPropagation();
+    invoke("zoom_step", { action: action });
+  }, true);
+  // A wheel notch, or a trackpad pinch (a burst of ctrl+wheel events), moves one
+  // level: deltas accumulate to a threshold, then a short cooldown swallows the
+  // rest of the burst.
+  var wheelAcc = 0, wheelBusy = false;
+  window.addEventListener("wheel", function (e) {
+    if (!(IS_MAC ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) || e.altKey) return;
+    e.preventDefault();
+    if (wheelBusy) return;
+    wheelAcc += e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1);
+    if (Math.abs(wheelAcc) < 40) return;
+    var action = wheelAcc < 0 ? "in" : "out";
+    wheelAcc = 0;
+    wheelBusy = true;
+    setTimeout(function () { wheelBusy = false; wheelAcc = 0; }, 150);
+    invoke("zoom_step", { action: action });
+  }, { capture: true, passive: false });
+
   // A small, keyboard-accessible account switcher owned by whatRust. It exposes
   // only account names/unread counts and a request to focus an existing account.
   function mountAccountSwitcher() {

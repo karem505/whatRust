@@ -27,13 +27,25 @@ function syncMenuBarIconRow() {
     : MENU_ICON_SUBTITLE;
 }
 
-// settings.json holds a zoom factor, not a preset name, so a stored value need
-// not be one of the four options offered here — it can come from a hand edit or
-// from a build with a different set of presets. Show the closest one.
+// settings.json holds a zoom factor, not a preset name, and the zoom shortcuts
+// (Ctrl +/-/wheel) land on levels the four presets do not offer. Show an exact
+// match when there is one; otherwise add a temporary "NN%" option so the control
+// reflects the real value instead of pretending it is the nearest preset.
 function selectNearestZoom(value) {
   const sel = document.getElementById("zoom");
-  const distance = (o) => Math.abs(parseFloat(o.value) - value);
-  sel.value = [...sel.options].reduce((a, b) => (distance(b) < distance(a) ? b : a)).value;
+  for (const o of [...sel.options]) if (o.dataset.custom) o.remove();
+  const exact = [...sel.options].find((o) => Math.abs(parseFloat(o.value) - value) < 0.005);
+  if (exact) {
+    sel.value = exact.value;
+    return;
+  }
+  const opt = document.createElement("option");
+  opt.dataset.custom = "1";
+  opt.value = String(value);
+  opt.textContent = Math.round(value * 100) + "%";
+  const after = [...sel.options].find((o) => parseFloat(o.value) > value);
+  sel.insertBefore(opt, after || null);
+  sel.value = opt.value;
 }
 
 async function load() {
@@ -222,6 +234,12 @@ window.addEventListener("DOMContentLoaded", () => {
   // Zoom saves on change rather than on Save: picking a size you cannot see the
   // effect of is guesswork, and the webview applies it immediately.
   document.getElementById("zoom").addEventListener("change", save);
+  // The zoom shortcuts change it from the WhatsApp window; catch up on return.
+  window.addEventListener("focus", () => {
+    invoke("get_settings").then((s) => {
+      if (Number.isFinite(s.zoom)) selectNearestZoom(s.zoom);
+    }).catch(() => {});
+  });
   // Language applies at once, like zoom.
   document.getElementById("language").addEventListener("change", async () => {
     I18n.setLang(document.getElementById("language").value);

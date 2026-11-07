@@ -25,6 +25,7 @@ const PAGE_COMMANDS: &[&str] = &[
     "reveal_download",
     "switcher_accounts",
     "switch_account",
+    "zoom_step",
 ];
 /// Commands only the local settings window may use.
 const SETTINGS_COMMANDS: &[&str] = &[

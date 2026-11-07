@@ -85,6 +85,10 @@ macro_rules! account_webview {
             // still clamps timers, but the page stays alive. Only macOS 14+
             // honours it; elsewhere it is ignored.
             .background_throttling(BackgroundThrottlingPolicy::Throttle)
+            // Zoom is ours (settings + bridge.js shortcuts). Keep WebView2's own
+            // Ctrl+wheel / Ctrl+plus zoom and wry's WebKitGTK hotkey script off,
+            // so the two never stack or drift apart.
+            .zoom_hotkeys_enabled(false)
             .initialization_script(crate::i18n::init_script())
             .initialization_script(if cfg!(windows) {
                 format!("window.__WHATRUST_WINDOWS__=true;window.__whatrustNotificationEpoch={};window.__whatrustLocked={};",$app.state::<crate::notify::Recent>().epoch(),!crate::lock::is_unlocked($app))

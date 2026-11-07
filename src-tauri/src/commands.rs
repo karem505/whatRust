@@ -250,6 +250,31 @@ pub fn switcher_accounts(
         .collect())
 }
 
+/// Zoom shortcuts from the WhatsApp page (Ctrl/Cmd +/-/0, Ctrl+wheel): step the
+/// shared display zoom, persist it and apply it to every account webview. The
+/// page only names the action; the new level is computed from the saved value,
+/// so a burst of requests cannot drift or leave the range.
+#[tauri::command]
+pub fn zoom_step(
+    window: tauri::Webview,
+    app: tauri::AppHandle,
+    action: String,
+) -> Result<f64, String> {
+    crate::integration::remote(&window)?;
+    lock::require_unlocked(&app)?;
+    let action = crate::settings::ZoomAction::parse(&action).ok_or("bad action")?;
+    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _g = lock::guard(&SERIAL);
+    let mut s = crate::settings::load(&app);
+    let zoom = crate::settings::step_zoom(s.zoom, action);
+    if zoom != s.zoom {
+        s.zoom = zoom;
+        crate::settings::save(&app, &s).map_err(|e| e.to_string())?;
+    }
+    crate::window::apply_zoom_all(&app, zoom);
+    Ok(zoom)
+}
+
 #[tauri::command]
 pub async fn switch_account(
     window: tauri::Webview,

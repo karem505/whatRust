@@ -107,6 +107,52 @@ pub fn start_hidden(preference: bool, args: &[String]) -> bool {
 pub const ZOOM_MIN: f64 = 0.5;
 pub const ZOOM_MAX: f64 = 2.0;
 
+/// Levels the zoom shortcuts step through (Ctrl +/-, Ctrl+wheel), all inside
+/// `ZOOM_MIN..=ZOOM_MAX`. They include the four presets of the Display size
+/// control, so shortcut and dropdown agree where they overlap.
+pub const ZOOM_STEPS: [f64; 10] = [0.5, 0.67, 0.75, 0.85, 1.0, 1.15, 1.25, 1.5, 1.75, 2.0];
+
+/// What a zoom shortcut asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ZoomAction {
+    In,
+    Out,
+    Reset,
+}
+
+impl ZoomAction {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "in" => Some(Self::In),
+            "out" => Some(Self::Out),
+            "reset" => Some(Self::Reset),
+            _ => None,
+        }
+    }
+}
+
+/// The zoom after one shortcut step. Steps to the next level strictly beyond
+/// the current value, so an off-grid value (hand-edited, or from an older
+/// build) lands on a level instead of skipping one; at the ends it stays put.
+pub fn step_zoom(current: f64, action: ZoomAction) -> f64 {
+    let cur = sanitize_zoom(current);
+    const EPS: f64 = 1e-6;
+    match action {
+        ZoomAction::Reset => 1.0,
+        ZoomAction::In => ZOOM_STEPS
+            .iter()
+            .copied()
+            .find(|z| *z > cur + EPS)
+            .unwrap_or(ZOOM_MAX),
+        ZoomAction::Out => ZOOM_STEPS
+            .iter()
+            .rev()
+            .copied()
+            .find(|z| *z < cur - EPS)
+            .unwrap_or(ZOOM_MIN),
+    }
+}
+
 /// Bring a zoom factor into range. A non-finite value (a `null` or a string in
 /// the JSON deserialises to the default, but arithmetic in an older build could
 /// still have written a NaN) falls back to 1.0 rather than to a bound.
@@ -355,7 +401,7 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{sanitize_zoom, Settings, ZOOM_MAX, ZOOM_MIN};
+    use super::{sanitize_zoom, step_zoom, Settings, ZoomAction, ZOOM_MAX, ZOOM_MIN, ZOOM_STEPS};
 
     #[cfg(target_os = "linux")]
     use super::{flatpak_autostart_entry, is_valid_flatpak_id};
@@ -400,6 +446,43 @@ mod tests {
         assert!(!s.autostart);
         assert_eq!(s.zoom, 1.0);
         assert!(s.menu_bar_icon);
+    }
+
+    #[test]
+    fn zoom_steps_are_in_range_and_ascending() {
+        assert!(ZOOM_STEPS.windows(2).all(|w| w[0] < w[1]));
+        assert_eq!(ZOOM_STEPS[0], ZOOM_MIN);
+        assert_eq!(ZOOM_STEPS[ZOOM_STEPS.len() - 1], ZOOM_MAX);
+        assert!(ZOOM_STEPS.contains(&1.0));
+    }
+
+    #[test]
+    fn zoom_in_and_out_walk_the_levels() {
+        assert_eq!(step_zoom(1.0, ZoomAction::In), 1.15);
+        assert_eq!(step_zoom(1.0, ZoomAction::Out), 0.85);
+        assert_eq!(step_zoom(1.15, ZoomAction::Out), 1.0);
+        assert_eq!(step_zoom(0.75, ZoomAction::In), 0.85);
+        assert_eq!(step_zoom(1.5, ZoomAction::Reset), 1.0);
+    }
+
+    #[test]
+    fn zoom_stops_at_the_ends() {
+        assert_eq!(step_zoom(ZOOM_MAX, ZoomAction::In), ZOOM_MAX);
+        assert_eq!(step_zoom(ZOOM_MIN, ZoomAction::Out), ZOOM_MIN);
+    }
+
+    #[test]
+    fn off_grid_zoom_lands_on_the_next_level() {
+        assert_eq!(step_zoom(1.05, ZoomAction::In), 1.15);
+        assert_eq!(step_zoom(1.05, ZoomAction::Out), 1.0);
+        assert_eq!(step_zoom(f64::NAN, ZoomAction::In), 1.15);
+        assert_eq!(step_zoom(9.0, ZoomAction::Out), 1.75);
+    }
+
+    #[test]
+    fn zoom_action_parses_only_known_names() {
+        assert_eq!(ZoomAction::parse("in"), Some(ZoomAction::In));
+        assert_eq!(ZoomAction::parse("sideways"), None);
     }
 
     #[test]

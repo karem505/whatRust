@@ -206,6 +206,7 @@ pub fn run() {
             commands::reveal_download,
             commands::switcher_accounts,
             commands::switch_account,
+            commands::zoom_step,
             commands::get_settings,
             commands::set_settings,
             commands::open_settings,
