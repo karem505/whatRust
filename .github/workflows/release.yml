@@ -186,14 +186,18 @@ jobs:
           [ -n "$rid" ] || { echo "::error::no release found for $RELEASE_TAG"; exit 1; }
           mkdir -p release-assets
           gh api --paginate "repos/$GH_REPO/releases/$rid/assets?per_page=100" \
-            --jq '.[] | "\(.id) \(.name)"' > assets.txt
-          while read -r id name; do
+            --jq '.[] | "\(.id) \(.size) \(.name)"' > assets.txt
+          while read -r id size name; do
             case "$name" in
               SHA256SUMS) continue ;;
               */* | *\ * | .*) echo "::error::unexpected asset name: $name"; exit 1 ;;
             esac
             gh api -H "Accept: application/octet-stream" \
               "repos/$GH_REPO/releases/assets/$id" > "release-assets/$name"
+            # Hash exactly what users download: a short or altered download must
+            # never end up in SHA256SUMS.
+            got=$(stat -c %s "release-assets/$name")
+            [ "$got" = "$size" ] || { echo "::error::$name: downloaded $got bytes, release lists $size"; exit 1; }
           done < assets.txt
           # A release must carry the bundles the updater looks for; fail rather than
           # publish one it cannot use.
