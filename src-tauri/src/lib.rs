@@ -17,6 +17,7 @@ mod menubar;
 mod notif_icon;
 mod notify;
 mod opener;
+mod proxy;
 mod scrollbars;
 #[cfg(windows)]
 mod sessions;
@@ -214,6 +215,7 @@ pub fn run() {
             commands::reveal_download,
             commands::switcher_accounts,
             commands::switch_account,
+            commands::zoom_step,
             commands::get_settings,
             commands::set_settings,
             commands::open_settings,
@@ -230,6 +232,7 @@ pub fn run() {
             commands::set_app_lock_password,
             commands::change_app_lock_password,
             commands::disable_app_lock,
+            commands::restart_app,
             commands::set_app_lock_options,
             commands::set_biometric_enabled,
             commands::lock_app,
@@ -241,6 +244,7 @@ pub fn run() {
             // Menu-bar-only on macOS: load settings early (the rest of setup needs them
             // below) so the Dock icon can be dropped before the app starts presenting.
             let mut s = settings::load(app.handle());
+            proxy::note_startup(&s);
             #[cfg(target_os = "macos")]
             if s.menubar_only || s.hide_dock_icon {
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);

@@ -27,13 +27,25 @@ function syncMenuBarIconRow() {
     : MENU_ICON_SUBTITLE;
 }
 
-// settings.json holds a zoom factor, not a preset name, so a stored value need
-// not be one of the four options offered here — it can come from a hand edit or
-// from a build with a different set of presets. Show the closest one.
+// settings.json holds a zoom factor, not a preset name, and the zoom shortcuts
+// (Ctrl +/-/wheel) land on levels the four presets do not offer. Show an exact
+// match when there is one; otherwise add a temporary "NN%" option so the control
+// reflects the real value instead of pretending it is the nearest preset.
 function selectNearestZoom(value) {
   const sel = document.getElementById("zoom");
-  const distance = (o) => Math.abs(parseFloat(o.value) - value);
-  sel.value = [...sel.options].reduce((a, b) => (distance(b) < distance(a) ? b : a)).value;
+  for (const o of [...sel.options]) if (o.dataset.custom) o.remove();
+  const exact = [...sel.options].find((o) => Math.abs(parseFloat(o.value) - value) < 0.005);
+  if (exact) {
+    sel.value = exact.value;
+    return;
+  }
+  const opt = document.createElement("option");
+  opt.dataset.custom = "1";
+  opt.value = String(value);
+  opt.textContent = Math.round(value * 100) + "%";
+  const after = [...sel.options].find((o) => parseFloat(o.value) > value);
+  sel.insertBefore(opt, after || null);
+  sel.value = opt.value;
 }
 
 // The chosen download folder (null = the system Downloads folder). Kept here
@@ -125,6 +137,47 @@ async function load() {
   downloadDir = s.download_dir || null;
   showDownloadDir();
   showIcon(!!s.custom_icon);
+  loadProxy(s);
+}
+
+// --- Proxy (issue #52) ---
+let proxyInUse = "";
+let proxySupported = true;
+let proxySaved = { proxy_mode: "off", proxy_host: "", proxy_port: 0 };
+
+function proxyUrl(mode, host, port) {
+  if (mode === "off") return "";
+  const h = host.includes(":") && !host.startsWith("[") ? "[" + host + "]" : host;
+  return mode + "://" + h.toLowerCase() + ":" + port;
+}
+
+function syncProxyRows() {
+  const off = document.getElementById("proxy_mode").value === "off";
+  document.querySelectorAll(".proxy-field").forEach((el) => (el.hidden = off));
+}
+
+// The restart hint shows while the saved proxy differs from the one the open
+// webviews were created with.
+function syncProxyRestart() {
+  const saved = proxyUrl(proxySaved.proxy_mode, proxySaved.proxy_host || "", proxySaved.proxy_port || 0);
+  const running = proxyInUse.replace(/\/$/, "");
+  document.getElementById("proxy_restart").hidden = saved.replace(/\/$/, "") === running;
+}
+
+function loadProxy(s) {
+  proxyInUse = s.proxy_in_use || "";
+  proxySupported = s.proxy_supported !== false;
+  proxySaved = { proxy_mode: s.proxy_mode || "off", proxy_host: s.proxy_host || "", proxy_port: s.proxy_port || 0 };
+  const mode = document.getElementById("proxy_mode");
+  mode.value = proxySaved.proxy_mode;
+  if (!proxySupported) {
+    mode.disabled = true;
+    mode.value = "off";
+  }
+  document.getElementById("proxy_host").value = proxySaved.proxy_host;
+  document.getElementById("proxy_port").value = proxySaved.proxy_port ? String(proxySaved.proxy_port) : "";
+  syncProxyRows();
+  syncProxyRestart();
 }
 
 async function save() {
@@ -139,9 +192,20 @@ async function save() {
   s.zoom = parseFloat(document.getElementById("zoom").value) || ZOOM_DEFAULT;
   s.language = document.getElementById("language").value;
   s.download_dir = downloadDir;
+  if (proxySupported) {
+    s.proxy_mode = document.getElementById("proxy_mode").value;
+    s.proxy_host = document.getElementById("proxy_host").value.trim();
+    const port = document.getElementById("proxy_port").value.trim();
+    // Anything but plain digits becomes 0, which the backend rejects.
+    s.proxy_port = /^[0-9]{1,5}$/.test(port) ? parseInt(port, 10) : 0;
+  }
   const note = document.getElementById("note");
   try {
     const warn = await invoke("set_settings", { settings: s });
+    const saved = await invoke("get_settings");
+    proxySaved = { proxy_mode: saved.proxy_mode, proxy_host: saved.proxy_host, proxy_port: saved.proxy_port };
+    document.getElementById("proxy_host").value = saved.proxy_host;
+    syncProxyRestart();
     if (warn) {
       note.textContent = t("Salvo com observação: {0}", [warn]);
       setTimeout(() => (note.textContent = ""), 6000);
@@ -272,6 +336,14 @@ window.addEventListener("DOMContentLoaded", () => {
   loadLock();
   wireLock();
   document.getElementById("save").addEventListener("click", save);
+  document.getElementById("proxy_mode").addEventListener("change", syncProxyRows);
+  document.getElementById("proxy_restart_btn").addEventListener("click", async () => {
+    try {
+      await invoke("restart_app");
+    } catch (e) {
+      document.getElementById("note").textContent = String(e);
+    }
+  });
   document.getElementById("add_account").addEventListener("click", addAccount);
   document.getElementById('startup_account').addEventListener('change', event => {
     const id = event.target.value;
@@ -289,6 +361,12 @@ window.addEventListener("DOMContentLoaded", () => {
   // Zoom saves on change rather than on Save: picking a size you cannot see the
   // effect of is guesswork, and the webview applies it immediately.
   document.getElementById("zoom").addEventListener("change", save);
+  // The zoom shortcuts change it from the WhatsApp window; catch up on return.
+  window.addEventListener("focus", () => {
+    invoke("get_settings").then((s) => {
+      if (Number.isFinite(s.zoom)) selectNearestZoom(s.zoom);
+    }).catch(() => {});
+  });
   // Language applies at once, like zoom.
   document.getElementById("language").addEventListener("change", async () => {
     I18n.setLang(document.getElementById("language").value);

@@ -76,7 +76,13 @@ pub fn open_account_window(app: &AppHandle, account: &Account, hidden: bool) -> 
 // Keep navigation, injection and download hooks identical across platform builders.
 macro_rules! account_webview {
     ($builder:expr, $app:ident, $label:ident) => {
-        $builder
+        // Proxy (issue #52): every account webview gets the same proxy, so no
+        // account bypasses it and WebView2 sees identical browser arguments on
+        // every webview that shares an environment.
+        (match crate::proxy::webview_url(&crate::settings::load($app)) {
+            Some(url) => $builder.proxy_url(url),
+            None => $builder,
+        })
             .user_agent(&user_agent())
             // Keep the page running while hidden or minimized: WebKit suspends an
             // inactive WKWebView, which drops WhatsApp's socket after a few
@@ -84,6 +90,10 @@ macro_rules! account_webview {
             // still clamps timers, but the page stays alive. Only macOS 14+
             // honours it; elsewhere it is ignored.
             .background_throttling(BackgroundThrottlingPolicy::Throttle)
+            // Zoom is ours (settings + bridge.js shortcuts). Keep WebView2's own
+            // Ctrl+wheel / Ctrl+plus zoom and wry's WebKitGTK hotkey script off,
+            // so the two never stack or drift apart.
+            .zoom_hotkeys_enabled(false)
             .initialization_script(crate::i18n::init_script())
             .initialization_script(if cfg!(windows) {
                 format!("window.__WHATRUST_WINDOWS__=true;window.__whatrustNotificationEpoch={};window.__whatrustLocked={};",$app.state::<crate::notify::Recent>().epoch(),!crate::lock::is_unlocked($app))
@@ -237,6 +247,7 @@ pub(crate) fn build_account_window(
     if let Some(w) = app.get_webview_window(&label) {
         return Ok(w);
     }
+    crate::proxy::check_platform(&crate::settings::load(app))?;
 
     let url = "https://web.whatsapp.com/".parse().expect("valid url");
     let icon = crate::appicon::current(app);
@@ -303,6 +314,7 @@ pub(crate) fn build_account_view(
     account: &Account,
 ) -> tauri::Result<tauri::Webview> {
     let label = accounts::window_label(&account.id);
+    crate::proxy::check_platform(&crate::settings::load(app))?;
     let builder = tauri::WebviewBuilder::new(
         &label,
         WebviewUrl::External("https://web.whatsapp.com/".parse().expect("valid url")),

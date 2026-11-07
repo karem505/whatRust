@@ -67,6 +67,7 @@ The official WhatsApp Desktop app is built on Electron, which packs an entire Ch
 - **Download feedback** — a small toast confirms each download with **Open** and **Show in folder** buttons (programs and installers are only ever shown in their folder, never run)
 - **Launch at startup** (auto-start), optional
 - **Global keyboard shortcut** to show/hide the window (default `Ctrl/Cmd+Shift+W`; record your own by pressing the keys in Settings). On **Wayland**, bind `whatrust --toggle` to a system shortcut instead — see the FAQ.
+- **Proxy** — route all account traffic through a SOCKS5 or HTTP proxy (Settings → Network; see the FAQ)
 - **Single instance** — relaunching focuses the running window; `whatrust --toggle` from a second launch shows/hides it
 - **Remembers window size and position**
 - **One-line install** on every platform
@@ -198,6 +199,15 @@ Its native shell is lighter because it doesn't bundle a Chromium browser engine 
 ### Which operating systems does whatRust support?
 Linux (WebKitGTK), Windows 10/11 (WebView2), and macOS 12.1+ (WKWebView).
 
+### Can I use a proxy (SOCKS5 or HTTP)?
+
+Yes. Open **Settings → Network**, pick **SOCKS5** or **HTTP**, enter the host and port, save, and restart whatRust (the settings page has a **Restart now** button). Every account's WhatsApp page then goes through that proxy. The default is **Off**.
+
+- Proxies that need a **username and password are not supported** — the system webview engines (WebView2, WKWebView, WebKitGTK) don't accept credentials through this route, so whatRust rejects `user:pass@` rather than half-working. Use a local relay (e.g. a SOCKS5 forwarder on `127.0.0.1`) that handles the login for you.
+- macOS needs **macOS 14 or later** for the proxy; on older versions the setting is disabled.
+- If the saved proxy is ever invalid, whatRust blocks the connection instead of silently going direct.
+- whatRust itself makes no network requests outside the WhatsApp pages (no update checks), so there is nothing else to route. Links you open go to your default browser, which uses its own proxy settings.
+
 ### Is whatRust free and open source?
 Yes — whatRust is free and open source under the MIT License. The source is on [GitHub](https://github.com/karem505/whatRust).
 
@@ -238,7 +248,8 @@ whatRust doesn't talk to WhatsApp's servers itself: it shows the official `web.w
 
 ## Limitations
 
-- **Windows unread count**: Windows tray icons ignore text labels, so the unread *number* appears only in the hover tooltip (the icon still switches to a badged variant). macOS and Linux show the count.
+- **Windows unread count**: Windows tray icons ignore text labels, so the unread *number* appears only in the hover tooltip (the icon still switches to a badged variant). macOS shows the count on the Dock icon and Linux on the tray icon.
+- **Linux launcher/dock badge**: the unread count is also sent to the launcher icon via the Unity `LauncherEntry` D-Bus API (.deb, AppImage with its `install.sh` desktop entry, and Flatpak). It shows on KDE Plasma's task manager, Dash to Dock / Ubuntu Dock, Plank and Latte; stock GNOME shows no app-icon badge without one of those extensions.
 - **Notification click** focuses the window on Windows only — elsewhere use the tray icon or the global shortcut.
 - **macOS** builds are unsigned and currently Apple Silicon (arm64) only.
 - **macOS and Windows file drops** go directly to WhatsApp through the native webview. Drag files from Finder/File Explorer onto the open conversation; use the attach (+) button if a drag source does not provide a file the webview can read.

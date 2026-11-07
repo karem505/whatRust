@@ -51,6 +51,7 @@ flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo repo
 - Autostart config: the optional “Launch at system startup” setting writes one desktop entry that re-enters the sandbox.
 - Notification and StatusNotifier D-Bus names plus the narrow `xdg-run/tray-icon` export: native notifications and system tray.
 - ScreenSaver D-Bus names: optional idle-time app locking.
+- `com.canonical.Unity` D-Bus name: lets the unread-count signal (`LauncherEntry`) through the proxy to docks that show launcher badges (KDE Plasma, Dash to Dock, Ubuntu Dock).
 
 Linux polkit biometric unlock is deliberately not exposed through the sandbox; Flatpak users retain the password lock.
 

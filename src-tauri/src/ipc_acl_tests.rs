@@ -25,6 +25,7 @@ const PAGE_COMMANDS: &[&str] = &[
     "reveal_download",
     "switcher_accounts",
     "switch_account",
+    "zoom_step",
 ];
 /// Commands only the local settings window may use.
 const SETTINGS_COMMANDS: &[&str] = &[
@@ -33,6 +34,7 @@ const SETTINGS_COMMANDS: &[&str] = &[
     "pick_download_dir",
     "choose_app_icon",
     "reset_app_icon",
+    "restart_app",
     "list_accounts",
     "add_account",
     "remove_account",

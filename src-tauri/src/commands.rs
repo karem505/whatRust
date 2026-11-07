@@ -141,6 +141,11 @@ pub struct SettingsView {
     /// `menubar::supported`). The UI disables the switch elsewhere rather
     /// than letting the user opt into a mode that would drop the session.
     pub menubar_supported: bool,
+    /// The proxy URL the running webviews were created with (`""` = none). When
+    /// it differs from the saved settings, a restart is pending.
+    pub proxy_in_use: String,
+    /// Whether the webview engine can proxy (false on macOS < 14).
+    pub proxy_supported: bool,
 }
 
 #[tauri::command]
@@ -153,6 +158,8 @@ pub fn get_settings(window: tauri::Webview, app: tauri::AppHandle) -> Result<Set
         settings: crate::settings::load(&app),
         platform: std::env::consts::OS,
         menubar_supported: crate::menubar::supported(),
+        proxy_in_use: crate::proxy::in_use(),
+        proxy_supported: crate::proxy::engine_supported(),
     })
 }
 
@@ -178,8 +185,20 @@ pub fn set_settings(
     }
     // The icon is only switched through choose_app_icon / reset_app_icon.
     settings.custom_icon = stored.custom_icon;
+    crate::proxy::validate(&mut settings)?;
     crate::settings::save(&app, &settings).map_err(|e| e.to_string())?;
     Ok(crate::settings::apply(&app, &settings))
+}
+
+/// Relaunch the app (the proxy applies when webviews are created). Local
+/// settings window only, and not while locked.
+#[tauri::command]
+pub fn restart_app(window: tauri::Webview, app: tauri::AppHandle) -> Result<(), String> {
+    if is_remote(&window) {
+        return Err("forbidden".into());
+    }
+    lock::require_unlocked(&app)?;
+    app.restart();
 }
 
 /// Ask for a download folder with the system's folder picker. Returns the
@@ -337,6 +356,31 @@ pub fn switcher_accounts(
             unread: account.unread,
         })
         .collect())
+}
+
+/// Zoom shortcuts from the WhatsApp page (Ctrl/Cmd +/-/0, Ctrl+wheel): step the
+/// shared display zoom, persist it and apply it to every account webview. The
+/// page only names the action; the new level is computed from the saved value,
+/// so a burst of requests cannot drift or leave the range.
+#[tauri::command]
+pub fn zoom_step(
+    window: tauri::Webview,
+    app: tauri::AppHandle,
+    action: String,
+) -> Result<f64, String> {
+    crate::integration::remote(&window)?;
+    lock::require_unlocked(&app)?;
+    let action = crate::settings::ZoomAction::parse(&action).ok_or("bad action")?;
+    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _g = lock::guard(&SERIAL);
+    let mut s = crate::settings::load(&app);
+    let zoom = crate::settings::step_zoom(s.zoom, action);
+    if zoom != s.zoom {
+        s.zoom = zoom;
+        crate::settings::save(&app, &s).map_err(|e| e.to_string())?;
+    }
+    crate::window::apply_zoom_all(&app, zoom);
+    Ok(zoom)
 }
 
 #[tauri::command]

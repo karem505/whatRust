@@ -26,9 +26,11 @@ fn main() {
             "reveal_download",
             "switcher_accounts",
             "switch_account",
+            "zoom_step",
             // settings window
             "get_settings",
             "set_settings",
+            "restart_app",
             "open_settings",
             "pick_download_dir",
             "choose_app_icon",

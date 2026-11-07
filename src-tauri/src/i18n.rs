@@ -202,6 +202,12 @@ static EN_TABLE: &[(&str, &str)] = &[
     ("O desbloqueio por biometria não está ativado.", "Biometric unlock is not on."),
     ("O tempo para confirmar a biometria terminou.", "Time to confirm biometrics ran out."),
     ("A redefinição precisa ser confirmada.", "The reset must be confirmed."),
+    ("Endereço do proxy inválido. Use um nome de host ou um endereço IP, sem http://, usuário ou senha.", "Invalid proxy address. Use a host name or an IP address, without http://, user name or password."),
+    ("Tipo de proxy inválido.", "Invalid proxy type."),
+    ("A porta do proxy deve estar entre 1 e 65535.", "The proxy port must be between 1 and 65535."),
+    ("Endereço do proxy inválido.", "Invalid proxy address."),
+    ("O proxy exige macOS 14 (Sonoma) ou superior. Desative o proxy nas configurações.", "The proxy needs macOS 14 (Sonoma) or later. Turn the proxy off in settings."),
+    ("O proxy exige macOS 14 (Sonoma) ou superior.", "The proxy needs macOS 14 (Sonoma) or later."),
     ("Não foi possível concluir a redefinição. Feche outras instâncias do whatRust e tente novamente.", "The reset could not be completed. Close other instances of whatRust and try again."),
     ("whatRust — Bloqueado", "whatRust — Locked"),
     // downloads / files

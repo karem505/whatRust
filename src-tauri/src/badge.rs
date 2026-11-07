@@ -1,12 +1,15 @@
 //! The unread count on the app's own icon, next to the tray's: the Dock badge
 //! on macOS (issue #54) and a numbered overlay on the taskbar button on Windows
-//! (issue #55). Linux keeps the count on the tray icon only.
+//! (issue #55). On Linux the count goes out as a Unity `LauncherEntry` D-Bus
+//! signal (see `launcher`), next to the tray's.
 
 use tauri::AppHandle;
 
 /// Show `count` on the app icon; 0 removes the badge.
 #[allow(unused_variables)]
 pub fn set(app: &AppHandle, count: u32) {
+    #[cfg(target_os = "linux")]
+    launcher::set(count);
     #[cfg(target_os = "macos")]
     {
         use tauri::Manager;
@@ -28,6 +31,158 @@ pub fn set(app: &AppHandle, count: u32) {
                     .map(|px| tauri::image::Image::new(px, SIZE, SIZE));
                 let _ = w.set_overlay_icon(icon);
             }
+        }
+    }
+}
+
+/// The Unity `com.canonical.Unity.LauncherEntry` API: a broadcast signal that
+/// KDE Plasma's task manager, Dash to Dock / Ubuntu Dock, Plank, Latte and
+/// others turn into a count on the app's launcher icon.
+#[cfg(any(target_os = "linux", test))]
+mod launcher {
+    /// Desktop file id (with `.desktop`) that the dock matches the signal to.
+    /// - Flatpak: `<FLATPAK_ID>.desktop`.
+    /// - AppImage: `whatrust.desktop`, the entry `install.sh` writes.
+    /// - Otherwise (.deb): `whatRust.desktop`, named after Tauri's productName.
+    pub(super) fn desktop_id(flatpak_id: Option<&str>, appimage: bool) -> String {
+        match (flatpak_id, appimage) {
+            (Some(id), _) => format!("{id}.desktop"),
+            (None, true) => "whatrust.desktop".to_string(),
+            (None, false) => "whatRust.desktop".to_string(),
+        }
+    }
+
+    /// Stable object path for an app uri (FNV-1a, as a decimal number).
+    pub(super) fn object_path(app_uri: &str) -> String {
+        let mut h: u64 = 0xcbf29ce484222325;
+        for b in app_uri.bytes() {
+            h ^= u64::from(b);
+            h = h.wrapping_mul(0x100000001b3);
+        }
+        format!("/com/canonical/unity/launcherentry/{h}")
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(super) use bus::set;
+
+    #[cfg(target_os = "linux")]
+    mod bus {
+        use std::collections::HashMap;
+        use std::sync::mpsc::{channel, Sender};
+        use std::sync::{Mutex, OnceLock};
+        use zbus::zvariant::Value;
+
+        static TX: OnceLock<Mutex<Sender<u32>>> = OnceLock::new();
+
+        /// Queue `count` for the worker thread; never blocks the caller.
+        pub fn set(count: u32) {
+            let tx = TX.get_or_init(|| {
+                let (tx, rx) = channel::<u32>();
+                let spawned = std::thread::Builder::new()
+                    .name("launcher-badge".into())
+                    .spawn(move || worker(rx));
+                if let Err(e) = spawned {
+                    eprintln!("launcher badge: cannot start worker: {e}");
+                }
+                Mutex::new(tx)
+            });
+            if let Ok(tx) = tx.lock() {
+                let _ = tx.send(count);
+            }
+        }
+
+        fn worker(rx: std::sync::mpsc::Receiver<u32>) {
+            let uri = format!(
+                "application://{}",
+                super::desktop_id(
+                    crate::settings::flatpak_id().as_deref(),
+                    std::env::var_os("APPIMAGE").is_some()
+                )
+            );
+            let path = super::object_path(&uri);
+            let mut conn: Option<zbus::blocking::Connection> = None;
+            let mut warned = false;
+            let mut last = None;
+            while let Ok(mut count) = rx.recv() {
+                // Only the latest count matters.
+                while let Ok(c) = rx.try_recv() {
+                    count = c;
+                }
+                if last == Some(count) {
+                    continue;
+                }
+                let result = emit(&mut conn, &path, &uri, count);
+                match result {
+                    Ok(()) => last = Some(count),
+                    Err(e) => {
+                        conn = None; // reconnect next time
+                        if !warned {
+                            warned = true;
+                            eprintln!("launcher badge: {e}");
+                        }
+                    }
+                }
+            }
+        }
+
+        fn emit(
+            conn: &mut Option<zbus::blocking::Connection>,
+            path: &str,
+            uri: &str,
+            count: u32,
+        ) -> zbus::Result<()> {
+            if conn.is_none() {
+                *conn = Some(zbus::blocking::Connection::session()?);
+            }
+            let mut props: HashMap<&str, Value> = HashMap::new();
+            props.insert("count", Value::from(i64::from(count)));
+            props.insert("count-visible", Value::from(count > 0));
+            conn.as_ref().unwrap().emit_signal(
+                None::<&str>,
+                path,
+                "com.canonical.Unity.LauncherEntry",
+                "Update",
+                &(uri, props),
+            )
+        }
+
+        #[cfg(test)]
+        mod tests {
+            /// Manual: `dbus-monitor --session "interface='com.canonical.Unity.LauncherEntry'"`
+            /// in another terminal, then `cargo test emits_on_session_bus -- --ignored`.
+            #[test]
+            #[ignore]
+            fn emits_on_session_bus() {
+                for n in [3, 12, 0] {
+                    super::set(n);
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                }
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn desktop_id_per_install_type() {
+            let id = "io.github.karem505.whatRust";
+            assert_eq!(desktop_id(Some(id), false), format!("{id}.desktop"));
+            assert_eq!(desktop_id(Some(id), true), format!("{id}.desktop"));
+            assert_eq!(desktop_id(None, true), "whatrust.desktop");
+            assert_eq!(desktop_id(None, false), "whatRust.desktop");
+        }
+
+        #[test]
+        fn object_path_is_valid_and_stable() {
+            let p = object_path("application://whatRust.desktop");
+            assert_eq!(p, object_path("application://whatRust.desktop"));
+            assert_ne!(p, object_path("application://whatrust.desktop"));
+            let tail = p
+                .strip_prefix("/com/canonical/unity/launcherentry/")
+                .unwrap();
+            assert!(!tail.is_empty() && tail.bytes().all(|b| b.is_ascii_digit()));
         }
     }
 }

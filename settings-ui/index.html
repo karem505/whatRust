@@ -10,7 +10,7 @@
   </head>
   <body>
     <header class="app-header"><div><strong>Configurações</strong><span>whatRust</span></div><button id="back-to-chat" type="button" class="secondary back-button" aria-label="Voltar ao WhatsApp" title="Voltar ao WhatsApp" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5 M12 5l-7 7 7 7"/></svg><span>Voltar ao WhatsApp</span></button></header>
-    <div class="settings-layout"><nav class="settings-nav" aria-label="Configurações"><a href="#sec-contas">Contas</a><a href="#sec-notificacoes">Notificações</a><a href="#sec-aparencia">Aparência</a><a href="#sec-seguranca">Segurança</a><a href="#sec-sistema">Inicialização</a><a href="#sec-atalhos">Atalhos</a><a href="#sec-diagnostico">Diagnóstico</a></nav>
+    <div class="settings-layout"><nav class="settings-nav" aria-label="Configurações"><a href="#sec-contas">Contas</a><a href="#sec-notificacoes">Notificações</a><a href="#sec-aparencia">Aparência</a><a href="#sec-seguranca">Segurança</a><a href="#sec-sistema">Inicialização</a><a href="#sec-rede">Rede</a><a href="#sec-atalhos">Atalhos</a><a href="#sec-diagnostico">Diagnóstico</a></nav>
     <!-- Local preferences use familiar WhatsApp rows: titled
          groups of boxed-list rows, a title + subtitle on the left and the control
          on the right. Element ids are what main.js uses; keep them stable. -->
@@ -106,6 +106,31 @@
             </div>
           </div>
         </div>
+      </section>
+
+      <section class="group" id="sec-rede">
+        <h2 class="group-title">Rede</h2>
+        <div class="boxed-list">
+          <label class="row">
+            <span class="row-text"><span class="row-title">Proxy</span>
+              <span class="row-subtitle">Encaminha todo o tráfego das contas do WhatsApp por um proxy.</span></span>
+            <select id="proxy_mode">
+              <option value="off">Desativado</option>
+              <option value="socks5">SOCKS5</option>
+              <option value="http">HTTP</option>
+            </select>
+          </label>
+          <label class="row entry-row proxy-field">
+            <span class="row-title">Servidor</span>
+            <input type="text" id="proxy_host" autocomplete="off" spellcheck="false" placeholder="127.0.0.1" />
+          </label>
+          <label class="row entry-row proxy-field">
+            <span class="row-title">Porta</span>
+            <input type="text" id="proxy_port" inputmode="numeric" autocomplete="off" placeholder="1080" />
+          </label>
+        </div>
+        <p class="group-note">Proxy com usuário e senha não é suportado: os navegadores embutidos não aceitam credenciais por esse caminho. A alteração vale após reiniciar o whatRust.</p>
+        <p id="proxy_restart" class="hotkey-hint" hidden><span>Reinicie o whatRust para aplicar o proxy.</span> <button type="button" id="proxy_restart_btn" class="secondary">Reiniciar agora</button></p>
       </section>
 
       <section class="group" id="sec-atalhos">
