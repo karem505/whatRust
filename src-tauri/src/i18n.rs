@@ -170,6 +170,17 @@ pub fn switch_script() -> String {
 
 /// English text for each Portuguese source string. Placeholders are `{0}`, `{1}`.
 static EN_TABLE: &[(&str, &str)] = &[
+    // download folder and app icon
+    ("A pasta não existe.", "The folder does not exist."),
+    ("Não é possível gravar nessa pasta.", "That folder is not writable."),
+    ("Pasta de downloads", "Download folder"),
+    ("Ícone do aplicativo", "App icon"),
+    ("A imagem tem mais de 5 MB.", "The image is larger than 5 MB."),
+    ("O arquivo não é uma imagem PNG.", "The file is not a PNG image."),
+    ("A imagem precisa ser quadrada.", "The image must be square."),
+    ("A imagem é grande demais (máximo {0} px).", "The image is too large (maximum {0} px)."),
+    ("A imagem é pequena demais (mínimo {0} px).", "The image is too small (minimum {0} px)."),
+    ("Não foi possível ler a imagem PNG.", "The PNG image could not be read."),
     // accounts
     ("Não é possível remover a última conta.", "The last account cannot be removed."),
     ("Conta não encontrada: {0}", "Account not found: {0}"),

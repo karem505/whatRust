@@ -1,4 +1,5 @@
 mod accounts;
+mod appicon;
 mod applock;
 mod aumid;
 mod badge;
@@ -134,6 +135,13 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_notification::init());
     }
 
+    // File/folder pickers for Settings. Only Rust calls them (commands::pick_*);
+    // no capability grants the plugin's own commands to any page.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_dialog::init());
+    }
+
     #[cfg(desktop)]
     {
         builder = builder
@@ -209,6 +217,9 @@ pub fn run() {
             commands::get_settings,
             commands::set_settings,
             commands::open_settings,
+            commands::pick_download_dir,
+            commands::choose_app_icon,
+            commands::reset_app_icon,
             commands::list_accounts,
             commands::add_account,
             commands::remove_account,

@@ -108,9 +108,125 @@ pub fn toast_js(done: Option<(u64, &Path)>) -> String {
     format!("window.__whatrustDownloadDone&&window.__whatrustDownloadDone({payload});")
 }
 
+/// Check a folder offered as the download destination: it must exist, be a
+/// directory and accept a new file. The probe file is removed again.
+pub fn validate_dir(dir: &Path) -> Result<(), String> {
+    use crate::i18n::tr;
+    if !dir.is_dir() {
+        return Err(tr("A pasta não existe.").into_owned());
+    }
+    let probe = dir.join(format!(".whatrust-write-test-{}", std::process::id()));
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&probe)
+    {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&probe);
+            Ok(())
+        }
+        Err(_) => Err(tr("Não é possível gravar nessa pasta.").into_owned()),
+    }
+}
+
+/// The configured download folder if it is still usable. If it has vanished or
+/// stopped being writable the caller falls back to the default Downloads
+/// folder; that is logged (no path: dlog keeps personal data out).
+pub fn configured_dir(configured: Option<&str>) -> Option<PathBuf> {
+    let dir = PathBuf::from(configured?);
+    match validate_dir(&dir) {
+        Ok(()) => Some(dir),
+        Err(_) => {
+            crate::dlog::log(
+                "download: custom folder unusable, using the default Downloads folder",
+            );
+            None
+        }
+    }
+}
+
+/// Move a destination chosen by the engine (which names files against the
+/// default folder) into `dir`, keeping the file name and the engine's
+/// `name (1).ext` scheme so nothing already there is overwritten.
+#[cfg(any(not(windows), test))]
+pub fn place_in(dir: &Path, destination: &mut PathBuf) {
+    let full = destination
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "download".into());
+    let (base, ext) = full
+        .split_once('.')
+        .map(|(b, e)| (b.to_string(), format!(".{e}")))
+        .unwrap_or((full.clone(), String::new()));
+    let mut candidate = dir.join(&full);
+    let mut counter = 1;
+    while candidate.exists() {
+        candidate = dir.join(format!("{base} ({counter}){ext}"));
+        counter += 1;
+    }
+    *destination = candidate;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn scratch(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("whatrust-dl-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn validate_dir_accepts_a_writable_folder_and_leaves_nothing_behind() {
+        let d = scratch("ok");
+        assert!(validate_dir(&d).is_ok());
+        assert_eq!(std::fs::read_dir(&d).unwrap().count(), 0);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn validate_dir_rejects_missing_and_file_paths() {
+        let d = scratch("bad");
+        assert!(validate_dir(&d.join("nope")).is_err());
+        let f = d.join("file.txt");
+        std::fs::write(&f, b"x").unwrap();
+        assert!(validate_dir(&f).is_err());
+        assert_eq!(configured_dir(Some(f.to_str().unwrap())), None);
+        assert_eq!(configured_dir(None), None);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn validate_dir_rejects_a_read_only_folder() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = scratch("ro");
+        std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o555)).unwrap();
+        // root ignores permission bits; only assert when they are enforced.
+        if std::fs::write(d.join("t"), b"").is_err() {
+            assert!(validate_dir(&d).is_err());
+        }
+        std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn place_in_keeps_the_name_and_never_overwrites() {
+        let d = scratch("place");
+        let mut dest = PathBuf::from("/home/u/Downloads/report.final.pdf");
+        place_in(&d, &mut dest);
+        assert_eq!(dest, d.join("report.final.pdf"));
+        std::fs::write(&dest, b"1").unwrap();
+        let mut again = PathBuf::from("/home/u/Downloads/report.final.pdf");
+        place_in(&d, &mut again);
+        assert_eq!(again, d.join("report (1).final.pdf"));
+        let mut bare = PathBuf::from("/x/notes");
+        place_in(&d, &mut bare);
+        assert_eq!(bare, d.join("notes"));
+        std::fs::remove_dir_all(&d).unwrap();
+    }
 
     #[test]
     fn finished_downloads_are_found_by_id_and_nothing_else() {

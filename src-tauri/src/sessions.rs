@@ -104,9 +104,7 @@ pub fn initialize(app: &AppHandle, hidden: bool) -> tauri::Result<Window> {
         .background_color(tauri::utils::config::Color(22, 23, 23, 255))
         .inner_size(1100., 800.)
         .min_inner_size(560., 480.)
-        .icon(tauri::image::Image::from_bytes(include_bytes!(
-            "../icons/128x128.png"
-        ))?)?
+        .icon(crate::appicon::current(app))?
         .visible(!hidden)
         .build()?;
     install_menu(app, &w)?;
@@ -464,6 +462,8 @@ pub fn detach(app: &AppHandle, id: &str) -> Result<(), String> {
         .background_color(tauri::utils::config::Color(22, 23, 23, 255))
         .inner_size(1000., 760.)
         .min_inner_size(560., 480.)
+        .icon(crate::appicon::current(app))
+        .map_err(|e| e.to_string())?
         .visible(false)
         .build()
         .map_err(|e| e.to_string())?;

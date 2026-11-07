@@ -34,6 +34,12 @@ pub struct Settings {
     /// Interface language: `en` or `pt-BR`. Defaults to the OS language
     /// (Portuguese for a Portuguese system, English otherwise).
     pub language: String,
+    /// Folder downloads are saved to (issue #40). `None` keeps the OS Downloads
+    /// folder. Checked when saved and again before each download; a folder that
+    /// has gone away or is no longer writable falls back to Downloads.
+    pub download_dir: Option<String>,
+    /// Use the PNG copied into the config dir as the app icon (issue #54).
+    pub custom_icon: bool,
 }
 
 impl Default for Settings {
@@ -55,6 +61,8 @@ impl Default for Settings {
             zoom: 1.0,
             menu_bar_icon: true,
             language: crate::i18n::system_default().to_string(),
+            download_dir: None,
+            custom_icon: false,
         }
     }
 }
@@ -123,6 +131,7 @@ impl Settings {
     pub fn sanitized(mut self) -> Self {
         self.zoom = sanitize_zoom(self.zoom);
         self.language = crate::i18n::sanitize_code(&self.language);
+        self.download_dir = self.download_dir.filter(|d| !d.trim().is_empty());
         // Menu-bar-only mode needs WKWebView's inactive-scheduling policy
         // (macOS 14+). Dropping the flag here means a settings file or an
         // older build can never leave the app in a mode it cannot sustain.
@@ -229,6 +238,7 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
         crate::i18n::refresh(app);
     }
     crate::window::apply_zoom_all(app, s.zoom);
+    crate::appicon::apply(app, s.custom_icon, false);
 
     // Menu-bar mode is only available where a hidden WKWebView keeps running
     // (macOS 14+); elsewhere the setting is ignored rather than dropping every
@@ -359,6 +369,18 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     use super::{flatpak_autostart_entry, is_valid_flatpak_id};
+
+    #[test]
+    fn old_settings_keep_default_download_folder_and_icon() {
+        let s: Settings = serde_json::from_str(r#"{"notifications":false}"#).unwrap();
+        assert_eq!(s.download_dir, None);
+        assert!(!s.custom_icon);
+        let blank = Settings {
+            download_dir: Some("  ".into()),
+            ..Settings::default()
+        };
+        assert_eq!(blank.sanitized().download_dir, None);
+    }
 
     #[test]
     fn old_settings_enable_new_notification_preferences() {

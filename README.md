@@ -57,6 +57,8 @@ The official WhatsApp Desktop app is built on Electron, which packs an entire Ch
 - **System tray** icon with **close-to-tray** and an **unread message badge**
 - **Native OS notifications** for new messages
 - **Display size** — a Smaller / Small / Default / Big page zoom in Settings, so the chat list stops crowding out the conversation on a high-DPI screen
+- **Custom download folder** — pick where downloads are saved in Settings → Appearance, or reset to the system Downloads folder. A folder that disappears or stops being writable falls back to Downloads. On Windows the Save As dialog opens in that folder. In the Flatpak the folder is chosen through the desktop portal (needs `xdg-desktop-portal`)
+- **Custom app icon** — choose a square PNG (32–1024 px, up to 5 MB) as the app icon in Settings → Appearance: Dock icon on macOS (the unread badge still shows on top), window and taskbar icons on Windows, window icon on Linux X11 (Wayland compositors use the `.desktop` icon, so it does not change there). The tray / menu-bar icon stays as is, and the icon is app-wide, not per account
 - **Persistent login** — scan the QR code once, stay signed in across restarts
 - **Voice messages** everywhere, plus **voice & video calls** on macOS (WhatsApp Web doesn't offer calls on Windows, and whatRust's Linux builds can't place calls — see the FAQ)
 - **Drag and drop files and images** — drop a photo, video, or document straight onto a chat to attach it

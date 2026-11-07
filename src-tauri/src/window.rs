@@ -60,7 +60,6 @@ fn safari_ua(macos_major: u64) -> String {
 }
 
 const BRIDGE_JS: &str = include_str!("../resources/bridge.js");
-const APP_ICON: &[u8] = include_bytes!("../icons/128x128.png");
 
 /// Platform routing keeps the existing non-Windows account-window flow.
 pub fn open_account_window(app: &AppHandle, account: &Account, hidden: bool) -> tauri::Result<()> {
@@ -129,6 +128,11 @@ macro_rules! account_webview {
                 let downloads = app.state::<crate::downloads::Downloads>();
                 match event {
                     tauri::webview::DownloadEvent::Requested { url, destination } => {
+                        // A custom folder (issue #40), if it is still usable; otherwise
+                        // the OS Downloads folder, as before.
+                        let custom_dir = crate::downloads::configured_dir(
+                            crate::settings::load(app).download_dir.as_deref(),
+                        );
                         #[cfg(windows)]
                         {
                             let suggested = destination
@@ -137,6 +141,7 @@ macro_rules! account_webview {
                                 .unwrap_or("download");
                             let Some(path) = choose_download_destination(
                                 suggested,
+                                custom_dir.as_deref(),
                                 webview.window().hwnd().ok(),
                             ) else {
                                 crate::dlog::log("download: save dialog cancelled");
@@ -145,7 +150,12 @@ macro_rules! account_webview {
                             *destination = path;
                         }
                         #[cfg(not(windows))]
-                        ensure_download_destination(destination, app.path().download_dir().ok());
+                        {
+                            ensure_download_destination(destination, app.path().download_dir().ok());
+                            if let Some(dir) = &custom_dir {
+                                crate::downloads::place_in(dir, destination);
+                            }
+                        }
                         downloads.requested(url.as_str(), destination);
                         // Log routing only — never the file name (matches dlog's no-PII rule).
                         crate::dlog::log(&format!(
@@ -229,7 +239,7 @@ pub(crate) fn build_account_window(
     }
 
     let url = "https://web.whatsapp.com/".parse().expect("valid url");
-    let icon = tauri::image::Image::from_bytes(APP_ICON)?;
+    let icon = crate::appicon::current(app);
 
     let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
         .title(format!("whatRust — {}", account.name))
@@ -322,6 +332,7 @@ pub(crate) fn build_account_view(
 #[cfg(windows)]
 fn choose_download_destination(
     suggested_name: &str,
+    initial_dir: Option<&std::path::Path>,
     owner: Option<windows::Win32::Foundation::HWND>,
 ) -> Option<std::path::PathBuf> {
     use std::os::windows::ffi::OsStringExt;
@@ -337,6 +348,14 @@ fn choose_download_destination(
     }
     let filter: Vec<u16> = "Todos os arquivos\0*.*\0\0".encode_utf16().collect();
     let title: Vec<u16> = "Salvar arquivo\0".encode_utf16().collect();
+    // The dialog opens in the configured download folder (issue #40); without
+    // one, Windows picks its usual last-used folder.
+    let initial: Vec<u16> = {
+        use std::os::windows::ffi::OsStrExt;
+        initial_dir
+            .map(|d| d.as_os_str().encode_wide().chain(Some(0)).collect())
+            .unwrap_or_default()
+    };
     let mut dialog = OPENFILENAMEW {
         lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
         hwndOwner: owner.unwrap_or_default(),
@@ -344,6 +363,11 @@ fn choose_download_destination(
         lpstrFile: PWSTR(buffer.as_mut_ptr()),
         nMaxFile: buffer.len() as u32,
         lpstrTitle: PCWSTR(title.as_ptr()),
+        lpstrInitialDir: if initial.is_empty() {
+            PCWSTR::null()
+        } else {
+            PCWSTR(initial.as_ptr())
+        },
         Flags: OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR,
         ..Default::default()
     };
