@@ -10,6 +10,8 @@ pub struct Settings {
     pub hotkey_enabled: bool,
     pub hotkey: String,
     /// Global shortcut that toggles the privacy blur in every account window.
+    /// Off by default: a new global shortcut must not grab a key combination
+    /// (Ctrl+Shift+B is the browsers' bookmarks bar) from users who never asked.
     pub blur_hotkey_enabled: bool,
     pub blur_hotkey: String,
     pub notifications: bool,
@@ -42,7 +44,7 @@ impl Default for Settings {
             autostart: false,
             hotkey_enabled: true,
             hotkey: "CmdOrCtrl+Shift+W".to_string(),
-            blur_hotkey_enabled: true,
+            blur_hotkey_enabled: false,
             blur_hotkey: "CmdOrCtrl+Shift+B".to_string(),
             notifications: true,
             notify_when_focused: true,
@@ -55,6 +57,30 @@ impl Default for Settings {
             language: crate::i18n::system_default().to_string(),
         }
     }
+}
+
+/// Do two accelerator strings name the same key combination? Compared after
+/// parsing, so "CmdOrCtrl+Shift+B" and "Shift+CmdOrCtrl+B" match. Unparseable
+/// strings never match (registration reports those separately).
+#[cfg(desktop)]
+pub fn same_shortcut(a: &str, b: &str) -> bool {
+    use tauri_plugin_global_shortcut::Shortcut;
+    match (a.trim().parse::<Shortcut>(), b.trim().parse::<Shortcut>()) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => false,
+    }
+}
+
+/// Is `pressed` the privacy-blur shortcut (enabled, valid, and distinct from
+/// the show/hide shortcut, which always wins a tie)?
+#[cfg(desktop)]
+pub fn is_blur_shortcut(s: &Settings, pressed: &tauri_plugin_global_shortcut::Shortcut) -> bool {
+    s.blur_hotkey_enabled
+        && !same_shortcut(&s.blur_hotkey, &s.hotkey)
+        && s.blur_hotkey
+            .trim()
+            .parse::<tauri_plugin_global_shortcut::Shortcut>()
+            .is_ok_and(|b| &b == pressed)
 }
 
 pub fn start_hidden(preference: bool, args: &[String]) -> bool {
@@ -302,7 +328,12 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
             }
         }
         if s.blur_hotkey_enabled && !s.blur_hotkey.trim().is_empty() {
-            if let Err(e) = gs.register(s.blur_hotkey.as_str()) {
+            if same_shortcut(&s.blur_hotkey, &s.hotkey) {
+                warnings.push(trf(
+                    "O atalho para desfocar não pode ser igual ao atalho de mostrar/ocultar: {0}",
+                    &[&s.blur_hotkey],
+                ));
+            } else if let Err(e) = gs.register(s.blur_hotkey.as_str()) {
                 warnings.push(trf(
                     "Não foi possível registrar o atalho (ele pode estar em uso): {0}",
                     &[&e],
@@ -454,5 +485,48 @@ mod tests {
             true,
             &["--autostart".into(), "--show".into()]
         ));
+    }
+}
+
+#[cfg(all(test, desktop))]
+mod blur_shortcut_tests {
+    use super::{is_blur_shortcut, same_shortcut, Settings};
+    use tauri_plugin_global_shortcut::Shortcut;
+
+    #[test]
+    fn blur_shortcut_is_off_by_default() {
+        let s = Settings::default();
+        assert!(!s.blur_hotkey_enabled);
+        let b: Shortcut = s.blur_hotkey.parse().unwrap();
+        assert!(!is_blur_shortcut(&s, &b));
+    }
+
+    #[test]
+    fn enabled_blur_shortcut_matches_only_itself() {
+        let s = Settings {
+            blur_hotkey_enabled: true,
+            ..Settings::default()
+        };
+        let blur: Shortcut = "CmdOrCtrl+Shift+B".parse().unwrap();
+        let toggle: Shortcut = s.hotkey.parse().unwrap();
+        assert!(is_blur_shortcut(&s, &blur));
+        assert!(!is_blur_shortcut(&s, &toggle));
+    }
+
+    #[test]
+    fn show_hide_shortcut_wins_a_tie() {
+        let s = Settings {
+            blur_hotkey_enabled: true,
+            blur_hotkey: "Shift+CmdOrCtrl+W".into(),
+            ..Settings::default()
+        };
+        assert!(same_shortcut(&s.blur_hotkey, &s.hotkey));
+        let pressed: Shortcut = s.hotkey.parse().unwrap();
+        assert!(!is_blur_shortcut(&s, &pressed));
+    }
+
+    #[test]
+    fn unparseable_shortcuts_never_match() {
+        assert!(!same_shortcut("not a key", "not a key"));
     }
 }

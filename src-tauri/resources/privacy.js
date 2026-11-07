@@ -3,19 +3,22 @@
   if (window.location.origin !== "https://web.whatsapp.com") return;
   if (window.__whatrustPrivacy) return;
   var KEY = "whatrust.privacy.v2", STYLE_ID = "__whatrust_privacy_style";
+  // Interface language, injected by Rust (window.__WR_LANG) before page load.
+  function L(pt, en) { return window.__WR_LANG === "en" ? en : pt; }
 
   // Selectors are best-effort against WhatsApp Web's current DOM; adjust here.
   var GROUPS = [
-    { id: "chat", label: "All messages in chat", amt: true, sel: ["#main [data-id]"] },
-    { id: "preview", label: "Last messages preview", amt: true, sel: ["#pane-side [data-testid='cell-frame-secondary']", "#pane-side [role='listitem'] div[role='gridcell']:nth-child(2) > div:nth-child(2)"] },
-    { id: "media", label: "Media preview", amt: true, sel: ["#main [data-id] img", "#main [data-id] video", "#main [data-id] canvas"] },
-    { id: "gallery", label: "Media gallery", amt: true, sel: ["[data-animate-media-viewer] img", "[data-animate-media-viewer] video", "[role='dialog'] img", "[role='dialog'] video"] },
-    { id: "input", label: "Text input", amt: false, sel: ["#main footer [contenteditable]"] },
-    { id: "avatars", label: "Profile pictures", amt: true, sel: ["#pane-side img", "#main header img", "#side header img"] },
-    { id: "names", label: "Group/Users names", amt: true, sel: ["#pane-side [data-testid='cell-frame-title']", "#main header span[dir='auto']", "#main [data-id] [data-testid='author']"] }
+    { id: "chat", label: function () { return L("Todas as mensagens da conversa", "All messages in chat"); }, amt: true, sel: ["#main [data-id]"] },
+    { id: "preview", label: function () { return L("Prévia das últimas mensagens", "Last message previews"); }, amt: true, sel: ["#pane-side [data-testid='cell-frame-secondary']", "#pane-side [role='listitem'] div[role='gridcell']:nth-child(2) > div:nth-child(2)"] },
+    { id: "media", label: function () { return L("Prévia de mídia", "Media previews"); }, amt: true, sel: ["#main [data-id] img", "#main [data-id] video", "#main [data-id] canvas"] },
+    { id: "gallery", label: function () { return L("Galeria de mídia", "Media gallery"); }, amt: true, sel: ["[data-animate-media-viewer] img", "[data-animate-media-viewer] video", "[role='dialog'] img", "[role='dialog'] video"] },
+    { id: "input", label: function () { return L("Campo de texto", "Text input"); }, amt: false, sel: ["#main footer [contenteditable]"] },
+    { id: "avatars", label: function () { return L("Fotos de perfil", "Profile pictures"); }, amt: true, sel: ["#pane-side img", "#main header img", "#side header img"] },
+    { id: "names", label: function () { return L("Nomes de grupos e contatos", "Group and contact names"); }, amt: true, sel: ["#pane-side [data-testid='cell-frame-title']", "#main header span[dir='auto']", "#main [data-id] [data-testid='author']"] }
   ];
   var DEFAULTS = {
-    on: true, noTransition: false, unblurHover: false,
+    // Off until the user turns it on: an update must never blur anyone's chats.
+    on: false, noTransition: false, unblurHover: false,
     idle: { on: false, amt: 12, secs: 60 },
     g: {
       chat: { on: false, amt: 8 }, preview: { on: true, amt: 8 }, media: { on: true, amt: 12 },
@@ -23,7 +26,7 @@
       avatars: { on: false, amt: 8 }, names: { on: false, amt: 8 }
     }
   };
-  var cfg = load(), idleTimer = 0, styleEl, panel, panelRoot, fab;
+  var cfg = load(), idleTimer = 0, styleEl, panel, panelRoot, syncs = [];
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   function merge(base, over) {
@@ -80,8 +83,7 @@
   // ---- Panel UI (Shadow DOM so WhatsApp's CSS cannot touch it) ----
   var PANEL_CSS =
     ":host{all:initial;font:400 13px/1.4 ui-rounded,\"SF Pro Rounded\",-apple-system,BlinkMacSystemFont,\"SF Pro Text\",sans-serif;-webkit-font-smoothing:antialiased;letter-spacing:.005em;color:#e9edefd9}" +
-    ".fab{position:fixed;right:10px;bottom:10px;z-index:2147483646;width:34px;height:34px;border-radius:50%;border:1px solid #21c063;background:#232626;color:#21c063;cursor:pointer;font-size:16px;opacity:.55}.fab:hover{opacity:1}" +
-    ".panel{position:fixed;right:10px;bottom:54px;z-index:2147483647;width:300px;max-height:calc(100vh - 80px);overflow:auto;background:#232626;border:1px solid #8883;border-radius:10px;box-shadow:0 4px 20px #0008;padding:6px 0}.panel[hidden]{display:none}" +
+    ".panel{position:fixed;right:10px;bottom:10px;z-index:2147483647;width:300px;max-height:calc(100vh - 80px);overflow:auto;background:#232626;border:1px solid #8883;border-radius:10px;box-shadow:0 4px 20px #0008;padding:6px 0}.panel[hidden]{display:none}" +
     "h2{font-size:11px;margin:8px 14px 2px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;opacity:.6}" +
     ".row{display:flex;align-items:center;gap:8px;padding:8px 14px;border-top:1px solid #8881}.row span.l{flex:1}" +
     ".gear{width:24px;height:24px;border-radius:50%;border:1px solid #21c063;background:transparent;color:#21c063;cursor:pointer;font-size:13px;line-height:1}" +
@@ -97,6 +99,7 @@
   function sw(get, set) {
     var b = el("button", { "class": "sw", role: "switch", type: "button" });
     function sync() { b.setAttribute("aria-checked", String(!!get())); }
+    syncs.push(sync);
     b.addEventListener("click", function () { set(!get()); sync(); apply(); });
     sync(); return b;
   }
@@ -110,7 +113,7 @@
     var kids = [el("span", { "class": "l", text: label })];
     var d = detail && el("div", { "class": "amt", hidden: "" }, detail);
     if (withGear) {
-      var g = el("button", { "class": "gear", type: "button", title: "Blur amount", "aria-label": "Blur amount for " + label, text: "⚙" });
+      var g = el("button", { "class": "gear", type: "button", title: L("Intensidade do desfoque", "Blur amount"), "aria-label": L("Intensidade do desfoque: ", "Blur amount: ") + label, text: "⚙" });
       g.addEventListener("click", function () { d.hidden = !d.hidden; }); kids.push(g);
     }
     kids.push(toggle);
@@ -119,28 +122,32 @@
   }
   function build() {
     panelRoot = el("div"); var root = panelRoot.attachShadow({ mode: "open" });
-    panel = el("div", { "class": "panel", hidden: "", role: "dialog", "aria-label": "Privacy settings" });
+    panel = el("div", { "class": "panel", hidden: "", role: "dialog", "aria-label": L("Desfoque de privacidade", "Privacy blur") });
     function add(parts) { parts.forEach(function (p) { panel.appendChild(p); }); }
-    add(row("Toggle", sw(function () { return cfg.on; }, function (v) { cfg.on = v; })));
-    panel.appendChild(el("h2", { text: "Settings" }));
+    add(row(L("Desfoque de privacidade", "Privacy blur"), sw(function () { return cfg.on; }, function (v) { cfg.on = v; })));
+    panel.appendChild(el("h2", { text: L("O que desfocar", "What to blur") }));
     GROUPS.forEach(function (g) {
       var c = cfg.g[g.id];
-      add(row(g.label, sw(function () { return c.on; }, function (v) { c.on = v; }), g.amt,
-        g.amt ? [el("span", { text: "Blur" })].concat(slider(c, "amt", 1, 30, "px")) : null));
+      add(row(g.label(), sw(function () { return c.on; }, function (v) { c.on = v; }), g.amt,
+        g.amt ? [el("span", { text: L("Desfoque", "Blur") })].concat(slider(c, "amt", 1, 30, "px")) : null));
     });
-    add(row("No transition delay", sw(function () { return cfg.noTransition; }, function (v) { cfg.noTransition = v; })));
-    add(row("Unblur all on app hover", sw(function () { return cfg.unblurHover; }, function (v) { cfg.unblurHover = v; })));
-    add(row("Blur WhatsApp on idle", sw(function () { return cfg.idle.on; }, function (v) { cfg.idle.on = v; }), true,
-      [el("span", { text: "Blur" })].concat(slider(cfg.idle, "amt", 1, 30, "px")).concat([el("span", { text: "after" })]).concat(slider(cfg.idle, "secs", 5, 600, "s"))));
-    fab = el("button", { "class": "fab", type: "button", title: "Privacy settings (Cmd/Ctrl+Shift+P)", "aria-label": "Privacy settings", text: "◉" });
-    fab.addEventListener("click", togglePanel);
-    root.append(el("style", { text: PANEL_CSS }), fab, panel);
+    add(row(L("Sem animação", "No transition delay"), sw(function () { return cfg.noTransition; }, function (v) { cfg.noTransition = v; })));
+    add(row(L("Mostrar tudo com o mouse sobre a janela", "Unblur all on app hover"), sw(function () { return cfg.unblurHover; }, function (v) { cfg.unblurHover = v; })));
+    add(row(L("Desfocar tudo quando ocioso", "Blur everything when idle"), sw(function () { return cfg.idle.on; }, function (v) { cfg.idle.on = v; }), true,
+      [el("span", { text: L("Desfoque", "Blur") })].concat(slider(cfg.idle, "amt", 1, 30, "px")).concat([el("span", { text: L("após", "after") })]).concat(slider(cfg.idle, "secs", 5, 600, "s"))));
+    // No permanent floating button: it covered WhatsApp's send button. The
+    // panel opens with Cmd/Ctrl+Shift+P (see Settings -> Shortcuts).
+    root.append(el("style", { text: PANEL_CSS }), panel);
     document.documentElement.appendChild(panelRoot);
   }
   function togglePanel() { if (!panel) build(); panel.hidden = !panel.hidden; }
 
-  window.__whatrustPrivacy = { toggle: function () { cfg.on = !cfg.on; apply(); }, panel: togglePanel };
+  window.__whatrustPrivacy = {
+    toggle: function () { cfg.on = !cfg.on; apply(); syncs.forEach(function (f) { f(); }); },
+    panel: togglePanel
+  };
   window.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && panel && !panel.hidden) { panel.hidden = true; return; }
     if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || e.altKey) return;
     if (e.code === "KeyP") { e.preventDefault(); e.stopPropagation(); togglePanel(); }
   }, true);

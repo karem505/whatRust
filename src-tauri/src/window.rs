@@ -1482,12 +1482,6 @@ pub fn toggle_decision(active_visible: Option<bool>) -> ToggleAct {
     }
 }
 
-/// Toggle the active account window: hide it if visible, otherwise show + focus it.
-/// The "show" path goes through `show_active`, which defers to the lock screen when
-/// the app is locked — so a toggle (e.g. an OS-bound `whatrust --toggle` on Wayland,
-/// where in-process global hotkeys can't fire) can NEVER reveal an account window
-/// while locked. The "hide" path only triggers when an account window is visible,
-/// which cannot happen while locked.
 /// Flip the privacy blur in every account webview (not settings/lock).
 pub fn toggle_privacy_blur(app: &AppHandle) {
     for (label, view) in app.webviews() {
@@ -1497,6 +1491,12 @@ pub fn toggle_privacy_blur(app: &AppHandle) {
     }
 }
 
+/// Toggle the active account window: hide it if visible, otherwise show + focus it.
+/// The "show" path goes through `show_active`, which defers to the lock screen when
+/// the app is locked — so a toggle (e.g. an OS-bound `whatrust --toggle` on Wayland,
+/// where in-process global hotkeys can't fire) can NEVER reveal an account window
+/// while locked. The "hide" path only triggers when an account window is visible,
+/// which cannot happen while locked.
 pub fn toggle_active(app: &AppHandle) {
     #[cfg(windows)]
     {

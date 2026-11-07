@@ -148,10 +148,7 @@ pub fn run() {
                         // this won't fire — use `whatrust --toggle` via an OS shortcut.
                         if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
                             let s = settings::load(app);
-                            let is_blur = s.blur_hotkey_enabled
-                                && s.blur_hotkey
-                                    .parse::<tauri_plugin_global_shortcut::Shortcut>()
-                                    .map_or(false, |b| &b == shortcut);
+                            let is_blur = settings::is_blur_shortcut(&s, shortcut);
                             if is_blur {
                                 window::toggle_privacy_blur(app);
                             } else {
