@@ -605,15 +605,20 @@ fn enqueue_drop(
     }
 }
 
+/// Per-account windows. Listen on the WEBVIEW, not the window: with tauri's
+/// `unstable` feature (needed for child webviews) a WebviewWindow's webview is
+/// created as a window child, so wry reports drops as `WebviewEvent::DragDrop`
+/// and `WindowEvent::DragDrop` never fires. Listening on the window is what
+/// silently broke Linux drag-and-drop in 0.6.9 and 0.6.10.
 fn register_drop_handler(win: &WebviewWindow) {
     let drop_tx = spawn_drop_worker(win.as_ref().clone());
-    let win = win.clone();
-    win.clone().on_window_event(move |event| {
-        let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, position }) = event
+    let app = win.app_handle().clone();
+    win.on_webview_event(move |event| {
+        let tauri::WebviewEvent::DragDrop(tauri::DragDropEvent::Drop { paths, position }) = event
         else {
             return;
         };
-        enqueue_drop(win.app_handle(), &drop_tx, paths, position);
+        enqueue_drop(&app, &drop_tx, paths, position);
     });
 }
 
