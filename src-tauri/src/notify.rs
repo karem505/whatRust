@@ -343,6 +343,7 @@ pub fn from_event(
             identity: identity.into(),
             native: source == Source::WebView2,
         }),
+        false,
     );
     #[cfg(not(windows))]
     {
@@ -440,12 +441,25 @@ pub fn visual_signal(
 pub fn show(app: &AppHandle, title: &str, body: &str) {
     show_with_icon(app, title, body, None);
 }
+
+/// A notice about an app update. On Windows, clicking the toast opens
+/// Settings → Updates; the other platforms' notification plugin has no click
+/// callback, so there the tray item "Update to X" leads to the same page.
+pub fn show_update(app: &AppHandle, title: &str, body: &str) {
+    if !crate::lock::is_unlocked(app) {
+        return;
+    }
+    #[cfg(windows)]
+    windows_toast(app, title, body, None, None, None, true);
+    #[cfg(not(windows))]
+    show(app, title, body);
+}
 pub fn show_for_account(app: &AppHandle, label: &str, title: &str, body: &str) {
     if !crate::lock::is_unlocked(app) {
         return;
     }
     #[cfg(windows)]
-    windows_toast(app, title, body, None, Some(label.into()), None);
+    windows_toast(app, title, body, None, Some(label.into()), None, false);
     #[cfg(not(windows))]
     {
         let _ = label;
@@ -457,7 +471,15 @@ pub fn show_with_icon(app: &AppHandle, title: &str, body: &str, icon: Option<&Pa
         return;
     }
     #[cfg(windows)]
-    windows_toast(app, title, body, icon.map(Path::to_path_buf), None, None);
+    windows_toast(
+        app,
+        title,
+        body,
+        icon.map(Path::to_path_buf),
+        None,
+        None,
+        false,
+    );
     #[cfg(not(windows))]
     {
         use tauri_plugin_notification::NotificationExt;
@@ -558,6 +580,7 @@ fn windows_toast(
     icon: Option<std::path::PathBuf>,
     account: Option<String>,
     delivery: Option<Delivery>,
+    open_updates: bool,
 ) {
     use windows::{
         core::{IInspectable, HSTRING},
@@ -620,7 +643,9 @@ fn windows_toast(
                             crate::window::native_report(&click, &d.identity, "clicked");
                         }
                     }
-                    if let Some(label) = &account {
+                    if open_updates {
+                        crate::update_service::open_updates(&click);
+                    } else if let Some(label) = &account {
                         crate::window::show_account(&click, label);
                     } else {
                         crate::window::show_main(&click);

@@ -214,6 +214,65 @@ pub fn restart_app(window: tauri::Webview, app: tauri::AppHandle) -> Result<(), 
     app.restart();
 }
 
+/// Everything Settings → Updates shows. Local settings window only, and not while locked.
+#[tauri::command]
+pub fn get_update_status(
+    window: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<serde_json::Value, String> {
+    if is_remote(&window) {
+        return Err("forbidden".into());
+    }
+    lock::require_unlocked(&app)?;
+    Ok(crate::update_service::status_json(&app))
+}
+
+/// "Check now": answers at once, the result arrives as a status event.
+#[tauri::command]
+pub fn check_for_updates(window: tauri::Webview, app: tauri::AppHandle) -> Result<(), String> {
+    if is_remote(&window) {
+        return Err("forbidden".into());
+    }
+    lock::require_unlocked(&app)?;
+    crate::update_service::check_now(&app);
+    Ok(())
+}
+
+/// "Download and install" / "Restart and install".
+#[tauri::command]
+pub fn install_update(window: tauri::Webview, app: tauri::AppHandle) -> Result<(), String> {
+    if is_remote(&window) {
+        return Err("forbidden".into());
+    }
+    lock::require_unlocked(&app)?;
+    crate::update_service::install_now(&app);
+    Ok(())
+}
+
+/// "Restart now" after an update replaced the app in place.
+#[tauri::command]
+pub fn restart_to_update(window: tauri::Webview, app: tauri::AppHandle) -> Result<(), String> {
+    if is_remote(&window) {
+        return Err("forbidden".into());
+    }
+    lock::require_unlocked(&app)?;
+    crate::update_service::restart(&app)
+}
+
+/// Open the release page of the newest version in the browser (the address
+/// is never taken from the page).
+#[tauri::command]
+pub fn open_release_page(window: tauri::Webview, app: tauri::AppHandle) -> Result<(), String> {
+    if is_remote(&window) {
+        return Err("forbidden".into());
+    }
+    lock::require_unlocked(&app)?;
+    if let Some(url) = crate::update_service::release_page_url(&app) {
+        crate::opener::open_url(&app, url);
+    }
+    Ok(())
+}
+
 /// Ask for a download folder with the system's folder picker. Returns the
 /// chosen path (already checked as writable), or `None` if cancelled. The UI
 /// saves it with the other settings. In the Flatpak the picker is the

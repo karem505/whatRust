@@ -48,6 +48,11 @@ const SETTINGS_COMMANDS: &[&str] = &[
     "set_app_lock_options",
     "set_biometric_enabled",
     "lock_app",
+    "get_update_status",
+    "check_for_updates",
+    "install_update",
+    "restart_to_update",
+    "open_release_page",
 ];
 /// Commands only the lock screen may use.
 const LOCK_COMMANDS: &[&str] = &[

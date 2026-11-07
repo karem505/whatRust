@@ -82,6 +82,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
             }
             match id {
                 "accounts" | "settings" => crate::window::open_settings_window(app),
+                "update" => crate::update_service::open_updates(app),
                 "reload" => {
                     if let Some(active) = app.try_state::<crate::accounts::ActiveAccount>() {
                         let label = crate::lock::guard(&active).clone();
@@ -133,7 +134,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
 }
 
 /// Rebuild the tray menu from the current accounts list: one `acct:<id>` item per
-/// account showing `name (n)`, then the static `Accounts… / Settings / Reload / [Lock now] / Quit`.
+/// account showing `name (n)`, then the static `Accounts… / Settings / Reload / [Update to X] / [Lock now] / Quit`.
 pub fn rebuild_menu(app: &AppHandle) {
     let Some(tray) = app.tray_by_id("main-tray") else {
         return;
@@ -188,6 +189,14 @@ pub fn rebuild_menu(app: &AppHandle) {
         .item(&accounts_item)
         .item(&settings)
         .item(&reload);
+    if let Some(version) = crate::update_service::available_version() {
+        let Ok(update_item) =
+            MenuItemBuilder::with_id("update", trf("Atualizar para {0}", &[&version])).build(app)
+        else {
+            return;
+        };
+        tail = tail.item(&update_item);
+    }
     if lock_active {
         let Ok(lock_item) = MenuItemBuilder::with_id("lock", tr("Bloquear agora")).build(app)
         else {

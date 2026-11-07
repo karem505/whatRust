@@ -47,6 +47,11 @@ fn main() {
             "set_app_lock_options",
             "set_biometric_enabled",
             "lock_app",
+            "get_update_status",
+            "check_for_updates",
+            "install_update",
+            "restart_to_update",
+            "open_release_page",
             // settings window and lock screen
             "get_lock_status",
             // lock screen
