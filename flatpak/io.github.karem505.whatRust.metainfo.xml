@@ -62,6 +62,12 @@
   </screenshots>
 
   <releases>
+    <release type="stable" version="0.6.11" date="2026-11-07">
+      <url type="details">https://github.com/karem505/whatRust/releases/tag/v0.6.11</url>
+      <description>
+        <p>Drag-and-drop works again on Linux. Adds a privacy blur, a proxy setting, zoom shortcuts, a custom download folder and app icon, an optional single window for all accounts, and the unread count on the Linux dock.</p>
+      </description>
+    </release>
     <release type="stable" version="0.6.10" date="2026-11-03">
       <url type="details">https://github.com/karem505/whatRust/releases/tag/v0.6.10</url>
       <description>
