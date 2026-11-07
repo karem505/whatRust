@@ -1,6 +1,7 @@
 mod accounts;
 mod applock;
 mod aumid;
+mod badge;
 mod biometric;
 mod commands;
 mod dlog;
@@ -49,6 +50,18 @@ pub fn run() {
     #[cfg(target_os = "linux")]
     if std::env::var_os("JSC_useSharedArrayBuffer").is_none() {
         std::env::set_var("JSC_useSharedArrayBuffer", "1");
+    }
+
+    // Linux (issue #51): WebKitGTK's DMA-BUF renderer keeps scrolling and typing
+    // smooth on Mesa (Intel/AMD) but has crashed or rendered blank with NVIDIA's
+    // proprietary driver, so turn it off only there. The Flatpak used to force
+    // it off for everyone, which made WhatsApp stutter. A value the user set,
+    // e.g. through `flatpak override --env`, is respected either way.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none()
+        && std::path::Path::new("/proc/driver/nvidia/version").exists()
+    {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
 
     let smoke_mode =
