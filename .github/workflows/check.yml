@@ -75,3 +75,6 @@ jobs:
 
       - name: notification tests
         run: node src-tauri/resources/notifications.test.mjs
+
+      - name: release-notes renderer tests (HTML in a release body stays text)
+        run: node settings-ui/notes.test.mjs

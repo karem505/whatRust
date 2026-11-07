@@ -50,6 +50,13 @@ pub struct Settings {
     pub proxy_mode: String,
     pub proxy_host: String,
     pub proxy_port: u32,
+    /// Look for a newer release on GitHub shortly after start and every six
+    /// hours (api.github.com). On by default.
+    pub auto_update_check: bool,
+    /// Download and install a newer release without asking, where that needs no
+    /// password (AppImage, macOS app: replaced in place; Windows: downloaded and
+    /// verified, installed on a click). On by default; never for .deb or Flatpak.
+    pub auto_update_install: bool,
 }
 
 impl Default for Settings {
@@ -77,6 +84,8 @@ impl Default for Settings {
             proxy_mode: crate::proxy::MODE_OFF.to_string(),
             proxy_host: String::new(),
             proxy_port: 0,
+            auto_update_check: true,
+            auto_update_install: true,
         }
     }
 }

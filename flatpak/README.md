@@ -41,11 +41,12 @@ flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo repo
 
 ## Permission rationale
 
-- Network: required for `web.whatsapp.com`.
+- Network: required for `web.whatsapp.com`, and for the update check (`api.github.com`, `github.com`).
 - Wayland/fallback X11, IPC, and DRI: WebKitGTK windowing and GPU rendering.
 - PulseAudio: microphone input and audio playback.
 - Read-only home: Tauri's native drag-and-drop API supplies host paths rather than File Transfer portal handles; Rust only opens paths the user drops.
 - Downloads: WhatsApp downloads are saved to the standard Downloads directory.
+- In-app updates: the sandbox cannot update itself and is deliberately not given `--talk-name=org.freedesktop.Flatpak` (that would let it run arbitrary host commands). Settings → Updates downloads the matching `whatRust_<arch>.flatpak` into the Downloads folder, verifies it against the release's `SHA256SUMS`, and opens it through the OpenURI portal (`xdg-open`) so the host's software center installs it; the one-line `install-flatpak.sh` command is shown as a fallback.
 - Custom download folder: no extra permission. The folder is chosen with a GTK file chooser, which inside a Flatpak is the `org.freedesktop.portal.FileChooser` portal (GTK detects the sandbox itself). The portal exports the chosen folder into the sandbox through the document portal, where it is writable even though only `xdg-download` is granted. It needs `xdg-desktop-portal` and a backend on the host; without it the chooser cannot grant access and Settings refuses the folder as not writable. A folder that later disappears falls back to Downloads.
 - Custom app icon: the chosen PNG is copied into the app's own config dir (sandbox data), so no file access is needed. Wayland compositors take the window icon from the `.desktop` file (the Flatpak's exported icon), so a custom icon only changes the window icon on X11.
 - Autostart config: the optional “Launch at system startup” setting writes one desktop entry that re-enters the sandbox.

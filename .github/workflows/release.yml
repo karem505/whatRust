@@ -165,12 +165,52 @@ jobs:
           pattern: whatRust_*-*.flatpak
           path: flatpak-assets
           merge-multiple: true
-      # Publishing also creates the tag when a manual run cut the release.
-      - name: Upload Flatpak bundles and publish release
+      # The in-app updater only installs a download whose SHA-256 is listed in the
+      # release's SHA256SUMS. Compute it from the assets as they sit on the draft
+      # (every platform's bundles plus the Flatpaks uploaded above), so what users
+      # download is exactly what was hashed, and upload it BEFORE publishing:
+      # `releases/latest` must never point at a release without SHA256SUMS.
+      - name: Upload Flatpak bundles, write SHA256SUMS and publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
+          set -euo pipefail
           gh release upload "$RELEASE_TAG" flatpak-assets/*.flatpak --clobber
+
+          # Download every asset of the draft through the API (a draft has no tag
+          # yet on a manual run, so `gh release download <tag>` cannot find it).
+          rid=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"$RELEASE_TAG\") | .id" | head -n1)
+          [ -n "$rid" ] || { echo "::error::no release found for $RELEASE_TAG"; exit 1; }
+          mkdir -p release-assets
+          gh api --paginate "repos/$GH_REPO/releases/$rid/assets?per_page=100" \
+            --jq '.[] | "\(.id) \(.size) \(.name)"' > assets.txt
+          while read -r id size name; do
+            case "$name" in
+              SHA256SUMS) continue ;;
+              */* | *\ * | .*) echo "::error::unexpected asset name: $name"; exit 1 ;;
+            esac
+            gh api -H "Accept: application/octet-stream" \
+              "repos/$GH_REPO/releases/assets/$id" > "release-assets/$name"
+            # Hash exactly what users download: a short or altered download must
+            # never end up in SHA256SUMS.
+            got=$(stat -c %s "release-assets/$name")
+            [ "$got" = "$size" ] || { echo "::error::$name: downloaded $got bytes, release lists $size"; exit 1; }
+          done < assets.txt
+          # A release must carry the bundles the updater looks for; fail rather than
+          # publish one it cannot use.
+          for pattern in '*_x64-setup.exe' '*_x64_en-US.msi' '*_aarch64.dmg' '*.app.tar.gz' \
+                         '*_amd64.deb' '*_amd64.AppImage' 'whatRust_x86_64.flatpak' \
+                         'whatRust_aarch64.flatpak'; do
+            compgen -G "release-assets/$pattern" >/dev/null \
+              || { echo "::error::release $RELEASE_TAG has no asset matching $pattern"; exit 1; }
+          done
+          rm -f release-assets/SHA256SUMS
+          (cd release-assets && sha256sum -- * > SHA256SUMS)
+          echo "--- SHA256SUMS ---"; cat release-assets/SHA256SUMS
+          gh release upload "$RELEASE_TAG" release-assets/SHA256SUMS --clobber
+
+          # Publishing also creates the tag when a manual run cut the release.
           gh release edit "$RELEASE_TAG" --draft=false --latest

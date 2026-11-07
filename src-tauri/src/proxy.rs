@@ -9,9 +9,11 @@
 //! never silently falls back to a direct connection: the webviews get an
 //! unroutable proxy instead, so the page fails to load.
 //!
-//! whatRust's own Rust code makes no network requests (no update check, and
-//! notification pictures are decoded from data the page already fetched), so
-//! the webviews are the only traffic to route.
+//! whatRust's own Rust code makes one kind of network request: the update check
+//! and download (`updater.rs`, api.github.com and github.com). It reads the same
+//! saved proxy settings through `url_for`, so it is routed the same way, and an
+//! invalid saved proxy stops it instead of letting it connect directly. Notification
+//! pictures are decoded from data the page already fetched.
 
 use crate::i18n::tr;
 use crate::settings::Settings;

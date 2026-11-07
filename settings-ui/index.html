@@ -10,7 +10,7 @@
   </head>
   <body>
     <header class="app-header"><div><strong>Configurações</strong><span>whatRust</span></div><button id="back-to-chat" type="button" class="secondary back-button" aria-label="Voltar ao WhatsApp" title="Voltar ao WhatsApp" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5 M12 5l-7 7 7 7"/></svg><span>Voltar ao WhatsApp</span></button></header>
-    <div class="settings-layout"><nav class="settings-nav" aria-label="Configurações"><a href="#sec-contas">Contas</a><a href="#sec-notificacoes">Notificações</a><a href="#sec-aparencia">Aparência</a><a href="#sec-seguranca">Segurança</a><a href="#sec-sistema">Inicialização</a><a href="#sec-rede">Rede</a><a href="#sec-atalhos">Atalhos</a><a href="#sec-diagnostico">Diagnóstico</a></nav>
+    <div class="settings-layout"><nav class="settings-nav" aria-label="Configurações"><a href="#sec-contas">Contas</a><a href="#sec-notificacoes">Notificações</a><a href="#sec-aparencia">Aparência</a><a href="#sec-seguranca">Segurança</a><a href="#sec-sistema">Inicialização</a><a href="#sec-rede">Rede</a><a href="#sec-atualizacoes">Atualizações</a><a href="#sec-atalhos">Atalhos</a><a href="#sec-diagnostico">Diagnóstico</a></nav>
     <!-- Local preferences use familiar WhatsApp rows: titled
          groups of boxed-list rows, a title + subtitle on the left and the control
          on the right. Element ids are what main.js uses; keep them stable. -->
@@ -140,6 +140,58 @@
         <p id="proxy_restart" class="hotkey-hint" hidden><span>Reinicie o whatRust para aplicar o proxy.</span> <button type="button" id="proxy_restart_btn" class="secondary">Reiniciar agora</button></p>
       </section>
 
+      <section class="group" id="sec-atualizacoes">
+        <h2 class="group-title">Atualizações</h2>
+        <div class="boxed-list">
+          <label class="row">
+            <span class="row-text"><span class="row-title">Verificar atualizações automaticamente</span>
+              <span class="row-subtitle">Consulta o GitHub (api.github.com) um minuto após iniciar e a cada 6 horas. Só pergunta qual é a versão mais recente.</span></span>
+            <input type="checkbox" class="switch" id="auto_update_check" />
+          </label>
+          <label class="row">
+            <span class="row-text"><span class="row-title">Instalar atualizações automaticamente</span>
+              <span class="row-subtitle" id="auto_update_install_subtitle">Só age quando não é preciso senha.</span></span>
+            <input type="checkbox" class="switch" id="auto_update_install" />
+          </label>
+        </div>
+        <div class="boxed-list">
+          <div class="row">
+            <span class="row-text"><span class="row-title">Versão instalada</span>
+              <span class="row-subtitle" id="upd_current"></span></span>
+            <button type="button" id="upd_check" class="secondary">Verificar agora</button>
+          </div>
+          <div class="row">
+            <span class="row-text"><span class="row-title">Tipo de instalação</span>
+              <span class="row-subtitle" id="upd_method"></span></span>
+          </div>
+          <div class="row">
+            <span class="row-text"><span class="row-title">Última verificação</span>
+              <span class="row-subtitle" id="upd_last"></span></span>
+          </div>
+        </div>
+        <div id="upd_panel" class="upd-panel" hidden>
+          <h3 id="upd_title"></h3>
+          <progress id="upd_progress" max="100" hidden></progress>
+          <p id="upd_message" class="group-note" role="status" aria-live="polite"></p>
+          <p id="upd_error" class="hotkey-hint" role="alert" hidden></p>
+          <div class="group-actions">
+            <button type="button" id="upd_install" hidden>Baixar e instalar</button>
+            <button type="button" id="upd_apply" hidden>Reiniciar e instalar</button>
+            <button type="button" id="upd_restart" hidden>Reiniciar agora</button>
+            <button type="button" id="upd_page" class="secondary" hidden>Ver no GitHub</button>
+          </div>
+          <div id="upd_flatpak" class="upd-flatpak" hidden>
+            <code id="upd_command"></code>
+            <button type="button" id="upd_copy" class="secondary">Copiar</button>
+          </div>
+        </div>
+        <div id="upd_notes_box" hidden>
+          <h3>Novidades</h3>
+          <div id="upd_notes" class="notes"></div>
+        </div>
+        <p class="group-note">Versões 0.6.10 e anteriores não atualizam sozinhas: instale esta versão manualmente uma vez. Cada arquivo baixado é conferido com a soma de verificação (SHA-256) publicada na versão antes de ser instalado.</p>
+      </section>
+
       <section class="group" id="sec-atalhos">
         <h2 class="group-title">Atalhos</h2>
         <div class="boxed-list">
@@ -237,5 +289,7 @@
     <script src="hotkey.js"></script>
     <script src="main.js"></script>
     <script src="panel.js"></script>
+    <script src="notes.js"></script>
+    <script src="updates.js"></script>
   </body>
 </html>

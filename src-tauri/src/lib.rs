@@ -26,6 +26,8 @@ mod smoke;
 mod tray;
 mod ui_health;
 mod unread;
+mod update_service;
+mod updater;
 mod window;
 
 // Linux only: the capability files are the same on every OS, and a second
@@ -233,6 +235,11 @@ pub fn run() {
             commands::set_app_lock_options,
             commands::set_biometric_enabled,
             commands::lock_app,
+            commands::get_update_status,
+            commands::check_for_updates,
+            commands::install_update,
+            commands::restart_to_update,
+            commands::open_release_page,
             commands::unlock_password,
             commands::unlock_biometric,
             commands::reset_app_lock,
@@ -344,6 +351,7 @@ pub fn run() {
             #[cfg(windows)]
             ui_health::start(handle);
             tray::setup(handle)?;
+            update_service::start(handle);
             // Let setup return before accessing tray/window APIs again. This
             // avoids waiting on the Windows UI loop while it is being created.
             let startup_handle = handle.clone();
