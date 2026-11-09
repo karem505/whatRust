@@ -36,7 +36,7 @@ jobs:
             pkill whatrust || true; sleep 3
           }
           swiftc -O ../.github/probe/wkctl.swift -o ../.github/probe/wkctl
-          for v in parent prefs dev ua; do
+          for v in sub pkeno taowin; do
             ../.github/probe/wkctl "http://127.0.0.1:8765/probe.html?f=ta" menu $v > app-wk-$v.log 2>&1 &
             sleep 8
             PROC=wkctl bash ../.github/probe/keys.sh wk-$v || true

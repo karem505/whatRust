@@ -5,6 +5,15 @@ import WebKit
 class Parent: NSView {
     override func keyDown(with event: NSEvent) { NSApp.mainMenu?.performKeyEquivalent(with: event) }
 }
+class SubWV: WKWebView {
+    var pkeNo = false
+    override func performKeyEquivalent(with event: NSEvent) -> Bool { pkeNo ? false : super.performKeyEquivalent(with: event) }
+}
+class TaoLikeWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+    override func sendEvent(_ e: NSEvent) { super.sendEvent(e) }
+}
 class D: NSObject, NSApplicationDelegate {
     var w: NSWindow!
     var wv: WKWebView!
@@ -22,8 +31,10 @@ class D: NSObject, NSApplicationDelegate {
             edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
             NSApp.mainMenu = main
         }
-        w = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 900, height: 600),
-                     styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        let st: NSWindow.StyleMask = [.titled, .closable, .resizable]
+        w = (CommandLine.arguments.count > 3 && CommandLine.arguments[3].contains("taowin"))
+            ? TaoLikeWindow(contentRect: NSRect(x: 100, y: 100, width: 900, height: 600), styleMask: st, backing: .buffered, defer: false)
+            : NSWindow(contentRect: NSRect(x: 100, y: 100, width: 900, height: 600), styleMask: st, backing: .buffered, defer: false)
         let flags = CommandLine.arguments.count > 3 ? CommandLine.arguments[3] : ""
         let cfg = WKWebViewConfiguration()
         let prefs = cfg.preferences
@@ -32,7 +43,9 @@ class D: NSObject, NSApplicationDelegate {
             prefs.setValue(1, forKey: "inactiveSchedulingPolicy")
         }
         if flags.contains("dev") { prefs.setValue(true, forKey: "developerExtrasEnabled") }
-        wv = WKWebView(frame: w.contentView!.bounds, configuration: cfg)
+        let sub = SubWV(frame: w.contentView!.bounds, configuration: cfg)
+        sub.pkeNo = flags.contains("pkeno")
+        wv = flags.contains("sub") || flags.contains("pkeno") ? sub : WKWebView(frame: w.contentView!.bounds, configuration: cfg)
         if flags.contains("dev") { wv.isInspectable = true }
         if flags.contains("ua") { wv.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15" }
         wv.autoresizingMask = [.width, .height]
