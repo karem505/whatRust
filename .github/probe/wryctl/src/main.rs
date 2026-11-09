@@ -6,9 +6,10 @@ fn main() {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().with_title("wryctl").build(&event_loop).unwrap();
     let b = WebViewBuilder::new().with_url(&url);
-    let _wv = if child {
+    let wv = if child {
         b.with_bounds(wry::Rect { position: wry::dpi::LogicalPosition::new(0, 0).into(), size: wry::dpi::LogicalSize::new(900, 600).into() }).build_as_child(&window).unwrap()
     } else { b.build(&window).unwrap() };
+    if std::env::args().nth(3).as_deref() == Some("focus") { let _ = wv.focus(); }
     event_loop.run(move |event, _, cf| {
         *cf = ControlFlow::Wait;
         if let Event::WindowEvent { event: WindowEvent::CloseRequested, .. } = event { *cf = ControlFlow::Exit; }

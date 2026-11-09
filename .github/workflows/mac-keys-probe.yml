@@ -36,8 +36,8 @@ jobs:
             pkill whatrust || true; sleep 3
           }
           (cd ../.github/probe/wryctl && cargo build --release) || true
-          for v in plain child; do
-            ../.github/probe/wryctl/target/release/wryctl "http://127.0.0.1:8765/probe.html?f=ta" $v > app-wry-$v.log 2>&1 &
+          for v in child-focus; do
+            ../.github/probe/wryctl/target/release/wryctl "http://127.0.0.1:8765/probe.html?f=ta" child focus > app-wry-$v.log 2>&1 &
             sleep 8
             PROC=wryctl bash ../.github/probe/keys.sh wry-$v || true
             pkill wryctl || true; sleep 2
