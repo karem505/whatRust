@@ -145,6 +145,8 @@ The Flatpak uses the GNOME runtime from Flathub, while the whatRust bundle itsel
 published with each [GitHub release](https://github.com/karem505/whatRust/releases/latest).
 It keeps its own sandboxed WhatsApp login, separate from a `.deb` or AppImage install.
 
+> **Flatpak doesn't open?** If `flatpak run io.github.karem505.whatRust` prints `bwrap: Can't find source path /run/user/…/doc/by-app/…`, the Flatpak document portal has lost its mount (this affects every Flatpak app, not just whatRust). Run `systemctl --user restart xdg-document-portal` and open it again; the installer does this check for you.
+
 **Linux AppImage / macOS** — one line:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/karem505/whatRust/master/install.sh | sh

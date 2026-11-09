@@ -41,5 +41,19 @@ else
   flatpak install --user -y "$TMP"
 fi
 
+# Every Flatpak app fails to start ("bwrap: Can't find source path
+# .../doc/by-app/...") when the document portal is running but its FUSE mount
+# at $XDG_RUNTIME_DIR/doc has gone away. Restarting the portal remounts it.
+DOC_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/doc"
+if [ -d "$DOC_DIR" ] && command -v mountpoint >/dev/null 2>&1 \
+  && ! mountpoint -q "$DOC_DIR"; then
+  printf '%s\n' "The Flatpak document portal is not mounted; restarting it."
+  systemctl --user restart xdg-document-portal.service 2>/dev/null || :
+  sleep 1
+  if ! mountpoint -q "$DOC_DIR"; then
+    printf '%s\n' "Could not remount $DOC_DIR. If whatRust does not open, log out and back in." >&2
+  fi
+fi
+
 printf '%s\n' "whatRust is installed. Launch it from your application menu or run:"
 printf '  flatpak run %s\n' "$APP_ID"
