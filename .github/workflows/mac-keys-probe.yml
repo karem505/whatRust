@@ -35,13 +35,14 @@ jobs:
             cp "$HOME/.local/share/whatRust/logs/whatrust.log" $1.dlog || true
             pkill whatrust || true; sleep 3
           }
-          run_mode window '{}' ""
-          run_mode single '{"single_window":true}' ""
-          # control: Safari on the same page
-          open -a Safari "http://127.0.0.1:8765/probe.html?f=ta" || true
-          sleep 10
-          PROC=Safari bash ../.github/probe/keys.sh safari || true
-          osascript -e 'tell application "Safari" to quit' || true
+          swiftc -O ../.github/probe/wkctl.swift -o ../.github/probe/wkctl
+          for v in nomenu menu; do
+            if [ $v = menu ]; then A=menu; else A=""; fi
+            ../.github/probe/wkctl "http://127.0.0.1:8765/probe.html?f=ta" $A > app-wk-$v.log 2>&1 &
+            sleep 8
+            PROC=wkctl bash ../.github/probe/keys.sh wk-$v || true
+            pkill wkctl || true; sleep 2
+          done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
