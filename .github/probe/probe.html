@@ -1,0 +1,18 @@
+<!doctype html><meta charset=utf-8><title>probe</title>
+<textarea id=ta rows=4 cols=40 autofocus></textarea><br>
+<div id=ce contenteditable style="border:1px solid #888;min-height:2em;width:300px"></div><br>
+<input id=inp><pre id=log></pre>
+<script>
+function post(o){fetch("/log",{method:"POST",body:JSON.stringify(o)}).catch(()=>{});}
+var L=document.getElementById("log");
+["keydown","beforeinput","input"].forEach(function(t){addEventListener(t,function(e){
+  var o={t:t,key:e.key,code:e.code,kc:e.keyCode,data:e.data,it:e.inputType,tgt:e.target.id,
+   hex:(e.data||"").split("").map(function(c){return c.charCodeAt(0).toString(16)}).join(",")};
+  post(o);},true);});
+function dump(){post({t:"state",ta:ta.value,ce:ce.textContent,inp:inp.value,
+  ta_hex:ta.value.split("").map(function(c){return c.charCodeAt(0).toString(16)}).join(","),
+  focus:document.activeElement&&document.activeElement.id,hasFocus:document.hasFocus(),
+  ta_sel:[ta.selectionStart,ta.selectionEnd]});}
+window.dump=dump;setInterval(dump,1000);
+addEventListener("load",function(){post({t:"loaded",ua:navigator.userAgent});});
+</script>

@@ -261,7 +261,7 @@ pub(crate) fn build_account_window(
     }
     crate::proxy::check_platform(&crate::settings::load(app))?;
 
-    let url = "https://web.whatsapp.com/".parse().expect("valid url");
+    let url = std::env::var("WHATRUST_PROBE_URL").unwrap_or_else(|_| "https://web.whatsapp.com/".into()).parse().expect("valid url");
     let icon = crate::appicon::current(app);
 
     let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
@@ -328,7 +328,7 @@ pub(crate) fn build_account_view(
     crate::proxy::check_platform(&crate::settings::load(app))?;
     let builder = tauri::WebviewBuilder::new(
         &label,
-        WebviewUrl::External("https://web.whatsapp.com/".parse().expect("valid url")),
+        WebviewUrl::External(std::env::var("WHATRUST_PROBE_URL").unwrap_or_else(|_| "https://web.whatsapp.com/".into()).parse().expect("valid url")),
     );
     let builder = account_webview!(builder, app, label);
     // Windows/macOS let the engine deliver file drops to the page itself. On

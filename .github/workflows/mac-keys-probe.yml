@@ -1,0 +1,35 @@
+name: mac-keys-probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [fix/macos-arrow-keys]
+jobs:
+  probe:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: "./src-tauri -> target"
+      - name: build
+        working-directory: src-tauri
+        run: cargo build --locked
+      - name: probe
+        run: |
+          sw_vers
+          mkdir -p out
+          (cd .github/probe && PROBE_LOG=$GITHUB_WORKSPACE/out/log.jsonl python3 server.py) &
+          sleep 1
+          export WHATRUST_PROBE_URL=http://127.0.0.1:8765/probe.html
+          export HOME_OVERRIDE=1
+          src-tauri/target/debug/whatrust > out/app.log 2>&1 &
+          sleep 15
+          cd out && bash ../.github/probe/keys.sh one || true
+          sleep 2; osascript -e 'tell application "System Events" to get name of every process whose background only is false' || true
+          pkill whatrust || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: probe-out
+          path: out
