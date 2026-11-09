@@ -35,12 +35,12 @@ jobs:
             cp "$HOME/.local/share/whatRust/logs/whatrust.log" $1.dlog || true
             pkill whatrust || true; sleep 3
           }
-          for v in base nomenu; do
-            echo '{}' > "$CFG/settings.json"
-            WHATRUST_X=$v WHATRUST_PROBE_URL="http://127.0.0.1:8765/probe.html?f=ta" ../src-tauri/target/debug/whatrust > app-$v.log 2>&1 &
-            sleep 15
-            PROC=whatrust bash ../.github/probe/keys.sh wr-$v || true
-            pkill whatrust || true; sleep 3
+          swiftc -O ../.github/probe/wkctl.swift -o ../.github/probe/wkctl
+          for v in parent prefs dev ua; do
+            ../.github/probe/wkctl "http://127.0.0.1:8765/probe.html?f=ta" menu $v > app-wk-$v.log 2>&1 &
+            sleep 8
+            PROC=wkctl bash ../.github/probe/keys.sh wk-$v || true
+            pkill wkctl || true; sleep 2
           done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
