@@ -19,6 +19,7 @@ const PAGE: &str = "https://web.whatsapp.com/";
 /// The commands the WhatsApp page's bridge.js needs.
 const PAGE_COMMANDS: &[&str] = &[
     "notify",
+    "notification_icon",
     "set_unread",
     "dlog",
     "open_download",

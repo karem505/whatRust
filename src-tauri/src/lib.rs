@@ -14,6 +14,7 @@ mod links;
 mod lock;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod menubar;
+mod native_icon;
 mod notif_icon;
 mod notify;
 mod opener;
@@ -193,6 +194,7 @@ pub fn run() {
         .manage(accounts::UnreadMap::default())
         .manage(downloads::Downloads::default())
         .manage(notify::Recent::default())
+        .manage(native_icon::Broker::default())
         .manage(integration::Integration::default())
         .manage(accounts::ActiveAccount::new("wa-default".into()))
         .invoke_handler(tauri::generate_handler![
@@ -208,6 +210,7 @@ pub fn run() {
             integration::test_notification,
             integration::open_notification_settings,
             commands::notify,
+            commands::notification_icon,
             commands::set_unread,
             commands::dlog,
             commands::open_download,

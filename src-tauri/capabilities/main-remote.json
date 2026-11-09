@@ -9,6 +9,7 @@
   },
   "permissions": [
     "allow-notify",
+    "allow-notification-icon",
     "allow-set-unread",
     "allow-dlog",
     "allow-open-download",

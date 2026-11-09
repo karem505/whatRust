@@ -548,6 +548,65 @@ pub fn on_lock(app: &AppHandle) {
     }
 }
 
+/// Deliver a held WebView2 notification on the UI thread, with the picture the
+/// page supplied (if any). The same `from_event` path as an immediate delivery.
+#[cfg(windows)]
+fn deliver_held(app: &AppHandle, held: crate::native_icon::Held, icon: Option<String>) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        from_event(
+            &handle,
+            &held.label,
+            &held.title,
+            &held.body,
+            icon.as_deref(),
+            Source::WebView2,
+            &held.identity,
+            false,
+            None,
+        );
+    });
+}
+
+/// A native notification whose picture the page must supply: hold it until
+/// `native_icon_arrived` or the deadline, whichever is first.
+#[cfg(windows)]
+pub fn native_hold(app: &AppHandle, held: crate::native_icon::Held) {
+    use crate::native_icon::{Arrival, Broker, WAIT};
+    match app.state::<Broker>().native_arrived(held, Instant::now()) {
+        Arrival::Ready(held, icon) => deliver_held(app, held, icon),
+        Arrival::Wait(token) => {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(WAIT).await;
+                if let Some(held) = app.state::<Broker>().expire(token) {
+                    crate::dlog::log("notification: page picture did not arrive in time");
+                    deliver_held(&app, held, None);
+                }
+            });
+        }
+    }
+}
+
+#[cfg(windows)]
+pub fn native_icon_arrived(
+    app: &AppHandle,
+    label: &str,
+    title: &str,
+    body: &str,
+    icon: Option<String>,
+) {
+    if let Some((held, icon)) = app.state::<crate::native_icon::Broker>().icon_arrived(
+        label,
+        title,
+        body,
+        icon,
+        Instant::now(),
+    ) {
+        deliver_held(app, held, icon);
+    }
+}
+
 #[cfg(windows)]
 pub fn cancel_native(app: &AppHandle, identity: &str) {
     // CloseRequested runs on the WebView2 UI thread. WinRT history removal
