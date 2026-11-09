@@ -23,16 +23,20 @@ jobs:
           sleep 1
           cd out
           swiftc -O ../.github/probe/hwkey.swift -o ../.github/probe/hwkey
-          mkdir -p "$HOME/Library/Application Support/com.karem.whatrust"
-          echo '{"single_window":true}' > "$HOME/Library/Application Support/com.karem.whatrust/settings.json"
-          for f in ta; do
-            WHATRUST_PROBE_URL="http://127.0.0.1:8765/probe.html?f=$f" ../src-tauri/target/debug/whatrust > app-$f.log 2>&1 &
+          CFG="$HOME/Library/Application Support/com.karem.whatrust"
+          mkdir -p "$CFG"
+          run_mode() { # name settings-json pre-step
+            echo "$2" > "$CFG/settings.json"
+            WHATRUST_PROBE_URL="http://127.0.0.1:8765/probe.html?f=ta" ../src-tauri/target/debug/whatrust > app-$1.log 2>&1 &
             sleep 15
-            PROC=whatrust bash ../.github/probe/keys.sh wr-$f || true
-            cp "$HOME/.local/share/whatRust/logs/whatrust.log" wr-$f.dlog || true
-            osascript -e 'tell application "System Events" to tell process "whatrust" to get {name, role, description} of every UI element of window 1' > wr-$f.ui.txt 2>&1 || true
+            if [ -n "$3" ]; then osascript -e 'tell application "System Events" to keystroke "w" using {command down, shift down}' || true; sleep 3; fi
+            screencapture -x shot-$1-pre.png
+            PROC=whatrust bash ../.github/probe/keys.sh $1 || true
+            cp "$HOME/.local/share/whatRust/logs/whatrust.log" $1.dlog || true
             pkill whatrust || true; sleep 3
-          done
+          }
+          run_mode menubar '{"menubar_only":true}' hotkey
+          run_mode accessory '{"hide_dock_icon":true}' ""
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
