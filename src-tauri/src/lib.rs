@@ -83,6 +83,10 @@ pub fn run() {
         context.config_mut().identifier = "com.karem.whatrust.smoke".into();
     }
     let mut builder = tauri::Builder::default();
+    #[cfg(target_os = "macos")]
+    if std::env::var("WHATRUST_X").map(|v| v.contains("nomenu")).unwrap_or(false) {
+        builder = builder.enable_macos_default_menu(false);
+    }
 
     // single-instance MUST be registered first.
     #[cfg(desktop)]
