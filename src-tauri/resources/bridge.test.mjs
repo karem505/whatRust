@@ -553,6 +553,34 @@ async function testDownloadToastOffersOpenAndShowInFolder() {
   assert(toastsIn(document).length === 0, "the toast closes after a choice");
 }
 
+function testDownloadToastStylesheetIsWellFormed() {
+  console.log("the download toast stylesheet keeps every rule closed (issue #71)");
+  const { window: w, document } = makeHarness();
+  w.__whatrustDownloadDone({ ok: true, id: 1, name: "a.pdf", canOpen: true });
+  const host = document.body.children.find((c) => c.attrs["data-whatrust"] === "downloads");
+  const style = host && host.shadow.all().find((e) => e.tagName === "STYLE");
+  const css = style ? style.textContent : "";
+  // Each selector must start at brace depth 0. A stray "}" or an unclosed rule
+  // makes the CSS parser swallow the next rule, which is how the toast lost its
+  // dark background in 0.6.11.
+  let depth = 0, ok = true;
+  for (const ch of css) {
+    if (ch === "{") depth++;
+    else if (ch === "}") { depth--; if (depth < 0) ok = false; }
+  }
+  assert(ok && depth === 0, "braces balance");
+  for (const sel of [".toast{", ".text{", ".title{", "button{"]) {
+    const at = css.indexOf(sel);
+    assert(at >= 0, `${sel} present`);
+    let d = 0;
+    for (const ch of css.slice(0, at)) { if (ch === "{") d++; else if (ch === "}") d--; }
+    assert(d === 0, `${sel} is a top-level rule`);
+  }
+  // Each top-level rule body must be declarations only (no stray selector text
+  // after a closing brace inside the same rule).
+  assert(/\.stack\{[^{}]*font:14px[^{}]*\}/.test(css), ".stack keeps its font and width declarations");
+}
+
 async function testRiskyDownloadsAndFailures() {
   console.log("programs only offer Show in folder; failures say so");
   const { window: w, document, invocations } = makeHarness();
@@ -716,6 +744,7 @@ async function testZoomWheelCoalesces() {
 }
 
 const tests = [
+  testDownloadToastStylesheetIsWellFormed,
   testScrollbarsAreThinAndTranslucent,
   testZoomShortcuts,
   testZoomWheelCoalesces,
