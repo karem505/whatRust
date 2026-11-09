@@ -24,6 +24,7 @@
 ## Contents
 
 - [What is whatRust?](#what-is-whatrust)
+- [Video and screenshots](#video-and-screenshots)
 - [Why whatRust? A lean, native WhatsApp Desktop alternative](#why-whatrust-a-lean-native-whatsapp-desktop-alternative)
 - [Features](#features)
 - [Run multiple WhatsApp accounts](#run-multiple-whatsapp-accounts)
@@ -43,6 +44,19 @@
 whatRust is an open-source **WhatsApp Web desktop client** for Linux, Windows, and macOS. It wraps the official `web.whatsapp.com` in your operating system's native webview and adds the desktop conveniences a browser tab can't — a system tray, native notifications, persistent login, global shortcuts, and microphone/camera access for voice messages and calls.
 
 It is an **unofficial, open-source WhatsApp client** and a practical **WhatsApp Desktop alternative** for people who want a fast, native app with minimal overhead instead of the heavier Electron-based official build. It is not affiliated with WhatsApp or Meta.
+
+## Video and screenshots
+
+[![whatRust video: WhatsApp on your desktop, without the bloat (67 s)](docs/media/video-poster.jpg)](https://aboelmakarem.pro/apps/whatrust)
+
+**[Watch the 67-second video](docs/media/whatrust-video.mp4)** (also on the [whatRust page](https://aboelmakarem.pro/apps/whatrust)). It is a real recording with a real account; the chats are hidden by whatRust's own privacy blur.
+
+| | |
+|---|---|
+| ![whatRust running WhatsApp Web with the privacy blur on](docs/media/main.jpg) | ![Privacy blur panel: choose what gets blurred](docs/media/privacy-blur.jpg) |
+| WhatsApp Web with the privacy blur on | Privacy blur panel (Ctrl+Shift+P) |
+| ![Adding a second account in its own window](docs/media/accounts.jpg) | ![Settings: appearance, shortcuts, updates](docs/media/settings.jpg) |
+| A second account, in its own window | Settings: appearance, shortcuts, updates |
 
 ## Why whatRust? A lean, native WhatsApp Desktop alternative
 
