@@ -35,13 +35,12 @@ jobs:
             cp "$HOME/.local/share/whatRust/logs/whatrust.log" $1.dlog || true
             pkill whatrust || true; sleep 3
           }
-          for v in nohotkey; do
-            echo '{"hotkey_enabled":false,"blur_hotkey_enabled":false,"close_to_tray":false}' > "$CFG/settings.json"
-            WHATRUST_PROBE_URL="http://127.0.0.1:8765/probe.html?f=ta" ../src-tauri/target/debug/whatrust > app-$v.log 2>&1 &
-            sleep 15
-            PROC=whatrust bash ../.github/probe/keys.sh wr-$v || true
-            cp "$HOME/.local/share/whatRust/logs/whatrust.log" $v.dlog || true
-            pkill whatrust || true; sleep 3
+          (cd ../.github/probe/wryctl && cargo build --release) || true
+          for v in plain child; do
+            ../.github/probe/wryctl/target/release/wryctl "http://127.0.0.1:8765/probe.html?f=ta" $v > app-wry-$v.log 2>&1 &
+            sleep 8
+            PROC=wryctl bash ../.github/probe/keys.sh wry-$v || true
+            pkill wryctl || true; sleep 2
           done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
