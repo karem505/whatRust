@@ -22,15 +22,17 @@ jobs:
           (cd .github/probe && PROBE_LOG=$GITHUB_WORKSPACE/out/log.jsonl python3 server.py) &
           sleep 1
           cd out
-          mkdir -p "$HOME/Library/Application Support/com.karem.whatrust"
-          echo '{"single_window":true}' > "$HOME/Library/Application Support/com.karem.whatrust/settings.json"
+          swiftc -O ../.github/probe/hwkey.swift -o ../.github/probe/hwkey
           for f in ta ce; do
             WHATRUST_PROBE_URL="http://127.0.0.1:8765/probe.html?f=$f" ../src-tauri/target/debug/whatrust > app-$f.log 2>&1 &
             sleep 15
-            PROC=whatrust bash ../.github/probe/keys.sh single-$f || true
+            PROC=whatrust bash ../.github/probe/keys.sh wr-$f || true
             pkill whatrust || true; sleep 3
           done
-          cp "$HOME/Library/Application Support/com.karem.whatrust/settings.json" settings-used.json || true
+          open -a Safari "http://127.0.0.1:8765/probe.html?f=ta" || true
+          sleep 10
+          PROC=Safari bash ../.github/probe/keys.sh safari-ta || true
+          osascript -e 'tell application "Safari" to quit' || true
           ls -R "$HOME/Library/Application Support/com.karem.whatrust" | head -30 > appdata.txt || true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
