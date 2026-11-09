@@ -23,17 +23,16 @@ jobs:
           sleep 1
           cd out
           swiftc -O ../.github/probe/hwkey.swift -o ../.github/probe/hwkey
-          for f in ta ce; do
+          mkdir -p "$HOME/Library/Application Support/com.karem.whatrust"
+          echo '{"single_window":true}' > "$HOME/Library/Application Support/com.karem.whatrust/settings.json"
+          for f in ta; do
             WHATRUST_PROBE_URL="http://127.0.0.1:8765/probe.html?f=$f" ../src-tauri/target/debug/whatrust > app-$f.log 2>&1 &
             sleep 15
             PROC=whatrust bash ../.github/probe/keys.sh wr-$f || true
+            cp "$HOME/.local/share/whatRust/logs/whatrust.log" wr-$f.dlog || true
+            osascript -e 'tell application "System Events" to tell process "whatrust" to get {name, role, description} of every UI element of window 1' > wr-$f.ui.txt 2>&1 || true
             pkill whatrust || true; sleep 3
           done
-          open -a Safari "http://127.0.0.1:8765/probe.html?f=ta" || true
-          sleep 10
-          PROC=Safari bash ../.github/probe/keys.sh safari-ta || true
-          osascript -e 'tell application "Safari" to quit' || true
-          ls -R "$HOME/Library/Application Support/com.karem.whatrust" | head -30 > appdata.txt || true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
