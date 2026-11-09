@@ -1,5 +1,5 @@
 <!doctype html><meta charset=utf-8><title>probe</title>
-<textarea id=ta rows=4 cols=40 autofocus></textarea><br>
+<textarea id=ta rows=4 cols=40></textarea><br>
 <div id=ce contenteditable style="border:1px solid #888;min-height:2em;width:300px"></div><br>
 <input id=inp><pre id=log></pre>
 <script>
@@ -9,10 +9,11 @@ var L=document.getElementById("log");
   var o={t:t,key:e.key,code:e.code,kc:e.keyCode,data:e.data,it:e.inputType,tgt:e.target.id,
    hex:(e.data||"").split("").map(function(c){return c.charCodeAt(0).toString(16)}).join(",")};
   post(o);},true);});
-function dump(){post({t:"state",ta:ta.value,ce:ce.textContent,inp:inp.value,
+function dump(){post({t:"state",ce_hex:ce.textContent.split("").map(function(c){return c.charCodeAt(0).toString(16)}).join(","),ta:ta.value,ce:ce.textContent,inp:inp.value,
   ta_hex:ta.value.split("").map(function(c){return c.charCodeAt(0).toString(16)}).join(","),
   focus:document.activeElement&&document.activeElement.id,hasFocus:document.hasFocus(),
   ta_sel:[ta.selectionStart,ta.selectionEnd]});}
-window.dump=dump;setInterval(dump,1000);
+window.dump=dump;addEventListener("keyup",function(){setTimeout(dump,80)},true);
+var f=(location.search.match(/f=(\w+)/)||[0,"ta"])[1];addEventListener("load",function(){document.getElementById(f).focus();post({t:"focused",f:f});});
 addEventListener("load",function(){post({t:"loaded",ua:navigator.userAgent});});
 </script>
