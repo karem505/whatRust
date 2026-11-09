@@ -62,6 +62,12 @@
   </screenshots>
 
   <releases>
+    <release type="stable" version="0.6.13" date="2026-11-09">
+      <url type="details">https://github.com/karem505/whatRust/releases/tag/v0.6.13</url>
+      <description>
+        <p>Smooth scrolling on laptops with Intel or AMD graphics plus an NVIDIA card: the fast WebKit renderer is now turned off only when NVIDIA drives the display.</p>
+      </description>
+    </release>
     <release type="stable" version="0.6.12" date="2026-11-09">
       <url type="details">https://github.com/karem505/whatRust/releases/tag/v0.6.12</url>
       <description>
