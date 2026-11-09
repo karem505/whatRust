@@ -57,6 +57,11 @@ pub struct Settings {
     /// password (AppImage, macOS app: replaced in place; Windows: downloaded and
     /// verified, installed on a click). On by default; never for .deb or Flatpak.
     pub auto_update_install: bool,
+    /// Linux: window title bar. `auto` hides it on tiling window managers
+    /// (Hyprland, Sway, i3, ...) where the compositor draws none and GTK's
+    /// fallback buttons do nothing useful; `show` / `hide` force it.
+    /// Ignored on macOS and Windows. See `decorations`.
+    pub title_bar: String,
 }
 
 impl Default for Settings {
@@ -86,6 +91,7 @@ impl Default for Settings {
             proxy_port: 0,
             auto_update_check: true,
             auto_update_install: true,
+            title_bar: crate::decorations::AUTO.to_string(),
         }
     }
 }
@@ -201,6 +207,7 @@ impl Settings {
         self.zoom = sanitize_zoom(self.zoom);
         self.language = crate::i18n::sanitize_code(&self.language);
         self.download_dir = self.download_dir.filter(|d| !d.trim().is_empty());
+        self.title_bar = crate::decorations::sanitize(&self.title_bar);
         // Menu-bar-only mode needs WKWebView's inactive-scheduling policy
         // (macOS 14+). Dropping the flag here means a settings file or an
         // older build can never leave the app in a mode it cannot sustain.
@@ -308,6 +315,7 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
     }
     crate::window::apply_zoom_all(app, s.zoom);
     crate::appicon::apply(app, s.custom_icon, false);
+    crate::decorations::apply_all(app, &s.title_bar);
 
     // Menu-bar mode is only available where a hidden WKWebView keeps running
     // (macOS 14+); elsewhere the setting is ignored rather than dropping every

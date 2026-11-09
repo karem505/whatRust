@@ -268,6 +268,7 @@ pub(crate) fn build_account_window(
         .title(format!("whatRust — {}", account.name))
         .inner_size(1100.0, 800.0)
         .min_inner_size(560.0, 480.0)
+        .decorations(crate::decorations::show(app))
         .icon(icon)?;
     let builder = account_webview!(builder, app, label).visible(!start_hidden);
 
@@ -1731,6 +1732,7 @@ fn open_settings_legacy(app: &AppHandle) {
         .title(tr("whatRust — Configurações"))
         .inner_size(440.0, 680.0)
         .min_inner_size(440.0, 520.0)
+        .decorations(crate::decorations::show(app))
         .resizable(true)
         .visible(false)
         .build()

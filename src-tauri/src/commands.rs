@@ -145,6 +145,9 @@ pub struct SettingsView {
     /// `menubar::supported`). The UI disables the switch elsewhere rather
     /// than letting the user opt into a mode that would drop the session.
     pub menubar_supported: bool,
+    /// The tiling window manager this Linux session runs (Hyprland, Sway,
+    /// ...), shown next to the title-bar setting; `None` elsewhere.
+    pub tiling_wm: Option<String>,
     /// The proxy URL the running webviews were created with (`""` = none). When
     /// it differs from the saved settings, a restart is pending.
     pub proxy_in_use: String,
@@ -168,6 +171,7 @@ pub fn get_settings(window: tauri::Webview, app: tauri::AppHandle) -> Result<Set
         settings: crate::settings::load(&app),
         platform: std::env::consts::OS,
         menubar_supported: crate::menubar::supported(),
+        tiling_wm: crate::decorations::tiling_wm(),
         proxy_in_use: crate::proxy::in_use(),
         proxy_supported: crate::proxy::engine_supported(),
         single_window_active: crate::sessions::enabled(),
