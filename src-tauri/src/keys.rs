@@ -9,22 +9,27 @@
 //! page's editor. Nothing in the app needs that path: `TaoView` is not a text
 //! input here, the webview is, so it is switched off for that one class.
 
-/// Make `TaoView` ignore `interpretKeyEvents:`. Idempotent; call once a tao
-/// window exists (the class is registered with the first window).
+/// Make `TaoView` ignore `interpretKeyEvents:`. Idempotent and cheap: call it
+/// after any tao window is built (the class is registered with the first
+/// window); until the class exists it does nothing and retries next time.
 #[cfg(target_os = "macos")]
 pub fn install() {
     use objc2::ffi::class_addMethod;
     use objc2::runtime::{AnyClass, AnyObject, Imp, Sel};
-    use std::sync::Once;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     extern "C" fn ignore(_this: *mut AnyObject, _cmd: Sel, _events: *mut AnyObject) {}
 
-    static ONCE: Once = Once::new();
-    ONCE.call_once(|| {
+    static DONE: AtomicBool = AtomicBool::new(false);
+    if DONE.load(Ordering::Acquire) {
+        return;
+    }
+    {
         let Some(class) = AnyClass::get(c"TaoView") else {
-            crate::dlog::log("keys: TaoView class not found; key fix not installed");
+            crate::dlog::log("keys: TaoView class not found yet; key fix deferred");
             return;
         };
+        DONE.store(true, Ordering::Release);
         // SAFETY: `ignore` matches the `v@:@` signature registered for it, and
         // adding a method to a class we do not own only overrides the
         // inherited `interpretKeyEvents:` for that class.
@@ -45,5 +50,5 @@ pub fn install() {
         } else {
             "keys: TaoView already overrides interpretKeyEvents:"
         });
-    });
+    }
 }
