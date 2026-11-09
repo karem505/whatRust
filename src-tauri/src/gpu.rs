@@ -62,9 +62,48 @@ pub fn apply_webkit_renderer_env() {
     }
 }
 
+/// GStreamer's hardware (VA-API) video decoders, old and new plugin names.
+const VA_DECODERS: &[&str] = &[
+    "vah264dec",
+    "vah265dec",
+    "vavp8dec",
+    "vavp9dec",
+    "vaav1dec",
+    "vampeg2dec",
+    "vaapih264dec",
+    "vaapih265dec",
+    "vaapivp8dec",
+    "vaapivp9dec",
+    "vaapiav1dec",
+    "vaapimpeg2dec",
+    "vaapidecodebin",
+];
+
+/// The `GST_PLUGIN_FEATURE_RANK` value that turns the VA-API decoders off.
+fn va_decoders_off() -> String {
+    VA_DECODERS
+        .iter()
+        .map(|d| format!("{d}:NONE"))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// Decode video in software inside the webview. Frames from the VA-API
+/// decoders come out black or transparent when WebKitGTK draws them on a
+/// canvas, which is how WhatsApp makes the thumbnail of a video being sent
+/// (black thumbnail, or 100 retries and a failed attachment). Software decoding
+/// gives correct frames; WhatsApp videos are small, so the cost is low. A value
+/// the user set is respected, so `GST_PLUGIN_FEATURE_RANK=` restores the
+/// hardware decoders.
+pub fn apply_gstreamer_env() {
+    if std::env::var_os("GST_PLUGIN_FEATURE_RANK").is_none() {
+        std::env::set_var("GST_PLUGIN_FEATURE_RANK", va_decoders_off());
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{disable_dmabuf, drm_vendors};
+    use super::{disable_dmabuf, drm_vendors, va_decoders_off};
 
     fn v(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| s.to_string()).collect()
@@ -111,5 +150,22 @@ mod tests {
         got.sort();
         assert_eq!(got, vec!["0x10de".to_string(), "0x8086".to_string()]);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn va_decoders_are_all_ranked_none() {
+        let v = va_decoders_off();
+        for d in [
+            "vah264dec",
+            "vah265dec",
+            "vavp9dec",
+            "vaav1dec",
+            "vaapih264dec",
+        ] {
+            assert!(v.split(',').any(|e| e == format!("{d}:NONE")), "{d}");
+        }
+        assert!(v
+            .split(',')
+            .all(|e| e.ends_with(":NONE") && !e.contains(' ')));
     }
 }

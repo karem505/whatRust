@@ -76,5 +76,10 @@ jobs:
       - name: notification tests
         run: node src-tauri/resources/notifications.test.mjs
 
+      # Linux video attach (WebKitGTK): blob media preload, canplaythrough,
+      # parking detached videos, refusing a video given to <img>.
+      - name: media.js tests
+        run: node src-tauri/resources/media.test.mjs
+
       - name: release-notes renderer tests (HTML in a release body stays text)
         run: node settings-ui/notes.test.mjs

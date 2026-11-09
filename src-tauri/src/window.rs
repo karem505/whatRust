@@ -60,6 +60,12 @@ fn safari_ua(macos_major: u64) -> String {
 }
 
 const BRIDGE_JS: &str = include_str!("../resources/bridge.js");
+/// Linux only: makes attaching a video work on WebKitGTK (see the file header).
+const MEDIA_JS: &str = if cfg!(target_os = "linux") {
+    include_str!("../resources/media.js")
+} else {
+    ""
+};
 
 /// Platform routing keeps the existing non-Windows account-window flow.
 pub fn open_account_window(app: &AppHandle, account: &Account, hidden: bool) -> tauri::Result<()> {
@@ -110,6 +116,7 @@ macro_rules! account_webview {
             })
             .initialization_script(include_str!("../resources/integration.js"))
             .initialization_script(BRIDGE_JS)
+            .initialization_script(MEDIA_JS)
             .initialization_script(include_str!("../resources/privacy.js"))
             // Drag-and-drop is done by capturing the OS drop in Rust and streaming the file
             // into the page (see `register_drop_handler` + bridge.js `__whatrustDropFeed`).
