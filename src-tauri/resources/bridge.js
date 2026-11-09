@@ -237,6 +237,22 @@
     });
     return Promise.race([load, timeout]);
   }
+  // Windows native path: WebView2 raises the toast from the real Notification
+  // and can only read a data: icon itself. For blob:/https: icons, convert the
+  // picture here and hand it to Rust, which holds the toast (up to ~1.6 s) and
+  // pairs it by title and body. `icon: null` tells Rust there is none to wait for.
+  function nativeIcon(title, options) {
+    try {
+      var icon = options && options.icon;
+      var scheme = typeof icon === "string" && (/^(blob|https):/.exec(icon) || [])[1];
+      if (!scheme) return;
+      var t = String(title || ""), b = String((options && options.body) || "");
+      iconPng(icon).then(function (png) {
+        notePath("native icon " + scheme + (png ? " ok" : " unavailable"));
+        invoke("notification_icon", { title: t, body: b, icon: png || null });
+      }, function () {});
+    } catch (e) {}
+  }
   function nativeNotify(title, body, icon) {
     if(window.__whatrustLocked)return false;
     var epoch=window.__whatrustNotificationEpoch||0;
@@ -397,6 +413,7 @@
         try {
           notePath("native Notification()");
           var notification = new OriginalNotification(title, options);
+          nativeIcon(title, options);
           if(notification.addEventListener)notification.addEventListener("error",function(){notePath("native notification error; page fallback");options=options||{};nativeNotify(title,options.body,options.icon);},{once:true});
           return notification;
         } catch (e) { notePath("native constructor refused; page fallback"); }

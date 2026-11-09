@@ -715,12 +715,45 @@ async function testZoomWheelCoalesces() {
   assert(zooms(h).length === 2, "tiny deltas below the threshold do not step");
 }
 
+async function testNativeBranchSendsNotificationIcon() {
+  console.log("native Notification: blob/https picture goes to notification_icon, never to notify");
+  let built = 0;
+  const h = makeHarness({ windows: true, preferNative: true, nativeNotification: class { static permission = "granted"; constructor() { built++; } } });
+  const { window: w, document: d, invocations } = h;
+  w.fetch = () => Promise.resolve({ ok: true, blob: () => Promise.resolve({}) });
+  w.createImageBitmap = () => Promise.resolve({ width: 100, height: 100, close() {} });
+  d.createElement = (tag) =>
+    tag === "canvas"
+      ? { getContext: () => ({ drawImage() {} }), toDataURL: (t) => "data:" + t + ";base64,iVBORw0KGgo=" }
+      : new FakeElement(tag);
+  new w.Notification("Bob", { body: "hi", icon: "blob:https://web.whatsapp.com/1234" });
+  await sleep(20);
+  const sent = invocations.filter((x) => x.cmd === "notification_icon");
+  assert(built === 1, "the real Notification is still constructed");
+  assert(sent.length === 1 && sent[0].args.icon === "iVBORw0KGgo=", "PNG sent to notification_icon");
+  assert(sent[0].args.title === "Bob" && sent[0].args.body === "hi", "title/body identify the toast");
+  assert(!invocations.some((x) => x.cmd === "notify"), "page route does not duplicate native delivery");
+
+  w.fetch = () => Promise.reject(new Error("blocked"));
+  new w.Notification("Carol", { body: "yo", icon: "https://pps.whatsapp.net/v/x.jpg" });
+  await sleep(20);
+  const carol = invocations.filter((x) => x.cmd === "notification_icon" && x.args.title === "Carol");
+  assert(carol.length === 1 && carol[0].args.icon === null, "unloadable picture: icon null releases the held toast");
+
+  const before = invocations.filter((x) => x.cmd === "notification_icon").length;
+  new w.Notification("Dan", { body: "x", icon: "data:image/png;base64,AAAA" });
+  new w.Notification("Eve", { body: "x" });
+  await sleep(20);
+  assert(invocations.filter((x) => x.cmd === "notification_icon").length === before, "data:/no icon: Rust handles it, nothing sent");
+}
+
 const tests = [
   testScrollbarsAreThinAndTranslucent,
   testZoomShortcuts,
   testZoomWheelCoalesces,
   testWindowsNativePreferenceAndFallback,
   testNativePermissionAndAsyncErrorFallback,
+  testNativeBranchSendsNotificationIcon,
   testPersistentWindowsNotificationUsesOwnService,
   testDelayedIconRetainsDetectionEpoch,
   testUnreadReportsSayWhenThePageHasSettled,

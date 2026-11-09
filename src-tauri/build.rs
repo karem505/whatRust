@@ -20,6 +20,7 @@ fn main() {
             "test_notification",
             "open_notification_settings",
             "notify",
+            "notification_icon",
             "set_unread",
             "dlog",
             "open_download",

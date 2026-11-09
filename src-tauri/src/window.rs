@@ -1469,6 +1469,14 @@ fn enable_media_windows(webview: tauri::webview::PlatformWebview, app: AppHandle
                     webview2_com::take_pwstr(title),
                     webview2_com::take_pwstr(body),
                 );
+                // The sender's picture: a PNG data URI is read here; blob:/https:
+                // ones need the page (notification_icon), see native_icon.rs.
+                let mut icon_uri = windows_core::PWSTR::null();
+                let icon_uri = match notification.IconUri(&mut icon_uri) {
+                    Ok(()) => webview2_com::take_pwstr(icon_uri),
+                    Err(_) => String::new(),
+                };
+                let icon_uri = crate::native_icon::classify(&icon_uri);
                 // Ours to show: WebView2 draws nothing itself.
                 args.SetHandled(true)?;
                 let identity = crate::notify::event_id();
@@ -1499,12 +1507,28 @@ fn enable_media_windows(webview: tauri::webview::PlatformWebview, app: AppHandle
                         },
                     );
                 });
+                let icon = match icon_uri {
+                    crate::native_icon::IconUri::NeedsPage => {
+                        crate::notify::native_hold(
+                            &app,
+                            crate::native_icon::Held {
+                                label: native_label.clone(),
+                                title,
+                                body,
+                                identity,
+                            },
+                        );
+                        return Ok(());
+                    }
+                    crate::native_icon::IconUri::Png(png) => Some(png),
+                    crate::native_icon::IconUri::None => None,
+                };
                 crate::notify::from_event(
                     &app,
                     &native_label,
                     &title,
                     &body,
-                    None,
+                    icon.as_deref(),
                     crate::notify::Source::WebView2,
                     &identity,
                     false,

@@ -43,6 +43,29 @@ pub fn notify(
     crate::notify::from_page(&app, window.label(), &title, &body, icon.as_deref(), epoch);
 }
 
+/// The sender's picture for a notification WebView2 raised itself (Windows
+/// native path). bridge.js converts WhatsApp's `blob:`/`https:` icon to a small
+/// PNG, which Rust cannot fetch, and sends it here; it is paired with the held
+/// `NotificationReceived` toast by (webview, title, body). `icon: None` means
+/// the page could not get one. Same origin rule as `notify`.
+#[tauri::command(async)]
+pub fn notification_icon(
+    window: tauri::Webview,
+    app: tauri::AppHandle,
+    title: String,
+    body: String,
+    icon: Option<String>,
+) {
+    if crate::integration::remote(&window).is_err() {
+        return;
+    }
+    let icon = icon.filter(|i| i.len() <= crate::native_icon::MAX_ICON_B64);
+    #[cfg(windows)]
+    crate::notify::native_icon_arrived(&app, window.label(), &title, &body, icon);
+    #[cfg(not(windows))]
+    let _ = (app, title, body, icon);
+}
+
 /// Diagnostic breadcrumb from the injected page script (bridge.js) into the same
 /// file log as the Rust side, so a drag-drop failure can be traced end-to-end on a
 /// build with no console. Allowed from the WhatsApp page; it only appends a short,
