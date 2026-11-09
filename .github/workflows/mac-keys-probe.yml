@@ -35,8 +35,13 @@ jobs:
             cp "$HOME/.local/share/whatRust/logs/whatrust.log" $1.dlog || true
             pkill whatrust || true; sleep 3
           }
-          run_mode menubar '{"menubar_only":true}' hotkey
-          run_mode accessory '{"hide_dock_icon":true}' ""
+          run_mode window '{}' ""
+          run_mode single '{"single_window":true}' ""
+          # control: Safari on the same page
+          open -a Safari "http://127.0.0.1:8765/probe.html?f=ta" || true
+          sleep 10
+          PROC=Safari bash ../.github/probe/keys.sh safari || true
+          osascript -e 'tell application "Safari" to quit' || true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
