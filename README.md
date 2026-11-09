@@ -149,7 +149,15 @@ It keeps its own sandboxed WhatsApp login, separate from a `.deb` or AppImage in
 ```bash
 curl -fsSL https://raw.githubusercontent.com/karem505/whatRust/master/install.sh | sh
 ```
-Installs the AppImage to `~/.local/bin` on Linux (with an application-menu entry), or the `.dmg` app into `/Applications` on macOS (Apple Silicon). The macOS build is unsigned — if it warns on first launch, right-click the app → **Open**.
+Installs the AppImage to `~/.local/bin` on Linux (with an application-menu entry), or the `.dmg` app into `/Applications` on macOS (Apple Silicon). The script also clears macOS's download quarantine flag, which the unsigned build needs.
+
+> **macOS: "whatRust is damaged and can't be opened"?** The app isn't damaged. The build is not signed with an Apple Developer ID, so macOS blocks it when it was downloaded with a browser (the `.dmg` from the release page). Drag whatRust into Applications, then run this once in Terminal and open it again:
+>
+> ```bash
+> xattr -dr com.apple.quarantine /Applications/whatRust.app
+> ```
+>
+> Installing with the `install.sh` line above avoids this. Updates installed by whatRust itself are not affected.
 
 **Windows** — one line (PowerShell):
 ```powershell
@@ -272,7 +280,7 @@ whatRust doesn't talk to WhatsApp's servers itself: it shows the official `web.w
 - **Windows unread count**: Windows tray icons ignore text labels, so the unread *number* appears only in the hover tooltip (the icon still switches to a badged variant). macOS shows the count on the Dock icon and Linux on the tray icon.
 - **Linux launcher/dock badge**: the unread count is also sent to the launcher icon via the Unity `LauncherEntry` D-Bus API (.deb, AppImage with its `install.sh` desktop entry, and Flatpak). It shows on KDE Plasma's task manager, Dash to Dock / Ubuntu Dock, Plank and Latte; stock GNOME shows no app-icon badge without one of those extensions.
 - **Notification click** focuses the window on Windows only — elsewhere use the tray icon or the global shortcut.
-- **macOS** builds are unsigned and currently Apple Silicon (arm64) only.
+- **macOS** builds are unsigned and currently Apple Silicon (arm64) only. A `.dmg` downloaded with a browser shows "whatRust is damaged" until its quarantine flag is cleared (see Install).
 - **macOS and Windows file drops** go directly to WhatsApp through the native webview. Drag files from Finder/File Explorer onto the open conversation; use the attach (+) button if a drag source does not provide a file the webview can read.
 - **Linux drag-and-drop limits**: up to 200 files per drop, 500 MB per file, and 500 MB per drop total. Base64 transport is decoded incrementally while files stream in, but the page must still hold the final `File` data in memory. Larger batches can always be sent via WhatsApp's attach (+) → Document picker, which is not routed through these limits. Skipped files are reported in a notification. Native drops on macOS and Windows follow WhatsApp's own attachment limits.
 - **Multiple accounts on macOS** require macOS 14+ (older macOS runs a single account); Linux and Windows are unrestricted.
