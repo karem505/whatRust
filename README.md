@@ -19,6 +19,8 @@
 
 > **Unofficial, independent project** — not affiliated with, endorsed by, or sponsored by WhatsApp or Meta. whatRust simply loads the official `web.whatsapp.com` interface in a native system webview.
 
+> Also by the same author: [Rusty Inbox](https://aboelmakarem.pro/apps/rusty-inbox), a fast, open-source Rust email client for Linux, Windows and macOS.
+
 ## Contents
 
 - [What is whatRust?](#what-is-whatrust)
