@@ -557,9 +557,9 @@
       var style = document.createElement("style");
       style.textContent = [
         ":host{all:initial}",
-        ".stack{position:fixed;left:16px;bottom:16px;z-index:2147483647;display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 32px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(134,150,160,.45) transparent}",
-        ".stack::-webkit-scrollbar{width:8px}.stack::-webkit-scrollbar-track{background:transparent}.stack::-webkit-scrollbar-thumb{background-color:rgba(134,150,160,.45);border:2px solid transparent;border-radius:4px;background-clip:padding-box}",
+        ".stack{position:fixed;left:16px;bottom:16px;z-index:2147483647;display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 32px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(134,150,160,.45) transparent;",
         "font:14px/1.35 system-ui,-apple-system,'Segoe UI',Roboto,Ubuntu,sans-serif;max-width:min(380px,calc(100vw - 32px))}",
+        ".stack::-webkit-scrollbar{width:8px}.stack::-webkit-scrollbar-track{background:transparent}.stack::-webkit-scrollbar-thumb{background-color:rgba(134,150,160,.45);border:2px solid transparent;border-radius:4px;background-clip:padding-box}",
         ".toast{display:flex;align-items:center;gap:12px;padding:10px 10px 10px 14px;border-radius:10px;",
         "background:#233138;color:#e9edef;box-shadow:0 4px 18px rgba(0,0,0,.35)}",
         ".text{flex:1;min-width:0}",
