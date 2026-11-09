@@ -291,6 +291,9 @@ pub(crate) fn build_account_window(
 
     let builder = apply_isolation(builder, account, app);
     let win = builder.build()?;
+    // Issue #73: covers windows created after startup too (no-op once done).
+    #[cfg(target_os = "macos")]
+    crate::keys::install();
     crate::dlog::log("account window: WebView created");
 
     // Close-to-tray (reads the live setting so the toggle takes effect without a restart).

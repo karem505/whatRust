@@ -10,6 +10,8 @@ mod downloads;
 mod i18n;
 mod integration;
 mod jsonfile;
+#[cfg(target_os = "macos")]
+mod keys;
 mod links;
 mod lock;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -351,6 +353,10 @@ pub fn run() {
                 window::open_account_window(handle, account, open_hidden || !is_startup)?;
             }
             dlog::log("startup: account windows built");
+            // tao's content view must not re-interpret keys the webview left
+            // unhandled (issue #73); needs a tao window to exist.
+            #[cfg(target_os = "macos")]
+            keys::install();
             #[cfg(windows)]
             ui_health::start(handle);
             tray::setup(handle)?;
