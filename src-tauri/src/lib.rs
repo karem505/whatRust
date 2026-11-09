@@ -5,6 +5,7 @@ mod aumid;
 mod badge;
 mod biometric;
 mod commands;
+mod decorations;
 mod dlog;
 mod downloads;
 mod i18n;

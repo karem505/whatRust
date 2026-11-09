@@ -109,6 +109,12 @@ async function resetIcon() {
 async function load() {
   const s = await invoke("get_settings");
   setMacRows(s.platform === "macos");
+  // Title bar (Linux): auto hides it on tiling window managers like Hyprland.
+  document.getElementById("title_bar_row").hidden = s.platform !== "linux";
+  document.getElementById("title_bar").value = ["show", "hide"].includes(s.title_bar) ? s.title_bar : "auto";
+  document.getElementById("title_bar_subtitle").textContent = s.tiling_wm
+    ? t("Detectado: {0}. No modo automático a barra fica oculta.", [s.tiling_wm])
+    : "Gerenciadores de janelas lado a lado, como o Hyprland, não usam barra de título.";
   if (/Win/.test(navigator.platform || navigator.userAgent)) {
     const startupRow = document.getElementById("start_minimized").closest("label");
     startupRow.querySelector(".row-title").textContent = "Iniciar minimizado com o Windows";
@@ -202,6 +208,7 @@ async function save() {
   s.hotkey = hk || "CmdOrCtrl+Shift+W";
   s.blur_hotkey = document.getElementById("blur_hotkey").value.trim() || "CmdOrCtrl+Shift+B";
   s.zoom = parseFloat(document.getElementById("zoom").value) || ZOOM_DEFAULT;
+  s.title_bar = document.getElementById("title_bar").value || "auto";
   s.language = document.getElementById("language").value;
   s.download_dir = downloadDir;
   if (proxySupported) {
@@ -377,6 +384,7 @@ window.addEventListener("DOMContentLoaded", () => {
   // Zoom saves on change rather than on Save: picking a size you cannot see the
   // effect of is guesswork, and the webview applies it immediately.
   document.getElementById("zoom").addEventListener("change", save);
+  document.getElementById("title_bar").addEventListener("change", save);
   // The zoom shortcuts change it from the WhatsApp window; catch up on return.
   window.addEventListener("focus", () => {
     invoke("get_settings").then((s) => {
