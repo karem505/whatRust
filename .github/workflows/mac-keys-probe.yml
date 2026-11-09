@@ -35,12 +35,13 @@ jobs:
             cp "$HOME/.local/share/whatRust/logs/whatrust.log" $1.dlog || true
             pkill whatrust || true; sleep 3
           }
-          (cd ../.github/probe/wryctl && cargo build --release) || true
-          for v in child-focus; do
-            ../.github/probe/wryctl/target/release/wryctl "http://127.0.0.1:8765/probe.html?f=ta" child focus > app-wry-$v.log 2>&1 &
-            sleep 8
-            PROC=wryctl bash ../.github/probe/keys.sh wry-$v || true
-            pkill wryctl || true; sleep 2
+          for v in fix-window fix-single; do
+            if [ $v = fix-single ]; then echo '{"single_window":true}' > "$CFG/settings.json"; else echo '{}' > "$CFG/settings.json"; fi
+            WHATRUST_PROBE_URL="http://127.0.0.1:8765/probe.html?f=ta" ../src-tauri/target/debug/whatrust > app-$v.log 2>&1 &
+            sleep 15
+            PROC=whatrust bash ../.github/probe/keys.sh $v || true
+            cp "$HOME/.local/share/whatRust/logs/whatrust.log" $v.dlog || true
+            pkill whatrust || true; sleep 3
           done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()

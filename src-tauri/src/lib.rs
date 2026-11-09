@@ -10,6 +10,8 @@ mod downloads;
 mod i18n;
 mod integration;
 mod jsonfile;
+#[cfg(target_os = "macos")]
+mod keys;
 mod links;
 mod lock;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -352,6 +354,10 @@ pub fn run() {
                 window::open_account_window(handle, account, open_hidden || !is_startup)?;
             }
             dlog::log("startup: account windows built");
+            #[cfg(target_os = "macos")]
+            if std::env::var("WHATRUST_X").as_deref() != Ok("nofix") {
+                keys::install();
+            }
             #[cfg(windows)]
             ui_health::start(handle);
             tray::setup(handle)?;
