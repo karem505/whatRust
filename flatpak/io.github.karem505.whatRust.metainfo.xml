@@ -62,6 +62,12 @@
   </screenshots>
 
   <releases>
+    <release type="stable" version="0.6.14" date="2026-11-10">
+      <url type="details">https://github.com/karem505/whatRust/releases/tag/v0.6.14</url>
+      <description>
+        <p>Attaching a video works again on Linux: the preview appears, the thumbnail is correct, and memory use stays low instead of growing until the desktop freezes.</p>
+      </description>
+    </release>
     <release type="stable" version="0.6.13" date="2026-11-09">
       <url type="details">https://github.com/karem505/whatRust/releases/tag/v0.6.13</url>
       <description>
