@@ -22,13 +22,16 @@ jobs:
     runs-on: windows-latest
     env:
       VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Download and install the release
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $rel = if ($env:VERSION) { "tags/$env:VERSION" } else { 'latest' }
-          $r = Invoke-RestMethod "https://api.github.com/repos/${{ github.repository }}/releases/$rel"
+          # Authenticated: the shared runner IPs hit the anonymous API limit.
+          $h = @{ Authorization = "Bearer $env:GH_TOKEN" }
+          $r = Invoke-RestMethod "https://api.github.com/repos/${{ github.repository }}/releases/$rel" -Headers $h
           "Testing $($r.tag_name)"
           $asset = $r.assets | Where-Object { $_.name -like '*_x64-setup.exe' } | Select-Object -First 1
           Invoke-WebRequest $asset.browser_download_url -OutFile setup.exe
