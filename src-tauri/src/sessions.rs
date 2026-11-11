@@ -278,11 +278,14 @@ fn install_menu(app: &AppHandle, w: &Window) -> tauri::Result<()> {
         .accelerator("Ctrl+,")
         .build(app)?;
     let back = MenuItemBuilder::with_id("app.back", tr("Voltar ao WhatsApp")).build(app)?;
+    // Issue #80: a visible way to the privacy blur panel besides Ctrl+Shift+P.
+    let privacy =
+        MenuItemBuilder::with_id("app.privacy", tr("Desfoque de privacidade…")).build(app)?;
     let reload = MenuItemBuilder::with_id("app.reload", tr("Recarregar conta")).build(app)?;
     let lock = MenuItemBuilder::with_id("app.lock", tr("Bloquear")).build(app)?;
     let quit = MenuItemBuilder::with_id("app.quit", tr("Sair do whatRust")).build(app)?;
     let submenu = SubmenuBuilder::new(app, "whatRust")
-        .items(&[&accounts, &settings, &back, &reload, &lock, &quit])
+        .items(&[&accounts, &settings, &back, &privacy, &reload, &lock, &quit])
         .build()?;
     let menu = MenuBuilder::new(app).item(&submenu).build()?;
     w.set_menu(menu)?;
@@ -297,6 +300,14 @@ fn install_menu(app: &AppHandle, w: &Window) -> tauri::Result<()> {
                     if id=="app.accounts" { if let Some(v)=a.get_webview("settings") { let _=v.eval("window.dispatchEvent(new HashChangeEvent('hashchange'));document.querySelector('a[href=\"#sec-contas\"]').click()"); } }
                 },
                 "app.back"=>close_panel(&a),
+                "app.privacy"=> {
+                    if crate::lock::is_unlocked(&a) {
+                        close_panel(&a);
+                        if let Some(label)=selected(&a,&parent) {
+                            if let Some(v)=a.get_webview(&label) { let _=v.eval(crate::window::PRIVACY_PANEL_JS); }
+                        }
+                    }
+                },
                 "app.reload"=> { if crate::lock::is_unlocked(&a) { if let Some(label)=selected(&a,&parent) { if let Some(v)=a.get_webview(&label) { let _=v.reload(); } } } },
                 "app.lock"=> { if crate::applock::load(&a).is_active() { crate::lock::lock_now(&a); } },
                 "app.quit"=>a.exit(0),

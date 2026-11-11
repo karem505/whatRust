@@ -264,6 +264,7 @@ static EN_TABLE: &[(&str, &str)] = &[
     ("{0} conversas não lidas — WhatsApp", "{0} unread chats — WhatsApp"),
     ("Configurações do whatRust", "whatRust settings"),
     ("Voltar ao WhatsApp", "Back to WhatsApp"),
+    ("Desfoque de privacidade…", "Privacy blur…"),
     ("Recarregar conta", "Reload account"),
     ("Sair do whatRust", "Quit whatRust"),
     // updates

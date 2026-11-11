@@ -60,6 +60,10 @@ fn safari_ua(macos_major: u64) -> String {
 }
 
 const BRIDGE_JS: &str = include_str!("../resources/bridge.js");
+/// Opens (or closes) the privacy blur panel in an account page (privacy.js).
+#[cfg(windows)]
+pub(crate) const PRIVACY_PANEL_JS: &str =
+    "window.__whatrustPrivacy&&window.__whatrustPrivacy.panel()";
 /// Linux only: makes attaching a video work on WebKitGTK (see the file header).
 const MEDIA_JS: &str = if cfg!(target_os = "linux") {
     include_str!("../resources/media.js")
@@ -1422,7 +1426,12 @@ fn enable_media_windows(webview: tauri::webview::PlatformWebview, app: AppHandle
         COREWEBVIEW2_PERMISSION_KIND_NOTIFICATIONS, COREWEBVIEW2_PERMISSION_STATE_ALLOW,
         COREWEBVIEW2_PERMISSION_STATE_DENY,
     };
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        COREWEBVIEW2_KEY_EVENT_KIND, COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN,
+        COREWEBVIEW2_PHYSICAL_KEY_STATUS,
+    };
     use webview2_com::{NotificationReceivedEventHandler, PermissionRequestedEventHandler};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CONTROL, VK_MENU, VK_SHIFT};
     use windows_core::Interface;
 
     // SAFETY: with_webview runs on the UI thread where the WebView2 controller lives;
@@ -1458,6 +1467,43 @@ fn enable_media_windows(webview: tauri::webview::PlatformWebview, app: AppHandle
         ));
         let mut token: i64 = 0;
         let _ = core.add_PermissionRequested(&handler, &mut token);
+
+        // Issue #80: Ctrl+Shift+P is a WebView2 browser accelerator ("print with
+        // the system dialog"). WebView2 handles it before the page, so the
+        // privacy panel's own keydown listener never saw it on Windows and the
+        // print dialog opened instead. Claim the combination here and open the
+        // panel ourselves; every other accelerator keeps its normal behaviour.
+        let keys_app = app.clone();
+        let keys_label = label.clone();
+        let keys = webview2_com::AcceleratorKeyPressedEventHandler::create(Box::new(
+            move |_controller, args| {
+                let Some(args) = args else { return Ok(()) };
+                let mut kind = COREWEBVIEW2_KEY_EVENT_KIND::default();
+                args.KeyEventKind(&mut kind)?;
+                let mut vk = 0u32;
+                args.VirtualKey(&mut vk)?;
+                let held = |k: u16| GetKeyState(k as i32) < 0;
+                if kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN
+                    && vk == u32::from(b'P')
+                    && held(VK_CONTROL.0)
+                    && held(VK_SHIFT.0)
+                    && !held(VK_MENU.0)
+                {
+                    args.SetHandled(true)?;
+                    let mut status = COREWEBVIEW2_PHYSICAL_KEY_STATUS::default();
+                    args.PhysicalKeyStatus(&mut status)?;
+                    // A held key repeats; toggle once per press.
+                    if !status.WasKeyDown.as_bool() {
+                        if let Some(v) = keys_app.get_webview(&keys_label) {
+                            let _ = v.eval(PRIVACY_PANEL_JS);
+                        }
+                    }
+                }
+                Ok(())
+            },
+        ));
+        let mut keys_token: i64 = 0;
+        let _ = controller.add_AcceleratorKeyPressed(&keys, &mut keys_token);
 
         // NotificationReceived needs ICoreWebView2_24 (WebView2 runtime 1.0.2895+).
         let Ok(core24) = core.cast::<ICoreWebView2_24>() else {

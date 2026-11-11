@@ -123,12 +123,15 @@ jobs:
           Shot 'privacy-panel-shortcut'
           Combo @() 0x1B             # Esc closes it again
           Start-Sleep 1
-          # The same panel from the window menu: whatRust -> Privacy blur.
-          Combo @() 0x12             # Alt focuses the menu bar
-          Combo @() 0x28             # Down opens the whatRust menu
+          # The same panel from the window menu: whatRust -> Privacy blur...
+          [U]::SetCursorPos($r.L + 35, $r.T + 38) | Out-Null
+          [U]::mouse_event(2, 0, 0, 0, 0); [U]::mouse_event(4, 0, 0, 0, 0)
           Start-Sleep 1
           Shot 'window-menu'
-          Combo @() 0x1B; Combo @() 0x1B
+          foreach ($i in 1..4) { Combo @() 0x28 }   # Down x4 -> the privacy item
+          Combo @() 0x0D                            # Enter
+          Start-Sleep 2
+          Shot 'privacy-panel-menu'
 
       - name: App log
         if: always()
