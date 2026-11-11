@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 const here = dirname(fileURLToPath(import.meta.url));
 // hotkey.js assigns globalThis.HotkeyFmt; run it in this global scope.
 (0, eval)(readFileSync(join(here, "hotkey.js"), "utf8"));
-const { comboToAccelerator, isValidCombo } = globalThis.HotkeyFmt;
+const { comboToAccelerator, isValidCombo, toDisplay, fromDisplay } = globalThis.HotkeyFmt;
 
 let failures = 0;
 function eq(actual, expected, label) {
@@ -24,6 +24,12 @@ eq(comboToAccelerator(M({ meta: true }), "KeyK"), "Super+K", "Meta+K -> Super+K"
 eq(comboToAccelerator(M({ ctrl: true, alt: true, shift: true }), "KeyP"), "CmdOrCtrl+Alt+Shift+P", "modifier order");
 eq(comboToAccelerator(M({ ctrl: true }), "ArrowUp"), "CmdOrCtrl+Up", "Ctrl+ArrowUp -> CmdOrCtrl+Up");
 eq(comboToAccelerator(M(), "Comma"), null, "unmapped key -> null");
+
+eq(toDisplay("CmdOrCtrl+Shift+W"), "Cmd/Ctrl+Shift+W", "display shows Cmd/Ctrl");
+eq(fromDisplay("Cmd/Ctrl+Shift+W"), "CmdOrCtrl+Shift+W", "save converts back to CmdOrCtrl");
+eq(fromDisplay(toDisplay("CmdOrCtrl+Alt+F8")), "CmdOrCtrl+Alt+F8", "display round-trips");
+eq(fromDisplay("cmd / ctrl+K"), "CmdOrCtrl+K", "typed variants are accepted");
+eq(fromDisplay("CmdOrCtrl+K"), "CmdOrCtrl+K", "stored form passes through");
 
 eq(isValidCombo(M(), "KeyW"), false, "bare letter invalid");
 eq(isValidCombo(M({ shift: true }), "KeyW"), true, "Shift+letter valid (Shift counts)");

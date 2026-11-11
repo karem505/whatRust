@@ -17,7 +17,7 @@ function check(name, fn) {
 
 // Text that is the same in both languages, or a proper name.
 const SAME = new Set(["whatRust", "WhatsApp", "OK", "Português (Brasil)", "English", "⇄", "⋮", "⚙",
-  "CmdOrCtrl+Shift+W", "CmdOrCtrl+Shift+B", "whatrust --toggle", "Esc", "SOCKS5", "HTTP", "127.0.0.1", "1080"]);
+  "CmdOrCtrl+Shift+W", "CmdOrCtrl+Shift+B", "Cmd/Ctrl+Shift+W", "Cmd/Ctrl+Shift+B", "whatrust --toggle", "Esc", "SOCKS5", "HTTP", "127.0.0.1", "1080"]);
 
 function visibleTexts(html) {
   html = html.replace(/<script[\s\S]*?<\/script>/g, "").replace(/<style[\s\S]*?<\/style>/g, "")

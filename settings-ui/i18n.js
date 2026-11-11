@@ -64,6 +64,13 @@
     "Não foi possível carregar as contas: {0}": "Could not load the accounts: {0}",
     // updates
     "Atualizações": "Updates",
+    "Sobre o whatRust": "About whatRust",
+    "Contribuidores": "Contributors",
+    "Obrigado a todas as pessoas que contribuíram com código para o whatRust.": "Thanks to everyone who has contributed code to whatRust.",
+    "Alterar foto": "Change photo",
+    "Remover foto": "Remove photo",
+    "A imagem tem mais de 5 MB.": "The image is larger than 5 MB.",
+    "Não foi possível ler a imagem.": "The image could not be read.",
     "Verificar atualizações automaticamente": "Check for updates automatically",
     "Consulta o GitHub (api.github.com) um minuto após iniciar e a cada 6 horas. Só pergunta qual é a versão mais recente.": "Asks GitHub (api.github.com) a minute after start and every 6 hours which version is the newest. Nothing else is sent.",
     "Instalar atualizações automaticamente": "Install updates automatically",
