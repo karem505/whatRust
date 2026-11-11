@@ -103,6 +103,32 @@ jobs:
           Start-Sleep 25
           Shot 'after-deeplink'
           "whatRust processes: $(@(Get-Process whatRust -ErrorAction SilentlyContinue).Count) (single instance expected: 1)"
+          # Privacy blur panel (issue #80): focus the page, press Ctrl+Shift+P and
+          # screenshot. The panel is a dark box in the bottom-right corner.
+          Add-Type @'
+          using System; using System.Runtime.InteropServices;
+          public static class K { [DllImport("user32.dll")] public static extern void keybd_event(byte k, byte s, int f, int e); }
+          '@
+          function Combo([byte[]]$mods, [byte]$key) {
+            foreach ($m in $mods) { [K]::keybd_event($m, 0, 0, 0) }
+            [K]::keybd_event($key, 0, 0, 0); [K]::keybd_event($key, 0, 2, 0)
+            [array]::Reverse($mods); foreach ($m in $mods) { [K]::keybd_event($m, 0, 2, 0) }
+          }
+          [U]::SetForegroundWindow($app.MainWindowHandle) | Out-Null
+          [U]::SetCursorPos($r.L + 500, $r.T + 420) | Out-Null
+          [U]::mouse_event(2, 0, 0, 0, 0); [U]::mouse_event(4, 0, 0, 0, 0)
+          Start-Sleep 2
+          Combo @(0x11, 0x10) 0x50   # Ctrl+Shift+P
+          Start-Sleep 3
+          Shot 'privacy-panel-shortcut'
+          Combo @() 0x1B             # Esc closes it again
+          Start-Sleep 1
+          # The same panel from the window menu: whatRust -> Privacy blur.
+          Combo @() 0x12             # Alt focuses the menu bar
+          Combo @() 0x28             # Down opens the whatRust menu
+          Start-Sleep 1
+          Shot 'window-menu'
+          Combo @() 0x1B; Combo @() 0x1B
 
       - name: App log
         if: always()
