@@ -62,6 +62,12 @@
   </screenshots>
 
   <releases>
+    <release type="stable" version="0.6.15" date="2026-11-12">
+      <url type="details">https://github.com/karem505/whatRust/releases/tag/v0.6.15</url>
+      <description>
+        <p>Accounts can have a profile photo, Settings has an About whatRust page with the contributors, and the privacy blur covers more of WhatsApp, including notification contents. On Windows the privacy blur panel now opens with Ctrl+Shift+P or from the whatRust menu.</p>
+      </description>
+    </release>
     <release type="stable" version="0.6.14" date="2026-11-10">
       <url type="details">https://github.com/karem505/whatRust/releases/tag/v0.6.14</url>
       <description>
