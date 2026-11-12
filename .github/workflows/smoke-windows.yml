@@ -22,13 +22,16 @@ jobs:
     runs-on: windows-latest
     env:
       VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Download and install the release
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $rel = if ($env:VERSION) { "tags/$env:VERSION" } else { 'latest' }
-          $r = Invoke-RestMethod "https://api.github.com/repos/${{ github.repository }}/releases/$rel"
+          # Authenticated: the shared runner IPs hit the anonymous API limit.
+          $h = @{ Authorization = "Bearer $env:GH_TOKEN" }
+          $r = Invoke-RestMethod "https://api.github.com/repos/${{ github.repository }}/releases/$rel" -Headers $h
           "Testing $($r.tag_name)"
           $asset = $r.assets | Where-Object { $_.name -like '*_x64-setup.exe' } | Select-Object -First 1
           Invoke-WebRequest $asset.browser_download_url -OutFile setup.exe
@@ -103,6 +106,35 @@ jobs:
           Start-Sleep 25
           Shot 'after-deeplink'
           "whatRust processes: $(@(Get-Process whatRust -ErrorAction SilentlyContinue).Count) (single instance expected: 1)"
+          # Privacy blur panel (issue #80): focus the page, press Ctrl+Shift+P and
+          # screenshot. The panel is a dark box in the bottom-right corner.
+          Add-Type @'
+          using System; using System.Runtime.InteropServices;
+          public static class K { [DllImport("user32.dll")] public static extern void keybd_event(byte k, byte s, int f, int e); }
+          '@
+          function Combo([byte[]]$mods, [byte]$key) {
+            foreach ($m in $mods) { [K]::keybd_event($m, 0, 0, 0) }
+            [K]::keybd_event($key, 0, 0, 0); [K]::keybd_event($key, 0, 2, 0)
+            [array]::Reverse($mods); foreach ($m in $mods) { [K]::keybd_event($m, 0, 2, 0) }
+          }
+          [U]::SetForegroundWindow($app.MainWindowHandle) | Out-Null
+          [U]::SetCursorPos($r.L + 500, $r.T + 420) | Out-Null
+          [U]::mouse_event(2, 0, 0, 0, 0); [U]::mouse_event(4, 0, 0, 0, 0)
+          Start-Sleep 2
+          Combo @(0x11, 0x10) 0x50   # Ctrl+Shift+P
+          Start-Sleep 3
+          Shot 'privacy-panel-shortcut'
+          Combo @() 0x1B             # Esc closes it again
+          Start-Sleep 1
+          # The same panel from the window menu: whatRust -> Privacy blur...
+          [U]::SetCursorPos($r.L + 35, $r.T + 38) | Out-Null
+          [U]::mouse_event(2, 0, 0, 0, 0); [U]::mouse_event(4, 0, 0, 0, 0)
+          Start-Sleep 1
+          Shot 'window-menu'
+          foreach ($i in 1..4) { Combo @() 0x28 }   # Down x4 -> the privacy item
+          Combo @() 0x0D                            # Enter
+          Start-Sleep 2
+          Shot 'privacy-panel-menu'
 
       - name: App log
         if: always()

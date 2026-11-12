@@ -51,6 +51,24 @@ test('the two notification paths do not duplicate the same alert', async () => {
   assert.equal(calls.filter(c => c.cmd === 'notify').length, 1);
 });
 
+test('privacy blur masks both notification paths before they reach Rust', async () => {
+  const { window, calls } = harness();
+  window.__whatrustPrivacy = { mask: (title, options) => ({ title: 'WhatsApp', options: { body: 'New message' } }) };
+  new window.Notification('Alice', { body: 'secret A', icon: 'data:image/png;base64,AAAA' });
+  await new window.ServiceWorkerRegistration().showNotification('Bob', { body: 'secret B' });
+  const sent = calls.filter(c => c.cmd === 'notify').map(c => c.args);
+  assert.equal(sent.length, 1); // same masked text on both paths de-duplicates
+  assert.deepEqual([sent[0].title, sent[0].body, sent[0].icon], ['WhatsApp', 'New message', undefined]);
+  assert.ok(!JSON.stringify(calls).includes('secret'));
+});
+
+test('a throwing privacy mask never drops the notification', () => {
+  const { window, calls } = harness();
+  window.__whatrustPrivacy = { mask() { throw new Error('boom'); } };
+  new window.Notification('Carol', { body: 'hello' });
+  assert.equal(calls.filter(c => c.cmd === 'notify')[0].args.title, 'Carol');
+});
+
 test('unread initialization, changes and clearing reach Rust without repeating unchanged titles', () => {
   const { document, calls, intervals } = harness();
   const poll = intervals.find(timer => timer.delay === 2000).callback;

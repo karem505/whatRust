@@ -1,3 +1,4 @@
+mod accountphoto;
 mod accounts;
 mod appicon;
 mod applock;
@@ -227,6 +228,9 @@ pub fn run() {
             commands::open_settings,
             commands::pick_download_dir,
             commands::choose_app_icon,
+            commands::set_account_photo,
+            commands::remove_account_photo,
+            commands::open_contributor,
             commands::reset_app_icon,
             commands::list_accounts,
             commands::add_account,

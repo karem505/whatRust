@@ -54,6 +54,7 @@ windows = { version = "0.61", features = [
   "Win32_UI_Controls_Dialogs", # native per-download Save As dialog
   "Win32_UI_WindowsAndMessaging", # SW_SHOWNORMAL for ShellExecuteW
   "Win32_Globalization",      # GetUserDefaultLocaleName: default UI language
+  "Win32_UI_Input_KeyboardAndMouse", # GetKeyState: Ctrl+Shift+P privacy panel (issue #80)
 ] }
 windows-core = "0.61"
 # In windows-rs 0.61 IAsyncOperation moved out of windows::Foundation into the

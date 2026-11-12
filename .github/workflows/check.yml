@@ -76,6 +76,9 @@ jobs:
       - name: notification tests
         run: node src-tauri/resources/notifications.test.mjs
 
+      - name: privacy blur tests
+        run: node --test src-tauri/resources/privacy.test.mjs
+
       # Linux video attach (WebKitGTK): blob media preload, canplaythrough,
       # parking detached videos, refusing a video given to <img>.
       - name: media.js tests

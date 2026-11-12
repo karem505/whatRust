@@ -39,5 +39,14 @@
     return FN_KEY.test(code);
   }
 
-  globalThis.HotkeyFmt = { comboToAccelerator, isValidCombo, FN_KEY };
+  // The stored accelerator says CmdOrCtrl (Tauri syntax); the fields show the
+  // friendlier Cmd/Ctrl and convert back on save.
+  function toDisplay(accel) {
+    return String(accel).replace(/CmdOrCtrl/g, "Cmd/Ctrl");
+  }
+  function fromDisplay(text) {
+    return String(text).replace(/Cmd\s*\/\s*Ctrl/gi, "CmdOrCtrl");
+  }
+
+  globalThis.HotkeyFmt = { comboToAccelerator, isValidCombo, toDisplay, fromDisplay, FN_KEY };
 })();

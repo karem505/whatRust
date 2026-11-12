@@ -7,18 +7,22 @@
   function L(pt, en) { return window.__WR_LANG === "en" ? en : pt; }
 
   // Selectors are best-effort against WhatsApp Web's current DOM; adjust here.
+  // WhatsApp dropped most data-testid hooks, so each group also lists the
+  // short `_akXX` class names it has kept stable since v2.3000 (the same
+  // hooks the MIT-licensed "Privacy Extension for WhatsApp Web" by Lukas
+  // Lenhardt maintains) and, for photos, the profile-picture CDN host.
   var GROUPS = [
-    { id: "chat", label: function () { return L("Todas as mensagens da conversa", "All messages in chat"); }, amt: true, sel: ["#main [data-id]"] },
-    { id: "preview", label: function () { return L("Prévia das últimas mensagens", "Last message previews"); }, amt: true, sel: ["#pane-side [data-testid='cell-frame-secondary']", "#pane-side [role='listitem'] div[role='gridcell']:nth-child(2) > div:nth-child(2)"] },
-    { id: "media", label: function () { return L("Prévia de mídia", "Media previews"); }, amt: true, sel: ["#main [data-id] img", "#main [data-id] video", "#main [data-id] canvas"] },
-    { id: "gallery", label: function () { return L("Galeria de mídia", "Media gallery"); }, amt: true, sel: ["[data-animate-media-viewer] img", "[data-animate-media-viewer] video", "[role='dialog'] img", "[role='dialog'] video"] },
-    { id: "input", label: function () { return L("Campo de texto", "Text input"); }, amt: false, sel: ["#main footer [contenteditable]"] },
-    { id: "avatars", label: function () { return L("Fotos de perfil", "Profile pictures"); }, amt: true, sel: ["#pane-side img", "#main header img", "#side header img"] },
-    { id: "names", label: function () { return L("Nomes de grupos e contatos", "Group and contact names"); }, amt: true, sel: ["#pane-side [data-testid='cell-frame-title']", "#main header span[dir='auto']", "#main [data-id] [data-testid='author']"] }
+    { id: "chat", label: function () { return L("Todas as mensagens da conversa", "All messages in chat"); }, amt: true, sel: ["#main [data-id]", "div._amk4 > ._amk6", "div._amk4 ._am2s"] },
+    { id: "preview", label: function () { return L("Prévia das últimas mensagens", "Last message previews"); }, amt: true, sel: ["#pane-side [data-testid='cell-frame-secondary']", "#pane-side [role='listitem'] div[role='gridcell']:nth-child(2) > div:nth-child(2)", "div._ak8k"] },
+    { id: "media", label: function () { return L("Prévia de mídia", "Media previews"); }, amt: true, sel: ["#main [data-id] img", "#main [data-id] video", "#main [data-id] canvas", "#main [data-id] [style*='background-image']", "div._ahy5 > div", "div._ak4o", "div._aju3 ._agtn > div", "div.xz9dduz > div:first-child", "div._ajwt > div:first-child > div:nth-child(2) > div", "div._ak3i"] },
+    { id: "gallery", label: function () { return L("Galeria de mídia", "Media gallery"); }, amt: true, sel: ["[data-animate-media-viewer] img", "[data-animate-media-viewer] video", "[role='dialog'] img", "[role='dialog'] video", "div._ajuf._ajuh._ajug > div", "div.x1conndi", "div.x4t2iug", "div._ak15 > ._ahwq"] },
+    { id: "input", label: function () { return L("Campo de texto", "Text input"); }, amt: false, sel: ["#main footer [contenteditable]", "div._ak1l", "div._ak1r", "div._ajwt [contenteditable]"] },
+    { id: "avatars", label: function () { return L("Fotos de perfil", "Profile pictures"); }, amt: true, sel: ["#pane-side img", "#main header img", "#side header img", "img[src*='pps.whatsapp.net']", "[role='listitem'] ._ak8h", "[role='dialog'] ._ak8h", "div[role='button'][class=''] ._ak8h", "header > div[role='button']:first-child > div", "div._amk4 > div[role='button']", "div._ahz2", "div._ak4m", "div.overlay ._ak8h"] },
+    { id: "names", label: function () { return L("Nomes de grupos e contatos", "Group and contact names"); }, amt: true, sel: ["#pane-side [data-testid='cell-frame-title']", "#main header span[dir='auto']", "#main [data-id] [data-testid='author']", "[role='listitem'] ._ak8q", "[role='listitem'] ._am_2", "div[role='button'][class=''] ._ak8q", "[role='dialog'] ._ak8q", "[role='dialog'] div.copyable-text", "div._ahxj", "div._ahz1", "div.overlay ._ak8q", "div._ak1d > div:first-child > div:first-child > :not(:first-child)"] }
   ];
   var DEFAULTS = {
     // Off until the user turns it on: an update must never blur anyone's chats.
-    on: false, noTransition: false, unblurHover: false,
+    on: false, noTransition: false, unblurHover: false, notif: true,
     idle: { on: false, amt: 12, secs: 60 },
     g: {
       chat: { on: false, amt: 8 }, preview: { on: true, amt: 8 }, media: { on: true, amt: 12 },
@@ -131,6 +135,7 @@
       add(row(g.label(), sw(function () { return c.on; }, function (v) { c.on = v; }), g.amt,
         g.amt ? [el("span", { text: L("Desfoque", "Blur") })].concat(slider(c, "amt", 1, 30, "px")) : null));
     });
+    add(row(L("Ocultar conteúdo das notificações", "Hide notification contents"), sw(function () { return cfg.notif; }, function (v) { cfg.notif = v; })));
     add(row(L("Sem animação", "No transition delay"), sw(function () { return cfg.noTransition; }, function (v) { cfg.noTransition = v; })));
     add(row(L("Mostrar tudo com o mouse sobre a janela", "Unblur all on app hover"), sw(function () { return cfg.unblurHover; }, function (v) { cfg.unblurHover = v; })));
     add(row(L("Desfocar tudo quando ocioso", "Blur everything when idle"), sw(function () { return cfg.idle.on; }, function (v) { cfg.idle.on = v; }), true,
@@ -144,7 +149,22 @@
 
   window.__whatrustPrivacy = {
     toggle: function () { cfg.on = !cfg.on; apply(); syncs.forEach(function (f) { f(); }); },
-    panel: togglePanel
+    panel: togglePanel,
+    // Native notifications (bridge.js) go through here first. While the blur is
+    // on they must not leak what the page hides: the sender name, the message
+    // and the sender's photo follow the matching groups.
+    mask: function (title, options) {
+      options = options || {};
+      if (!cfg.on || !cfg.notif) return { title: title, options: options };
+      var o = {};
+      Object.keys(options).forEach(function (k) { o[k] = options[k]; });
+      var hideText = cfg.g.chat.on || cfg.g.preview.on;
+      // The sender's name and photo identify the chat as much as the text.
+      if (hideText || cfg.g.names.on) title = "WhatsApp";
+      if (hideText) o.body = L("Nova mensagem", "New message");
+      if (hideText || cfg.g.names.on || cfg.g.avatars.on) { delete o.icon; delete o.image; }
+      return { title: title, options: o };
+    }
   };
   window.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && panel && !panel.hidden) { panel.hidden = true; return; }
@@ -152,5 +172,9 @@
     if (e.code === "KeyP") { e.preventDefault(); e.stopPropagation(); togglePanel(); }
   }, true);
   function init() { build(); apply(); }
-  if (document.documentElement) { if (document.body) init(); else document.addEventListener("DOMContentLoaded", init, { once: true }); }
+  // WebView2 runs init scripts before the parser creates <html>, so
+  // documentElement can still be null here: waiting only on a non-null
+  // documentElement skipped init() for good and the saved blur never applied
+  // on Windows until it was toggled again.
+  if (document.body) init(); else document.addEventListener("DOMContentLoaded", init, { once: true });
 })();
