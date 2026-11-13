@@ -393,7 +393,9 @@ pub fn set_account_photo(
     if !accounts::load(&app).accounts.iter().any(|a| a.id == id) {
         return Err("unknown account".into());
     }
-    crate::accountphoto::set(&app, &id, &png)
+    crate::accountphoto::set(&app, &id, &png)?;
+    crate::appicon::apply_account(&app, &id);
+    Ok(())
 }
 
 #[tauri::command]
@@ -407,6 +409,7 @@ pub fn remove_account_photo(
     }
     lock::require_unlocked(&app)?;
     crate::accountphoto::clear(&app, &id);
+    crate::appicon::apply_account(&app, &id);
     Ok(())
 }
 

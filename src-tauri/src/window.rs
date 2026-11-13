@@ -280,7 +280,7 @@ pub(crate) fn build_account_window(
     crate::proxy::check_platform(&crate::settings::load(app))?;
 
     let url = "https://web.whatsapp.com/".parse().expect("valid url");
-    let icon = crate::appicon::current(app);
+    let icon = crate::appicon::for_account(app, &account.id);
 
     let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
         .title(format!("whatRust — {}", account.name))

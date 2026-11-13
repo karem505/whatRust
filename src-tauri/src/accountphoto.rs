@@ -46,6 +46,14 @@ pub fn clear(app: &AppHandle, id: &str) {
     }
 }
 
+/// The photo as an image (the window icon of this account's own window, issue
+/// #54), if there is a valid one.
+pub fn image(app: &AppHandle, id: &str) -> Option<tauri::image::Image<'static>> {
+    let bytes = std::fs::read(path_for(app, id)?).ok()?;
+    crate::appicon::validate(&bytes).ok()?;
+    tauri::image::Image::from_bytes(&bytes).ok()
+}
+
 /// The photo as a `data:` URL for the settings page, if there is a valid one.
 pub fn data_url(app: &AppHandle, id: &str) -> Option<String> {
     let bytes = std::fs::read(path_for(app, id)?).ok()?;

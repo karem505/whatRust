@@ -102,6 +102,31 @@ pub fn current(app: &AppHandle) -> Image<'static> {
         .expect("the bundled icon decodes")
 }
 
+/// The icon of one account's own window (issue #54): the account's profile
+/// photo when it has one, so its taskbar entry and Alt+Tab tile tell accounts
+/// apart; otherwise the app icon. macOS has no per-window icons (the Dock icon
+/// is app-wide), so there it is always the app icon.
+pub fn for_account(app: &AppHandle, id: &str) -> Image<'static> {
+    if cfg!(target_os = "macos") {
+        return current(app);
+    }
+    crate::accountphoto::image(app, id).unwrap_or_else(|| current(app))
+}
+
+/// Re-apply one account's window icon (after its photo changed). Covers the
+/// per-account window and a window detached from the single window.
+pub fn apply_account(app: &AppHandle, id: &str) {
+    if cfg!(target_os = "macos") {
+        return;
+    }
+    let icon = for_account(app, id);
+    for label in [crate::accounts::window_label(id), format!("detached-{id}")] {
+        if let Some(window) = app.get_window(&label) {
+            let _ = window.set_icon(icon.clone());
+        }
+    }
+}
+
 /// Put the wanted icon on every window (and the Dock on macOS). `force` redoes
 /// it even when the custom/default choice has not changed (a new PNG).
 pub fn apply(app: &AppHandle, custom: bool, force: bool) {
@@ -118,6 +143,10 @@ pub fn apply(app: &AppHandle, custom: bool, force: bool) {
     };
     for window in app.windows().into_values() {
         let _ = window.set_icon(image.clone());
+    }
+    // Accounts with a photo keep it on their own window.
+    for account in crate::accounts::load(app).accounts {
+        apply_account(app, &account.id);
     }
     #[cfg(target_os = "macos")]
     set_dock_icon(app, custom.then_some(bytes));

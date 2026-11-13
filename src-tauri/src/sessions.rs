@@ -583,7 +583,7 @@ pub fn detach(app: &AppHandle, id: &str) -> Result<(), String> {
         .inner_size(1000., 760.)
         .min_inner_size(560., 480.)
         .decorations(crate::decorations::show(app))
-        .icon(crate::appicon::current(app))
+        .icon(crate::appicon::for_account(app, id))
         .map_err(|e| e.to_string())?
         .visible(false)
         .build()
