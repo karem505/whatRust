@@ -115,6 +115,13 @@ async function load() {
   document.getElementById("title_bar_subtitle").textContent = s.tiling_wm
     ? t("Detectado: {0}. No modo automático a barra fica oculta.", [s.tiling_wm])
     : "Gerenciadores de janelas lado a lado, como o Hyprland, não usam barra de título.";
+  // Rendering (Linux, issue #87): software rendering for GPUs too old for
+  // WebKit's GPU compositor. Read at startup, so changes apply after a restart.
+  document.getElementById("rendering_row").hidden = s.platform !== "linux";
+  document.getElementById("rendering").value = s.rendering === "software" ? "software" : "auto";
+  document.getElementById("rendering_subtitle").textContent = s.legacy_gpu
+    ? t("Placa de vídeo antiga detectada: o modo automático já renderiza sem GPU.")
+    : "Use o modo compatível se a janela ficar em branco em placas de vídeo antigas. Vale ao reiniciar o whatRust.";
   if (/Win/.test(navigator.platform || navigator.userAgent)) {
     const startupRow = document.getElementById("start_minimized").closest("label");
     startupRow.querySelector(".row-title").textContent = "Iniciar minimizado com o Windows";
@@ -209,6 +216,7 @@ async function save() {
   s.blur_hotkey = window.HotkeyFmt.fromDisplay(document.getElementById("blur_hotkey").value.trim()) || "CmdOrCtrl+Shift+B";
   s.zoom = parseFloat(document.getElementById("zoom").value) || ZOOM_DEFAULT;
   s.title_bar = document.getElementById("title_bar").value || "auto";
+  s.rendering = document.getElementById("rendering").value || "auto";
   s.language = document.getElementById("language").value;
   s.download_dir = downloadDir;
   if (proxySupported) {
@@ -440,6 +448,7 @@ window.addEventListener("DOMContentLoaded", () => {
   // effect of is guesswork, and the webview applies it immediately.
   document.getElementById("zoom").addEventListener("change", save);
   document.getElementById("title_bar").addEventListener("change", save);
+  document.getElementById("rendering").addEventListener("change", save);
   // The zoom shortcuts change it from the WhatsApp window; catch up on return.
   window.addEventListener("focus", () => {
     invoke("get_settings").then((s) => {
