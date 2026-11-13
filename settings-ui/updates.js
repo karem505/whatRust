@@ -33,6 +33,7 @@
     st = s;
     const m = s.method;
     $("upd_current").textContent = s.current;
+    if ($("nav_version")) $("nav_version").textContent = s.current ? "v" + s.current : "";
     $("upd_method").textContent = m.label;
     $("upd_last").textContent = when(s.lastCheck);
     $("auto_update_install_subtitle").textContent = autoInstallNote(m);

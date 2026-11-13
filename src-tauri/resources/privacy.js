@@ -86,7 +86,7 @@
 
   // ---- Panel UI (Shadow DOM so WhatsApp's CSS cannot touch it) ----
   var PANEL_CSS =
-    ":host{all:initial;font:400 13px/1.4 ui-rounded,\"SF Pro Rounded\",-apple-system,BlinkMacSystemFont,\"SF Pro Text\",sans-serif;-webkit-font-smoothing:antialiased;letter-spacing:.005em;color:#e9edefd9}" +
+    ":host{all:initial;font:400 13px/1.4 -apple-system,BlinkMacSystemFont,\"Segoe UI\",Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;letter-spacing:.005em;color:#e9edefd9}" +
     ".panel{position:fixed;right:10px;bottom:10px;z-index:2147483647;width:300px;max-height:calc(100vh - 80px);overflow:auto;background:#232626;border:1px solid #8883;border-radius:10px;box-shadow:0 4px 20px #0008;padding:6px 0}.panel[hidden]{display:none}" +
     "h2{font-size:11px;margin:8px 14px 2px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;opacity:.6}" +
     ".row{display:flex;align-items:center;gap:8px;padding:8px 14px;border-top:1px solid #8881}.row span.l{flex:1}" +

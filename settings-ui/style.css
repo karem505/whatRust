@@ -86,12 +86,17 @@ select option { background: var(--bg); color: var(--fg); }
 .switch::before { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s; }
 .switch:checked { background: var(--green); }
 .switch:checked::before { transform: translateX(16px); }
-.account-row { border-radius:8px; display: flex; align-items: center; min-height: 88px; gap: 15px; padding: 14px 0; }
+.account-row { border-radius:8px; display: flex; align-items: center; min-height: 88px; gap: 15px; padding: 12px; }
 .account-row:hover { background:var(--hover); }
+.account-row:hover .account-avatar:not(.has-photo) { background: var(--control-hover); }
 .account-avatar { height: 48px; width: 48px; border-radius: 50%; background: var(--hover); color: var(--dim); display: grid; place-items: center; font-size: 17px; flex: 0 0 48px; }
 .account-avatar.has-photo { overflow: hidden; background: none; }
 .account-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.settings-nav .nav-about { margin-top: auto; border-top: 1px solid var(--border); border-radius: 0 0 8px 8px; }
+.settings-nav .nav-about { margin-top: auto; position: relative; }
+.settings-nav .nav-about::before { content: ""; position: absolute; left: 8px; right: 8px; top: -7px; border-top: 1px solid var(--border); }
+.nav-about-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.nav-version { font-size: 12px; color: var(--dim); }
+.nav-version:empty { display: none; }
 .contributors { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .contributors a { display: inline-block; padding: 6px 12px; border: 1px solid var(--border); border-radius: 16px; color: inherit; text-decoration: none; font-size: 13px; }
 .contributors a:hover { background: var(--hover); }
