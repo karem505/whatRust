@@ -66,6 +66,10 @@ pub struct Settings {
     /// compositor; `software` always renders in software (issue #87). Read at
     /// startup, so a change applies after a restart. See `gpu`.
     pub rendering: String,
+    /// Hide WhatsApp's "get the Windows/Mac app" prompts (issue #83). Read when
+    /// an account page is created, so a change applies after a restart. On by
+    /// default: both people in the issue asked for it.
+    pub hide_app_banner: bool,
 }
 
 impl Default for Settings {
@@ -97,6 +101,7 @@ impl Default for Settings {
             auto_update_install: true,
             title_bar: crate::decorations::AUTO.to_string(),
             rendering: RENDERING_AUTO.to_string(),
+            hide_app_banner: true,
         }
     }
 }

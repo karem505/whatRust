@@ -147,6 +147,8 @@
     "Barra de título": "Title bar",
     "Gerenciadores de janelas lado a lado, como o Hyprland, não usam barra de título.": "Tiling window managers such as Hyprland don't use a title bar.",
     "Renderização": "Rendering",
+    "Ocultar anúncios do app do WhatsApp": "Hide WhatsApp app promotions",
+    "Esconde os convites para baixar o WhatsApp para Windows ou Mac. Vale ao reiniciar o whatRust.": "Hides the prompts to download WhatsApp for Windows or Mac. Applies after restarting whatRust.",
     "Use o modo compatível se a janela ficar em branco em placas de vídeo antigas. Vale ao reiniciar o whatRust.": "Use Compatible if the window stays blank on an old graphics card. Applies after restarting whatRust.",
     "Compatível (sem GPU)": "Compatible (no GPU)",
     "Placa de vídeo antiga detectada: o modo automático já renderiza sem GPU.": "Old graphics card detected: Automatic already renders without the GPU.",

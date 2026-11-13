@@ -78,6 +78,8 @@ jobs:
 
       - name: privacy blur tests
         run: node --test src-tauri/resources/privacy.test.mjs
+      - name: app-banner hook tests
+        run: node --test src-tauri/resources/upsell.test.mjs
 
       # Linux video attach (WebKitGTK): blob media preload, canplaythrough,
       # parking detached videos, refusing a video given to <img>.

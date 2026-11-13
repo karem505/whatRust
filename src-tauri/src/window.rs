@@ -60,6 +60,8 @@ fn safari_ua(macos_major: u64) -> String {
 }
 
 const BRIDGE_JS: &str = include_str!("../resources/bridge.js");
+/// Hides WhatsApp's "get the desktop app" prompts (issue #83, upsell.js).
+const UPSELL_JS: &str = include_str!("../resources/upsell.js");
 /// Opens (or closes) the privacy blur panel in an account page (privacy.js).
 #[cfg(windows)]
 pub(crate) const PRIVACY_PANEL_JS: &str =
@@ -122,6 +124,11 @@ macro_rules! account_webview {
             .initialization_script(BRIDGE_JS)
             .initialization_script(MEDIA_JS)
             .initialization_script(include_str!("../resources/privacy.js"))
+            .initialization_script(if crate::settings::load($app).hide_app_banner {
+                UPSELL_JS
+            } else {
+                ""
+            })
             // Drag-and-drop is done by capturing the OS drop in Rust and streaming the file
             // into the page (see `register_drop_handler` + bridge.js `__whatrustDropFeed`).
             // We deliberately KEEP Tauri's drag-drop handler enabled (except on Windows, see
