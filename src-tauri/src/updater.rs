@@ -12,7 +12,7 @@
 //! | Windows NSIS      | setup run with `/P /UPDATE /R` (the template's update switches)  |
 //! | Windows MSI       | `msiexec /i … /passive`                                          |
 //! | `.deb`            | `pkexec dpkg -i` after the user clicks Install                   |
-//! | Flatpak           | bundle saved in Downloads and opened through the OpenURI portal  |
+//! | Flatpak           | bundle saved in Downloads, installed on the host with `flatpak-spawn --host flatpak install`, relaunch; opened in the software centre if that is not possible |
 //! | source build etc. | reported only                                                    |
 //!
 //! Nothing is replaced or launched before the download matched the release's
@@ -815,6 +815,9 @@ pub fn fetch(
 pub enum Relaunch {
     Exec(PathBuf),
     MacOpen(PathBuf),
+    /// `flatpak run <app id>` on the host (a process left in the sandbox dies
+    /// with it)
+    FlatpakRun(String),
 }
 
 /// What happened after a successful apply.
@@ -838,6 +841,12 @@ pub struct ApplyCtx {
     pub downloads: PathBuf,
     /// where a `.deb` install relaunches the app from
     pub exe: PathBuf,
+    /// runs a command on the host from inside the Flatpak sandbox
+    pub flatpak_spawn: String,
+    /// the sandbox's instance description (says which installation we run from)
+    pub flatpak_info: PathBuf,
+    /// the Flatpak app id
+    pub flatpak_id: String,
 }
 
 impl ApplyCtx {
@@ -847,6 +856,12 @@ impl ApplyCtx {
             msiexec: "msiexec".into(),
             downloads,
             exe,
+            flatpak_spawn: "flatpak-spawn".into(),
+            flatpak_info: "/.flatpak-info".into(),
+            flatpak_id: std::env::var("FLATPAK_ID")
+                .ok()
+                .filter(|v| !v.is_empty())
+                .unwrap_or_else(|| "io.github.karem505.whatRust".into()),
         }
     }
 }
@@ -960,6 +975,61 @@ fn apply_mac_tar(staged: &Staged, bundle: &Path) -> Res<Outcome> {
     Ok(Outcome::Restart(Relaunch::MacOpen(bundle.to_path_buf())))
 }
 
+/// `--user` or `--system`: the installation the running Flatpak comes from,
+/// read from the `app-path` in `/.flatpak-info`. `None` for anything else
+/// (a custom installation), which is left to the software centre.
+pub fn flatpak_scope(info: &str) -> Option<&'static str> {
+    let path = info
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("app-path="))?;
+    if path.contains("/.local/share/flatpak/") {
+        Some("--user")
+    } else if path.starts_with("/var/lib/flatpak/") {
+        Some("--system")
+    } else {
+        None
+    }
+}
+
+/// Install a verified Flatpak bundle on the host. Before v0.6.16 the bundle
+/// was only opened in the software centre, and some (Shelly, for one) showed
+/// it without installing it, while whatRust reported the update as done.
+/// Needs `--talk-name=org.freedesktop.Flatpak` (flatpak-spawn --host). When the
+/// command can't run at all, the bundle is opened as before; when it runs and
+/// fails, the bundle stays in Downloads with the command to install it.
+fn apply_flatpak(staged: &Staged, ctx: &ApplyCtx) -> Res<Outcome> {
+    let open = || Ok(Outcome::OpenFile(staged.path.clone()));
+    let info = std::fs::read_to_string(&ctx.flatpak_info).unwrap_or_default();
+    let Some(scope) = flatpak_scope(&info) else {
+        return open();
+    };
+    let out = std::process::Command::new(&ctx.flatpak_spawn)
+        .args(["--host", "flatpak", "install", scope])
+        .args(["--noninteractive", "--assumeyes", "--reinstall"])
+        .arg(&staged.path)
+        .stdin(std::process::Stdio::null())
+        .output();
+    match out {
+        Ok(o) if o.status.success() => Ok(Outcome::Restart(Relaunch::FlatpakRun(
+            ctx.flatpak_id.clone(),
+        ))),
+        Ok(o) => {
+            let detail = String::from_utf8_lossy(&o.stderr);
+            let detail = detail.trim().lines().last().unwrap_or("").to_string();
+            Ok(Outcome::Manual {
+                message: trf(
+                    "O Flatpak não conseguiu instalar a atualização ({0}). O pacote verificado está em {1}; instale com: flatpak install {2} --reinstall {1}",
+                    &[&detail, &staged.path.display(), &scope],
+                ),
+                path: staged.path.clone(),
+            })
+        }
+        // No flatpak-spawn, or the sandbox may not reach the host: open the
+        // bundle in the software centre, as before.
+        Err(_) => open(),
+    }
+}
+
 fn apply_deb(staged: &Staged, ctx: &ApplyCtx) -> Res<Outcome> {
     let status = std::process::Command::new(&ctx.pkexec)
         .arg("dpkg")
@@ -1022,6 +1092,7 @@ pub fn apply(method: &Method, staged: &Staged, ctx: &ApplyCtx) -> Res<Outcome> {
             staged.discard();
             r
         }
+        (Method::Flatpak, AssetKind::Flatpak) => apply_flatpak(staged, ctx),
         (_, AssetKind::MacDmg | AssetKind::Flatpak) => Ok(Outcome::OpenFile(staged.path.clone())),
         (Method::Deb, AssetKind::Deb) => apply_deb(staged, ctx),
         (Method::WindowsNsis, AssetKind::Nsis) => {
@@ -1092,6 +1163,14 @@ pub fn relaunch_command(what: &Relaunch) -> std::process::Command {
             Relaunch::MacOpen(p) => {
                 c.arg("sleep 1; exec open \"$0\"").arg(p);
             }
+            Relaunch::FlatpakRun(id) => {
+                // Started on the host: everything left in the sandbox ends
+                // when this instance exits.
+                let mut host = std::process::Command::new("flatpak-spawn");
+                host.args(["--host", "sh", "-c", "sleep 2; exec flatpak run \"$0\""])
+                    .arg(id);
+                return host;
+            }
         }
         // The old AppImage mount is about to disappear; the new one sets its own.
         for k in ["APPDIR", "APPIMAGE", "ARGV0", "OWD"] {
@@ -1103,6 +1182,11 @@ pub fn relaunch_command(what: &Relaunch) -> std::process::Command {
     {
         match what {
             Relaunch::Exec(p) | Relaunch::MacOpen(p) => std::process::Command::new(p),
+            Relaunch::FlatpakRun(id) => {
+                let mut c = std::process::Command::new("flatpak");
+                c.args(["run", id.as_str()]);
+                c
+            }
         }
     }
 }
@@ -1576,6 +1660,11 @@ mod tests {
             msiexec: "msiexec".into(),
             downloads: dir.join("Downloads"),
             exe: dir.join("whatrust"),
+            // A program that does not exist: the Flatpak path falls back to
+            // opening the bundle unless a test provides a fake one.
+            flatpak_spawn: dir.join("no-flatpak-spawn").display().to_string(),
+            flatpak_info: dir.join("flatpak-info"),
+            flatpak_id: "io.github.karem505.whatRust".into(),
         }
     }
 
@@ -2106,6 +2195,111 @@ mod tests {
         assert_eq!(
             apply(&Method::Flatpak, &staged, &ctx(Path::new("/tmp"))).unwrap(),
             Outcome::OpenFile("/dl/whatRust_x86_64.flatpak".into())
+        );
+    }
+
+    #[test]
+    fn flatpak_scope_follows_the_installation() {
+        let user = "[Instance]\napp-path=/home/u/.local/share/flatpak/app/io.github.karem505.whatRust/x86_64/stable/abc/files\n";
+        let system = "[Instance]\napp-path=/var/lib/flatpak/app/io.github.karem505.whatRust/x86_64/stable/abc/files\n";
+        assert_eq!(flatpak_scope(user), Some("--user"));
+        assert_eq!(flatpak_scope(system), Some("--system"));
+        assert_eq!(
+            flatpak_scope("[Instance]\napp-path=/opt/custom/app/x/files\n"),
+            None
+        );
+        assert_eq!(flatpak_scope(""), None);
+    }
+
+    /// A fake `flatpak-spawn` that records its arguments and exits with `code`.
+    #[cfg(unix)]
+    fn fake_flatpak(dir: &Path, code: i32) -> ApplyCtx {
+        use std::os::unix::fs::PermissionsExt;
+        let script = dir.join("flatpak-spawn");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\necho \"$@\" > \"{}\"\necho 'error: polkit said no' >&2\nexit {code}\n",
+                dir.join("args").display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::write(
+            dir.join("flatpak-info"),
+            "[Instance]\napp-path=/home/u/.local/share/flatpak/app/x/files\n",
+        )
+        .unwrap();
+        let mut c = ctx(dir);
+        c.flatpak_spawn = script.display().to_string();
+        c
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn flatpak_bundle_is_installed_on_the_host_then_relaunched() {
+        let d = tempdir("flatpak-host-ok");
+        let c = fake_flatpak(&d, 0);
+        let staged = Staged {
+            path: d.join("whatRust_x86_64.flatpak"),
+            name: "whatRust_x86_64.flatpak".into(),
+            kind: AssetKind::Flatpak,
+            cleanup: None,
+        };
+        let out = apply(&Method::Flatpak, &staged, &c).unwrap();
+        assert_eq!(
+            out,
+            Outcome::Restart(Relaunch::FlatpakRun("io.github.karem505.whatRust".into()))
+        );
+        let args = std::fs::read_to_string(d.join("args")).unwrap();
+        assert_eq!(
+            args.trim(),
+            format!(
+                "--host flatpak install --user --noninteractive --assumeyes --reinstall {}",
+                staged.path.display()
+            )
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_flatpak_install_keeps_the_bundle_and_says_how() {
+        let d = tempdir("flatpak-host-fail");
+        let c = fake_flatpak(&d, 1);
+        let staged = Staged {
+            path: d.join("whatRust_x86_64.flatpak"),
+            name: "whatRust_x86_64.flatpak".into(),
+            kind: AssetKind::Flatpak,
+            cleanup: None,
+        };
+        match apply(&Method::Flatpak, &staged, &c).unwrap() {
+            Outcome::Manual { path, message } => {
+                assert_eq!(path, staged.path);
+                assert!(message.contains("polkit said no"), "{message}");
+                assert!(message.contains("--user --reinstall"), "{message}");
+            }
+            other => panic!("expected Manual, got {other:?}"),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn flatpak_relaunch_runs_on_the_host() {
+        let c = relaunch_command(&Relaunch::FlatpakRun("io.github.karem505.whatRust".into()));
+        let args: Vec<_> = c
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(c.get_program(), "flatpak-spawn");
+        assert_eq!(
+            args,
+            vec![
+                "--host",
+                "sh",
+                "-c",
+                "sleep 2; exec flatpak run \"$0\"",
+                "io.github.karem505.whatRust"
+            ]
         );
     }
 

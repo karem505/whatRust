@@ -296,6 +296,7 @@ static EN_TABLE: &[(&str, &str)] = &[
     ("A atualização não contém um aplicativo válido.", "The update does not contain a valid app."),
     ("A instalação foi cancelada.", "The installation was cancelled."),
     ("O dpkg não conseguiu instalar o pacote ({0}).", "dpkg could not install the package ({0})."),
+    ("O Flatpak não conseguiu instalar a atualização ({0}). O pacote verificado está em {1}; instale com: flatpak install {2} --reinstall {1}", "Flatpak could not install the update ({0}). The verified bundle is at {1}; install it with: flatpak install {2} --reinstall {1}"),
     ("O pkexec não foi encontrado. O pacote verificado está em {0}; instale com: sudo dpkg -i {0}", "pkexec was not found. The verified package is at {0}; install it with: sudo dpkg -i {0}"),
     ("Não foi possível iniciar o instalador: {0}", "Could not start the installer: {0}"),
     ("whatRust {0} está disponível", "whatRust {0} is available"),

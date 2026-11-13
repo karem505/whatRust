@@ -107,7 +107,8 @@
     $("upd_error").textContent = s.error || "";
     show("upd_error", !!s.error && s.state !== "checking");
     show("upd_install", install && !busy);
-    $("upd_install").textContent = m.id === "flatpak" ? t("Baixar e abrir") : t("Baixar e instalar");
+    // Flatpak installs on the host too since v0.6.16 (falls back to opening the bundle).
+    $("upd_install").textContent = t("Baixar e instalar");
     show("upd_apply", apply);
     show("upd_restart", restart);
     show("upd_page", page);

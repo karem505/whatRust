@@ -288,7 +288,19 @@ fn fail(app: &AppHandle, e: updater::UErr) {
 }
 
 fn finish(app: &AppHandle, rel: &Release, outcome: Outcome, auto: bool) {
-    crate::dlog::log(&format!("update: installed {}", rel.version));
+    // Only an applied update is "installed"; a bundle handed to the user is not.
+    crate::dlog::log(&match &outcome {
+        Outcome::Restart(_) => format!("update: installed {}", rel.version),
+        Outcome::Handoff => format!("update: installer for {} started", rel.version),
+        Outcome::OpenFile(p) => format!("update: {} saved, opened {}", rel.version, p.display()),
+        Outcome::Manual { path, .. } => {
+            format!(
+                "update: {} saved at {}, not installed",
+                rel.version,
+                path.display()
+            )
+        }
+    });
     match outcome {
         Outcome::Restart(r) => {
             set(|s| {

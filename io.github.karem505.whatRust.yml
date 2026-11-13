@@ -22,6 +22,10 @@ finish-args:
   - --talk-name=org.kde.ScreenSaver
   # Unity LauncherEntry: the proxy only forwards the unread-count signal if the app may talk to this name.
   - --talk-name=com.canonical.Unity
+  # In-app updates (Settings > Updates): the verified bundle is installed with
+  # `flatpak-spawn --host flatpak install`, then the app is restarted on the host.
+  # This name lets the app run host commands; it is only used for that.
+  - --talk-name=org.freedesktop.Flatpak
 
 modules:
   - flatpak/shared-modules/libayatana-appindicator/libayatana-appindicator-gtk3.json
