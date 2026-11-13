@@ -62,6 +62,12 @@
   </screenshots>
 
   <releases>
+    <release type="stable" version="0.6.16" date="2026-11-13">
+      <url type="details">https://github.com/karem505/whatRust/releases/tag/v0.6.16</url>
+      <description>
+        <p>Builds for ARM and Intel on every system. The in-app update installs Flatpak updates itself. Old graphics cards no longer leave a blank window after login, the AppImage loads on openSUSE and Fedora, title-bar buttons on KDE work after restoring from the tray, and WhatsApp's prompts to get its desktop app are hidden.</p>
+      </description>
+    </release>
     <release type="stable" version="0.6.15" date="2026-11-12">
       <url type="details">https://github.com/karem505/whatRust/releases/tag/v0.6.15</url>
       <description>
