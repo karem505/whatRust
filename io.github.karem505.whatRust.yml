@@ -36,15 +36,15 @@ modules:
         TAURI_CONFIG: '{"identifier":"io.github.karem505.whatRust"}'
     sources:
       - type: archive
-        url: https://static.rust-lang.org/dist/2025-08-07/rust-1.89.0-x86_64-unknown-linux-gnu.tar.xz
-        sha256: c4f2796b10ee886001f0799bc40caea38746403a33c379d77878c4f4683f9b51
+        url: https://static.rust-lang.org/dist/2025-11-10/rust-1.91.1-x86_64-unknown-linux-gnu.tar.xz
+        sha256: db178028da493a663b2e344a142076fb0f72adea4120043983f488de9cf95214
         dest: rust-toolchain
         strip-components: 1
         only-arches:
           - x86_64
       - type: archive
-        url: https://static.rust-lang.org/dist/2025-08-07/rust-1.89.0-aarch64-unknown-linux-gnu.tar.xz
-        sha256: ae6f35b027cb32339fa4ac94dab37a21194e9a5c680491d01e54aa61e9da4de7
+        url: https://static.rust-lang.org/dist/2025-11-10/rust-1.91.1-aarch64-unknown-linux-gnu.tar.xz
+        sha256: be340c296bd18ad50a8af4f6c22fc744018f269f94474bdaf705da946803d64a
         dest: rust-toolchain
         strip-components: 1
         only-arches:

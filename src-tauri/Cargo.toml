@@ -2,7 +2,7 @@
 name = "whatrust"
 version = "0.6.15"
 edition = "2021"
-rust-version = "1.82"
+rust-version = "1.90"
 
 [profile.release]
 codegen-units = 1
@@ -19,7 +19,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "=2.11.2", features = ["tray-icon", "image-png", "unstable", "macos-proxy"] }
+tauri = { version = "=2.12.5", features = ["tray-icon", "image-png", "unstable", "macos-proxy"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["time"] }
@@ -29,7 +29,7 @@ semver = "1"
 sha2 = "0.10"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-# Version-matched to wry 0.55's webkit2gtk so PlatformWebview::inner() types unify.
+# Version-matched to wry 0.57's webkit2gtk so PlatformWebview::inner() types unify.
 webkit2gtk = "=2.0.2"
 # Already in the tree through tauri/wry; named directly to pin the single-window
 # recovery bar (GtkBox child packing). Same 0.18 line wry uses.
@@ -38,9 +38,9 @@ zbus = "5"
 zbus_polkit = "5.0.0"
 
 [target.'cfg(windows)'.dependencies]
-# Version-matched to wry 0.55 for the WebView2 PermissionRequested mic/camera handler.
-webview2-com = "0.38"
-windows = { version = "0.61", features = [
+# Version-matched to wry 0.57 for the WebView2 PermissionRequested mic/camera handler.
+webview2-com = "0.39"
+windows = { version = "0.62", features = [
   "Win32_Foundation",         # existing
   "Win32_System_Com",         # existing (webview2 permission handler)
   "Security_Credentials_UI",  # UserConsentVerifier + result/availability enums
@@ -56,13 +56,13 @@ windows = { version = "0.61", features = [
   "Win32_Globalization",      # GetUserDefaultLocaleName: default UI language
   "Win32_UI_Input_KeyboardAndMouse", # GetKeyState: Ctrl+Shift+P privacy panel (issue #80)
 ] }
-windows-core = "0.61"
-# In windows-rs 0.61 IAsyncOperation moved out of windows::Foundation into the
-# windows-future crate (0.2.1 is already in the tree via the windows stack).
-windows-future = "0.2"
+windows-core = "0.62"
+# Since windows-rs 0.61 IAsyncOperation lives in the windows-future crate
+# (0.3 is the line that matches windows 0.62).
+windows-future = "0.3"
 # WinRT toasts raised directly so their result can be logged (notify.rs). Same
 # version the notification plugin already pulls in, so no new crate is vendored.
-tauri-winrt-notification = "0.7"
+tauri-winrt-notification = "0.8"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # macOS < 14 guard for data_store_identifier (per-account isolation). Already at

@@ -21,7 +21,7 @@ uv run /tmp/flatpak-builder-tools/cargo/flatpak-cargo-generator.py \
   src-tauri/Cargo.lock -o flatpak/cargo-sources.json
 ```
 
-The manifest downloads the official Rust 1.89.0 toolchain archives before entering the build sandbox. The x86_64 and ARM64 URLs and SHA-256 checksums are pinned in the manifest; flatpak-builder consumes `cargo-sources.json` to materialize the vendored dependency tree, and Cargo remains network-disabled while compiling from that tree. This avoids depending on a mutable SDK-extension ref while keeping the source build reproducible.
+The manifest downloads the official Rust 1.91.1 toolchain archives before entering the build sandbox. The x86_64 and ARM64 URLs and SHA-256 checksums are pinned in the manifest; flatpak-builder consumes `cargo-sources.json` to materialize the vendored dependency tree, and Cargo remains network-disabled while compiling from that tree. This avoids depending on a mutable SDK-extension ref while keeping the source build reproducible.
 
 Build and install the current checkout:
 
