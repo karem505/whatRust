@@ -171,6 +171,11 @@ pub struct SettingsView {
     /// The tiling window manager this Linux session runs (Hyprland, Sway,
     /// ...), shown next to the title-bar setting; `None` elsewhere.
     pub tiling_wm: Option<String>,
+    /// Linux: this run renders in software (Settings → Rendering, or an old GPU).
+    pub software_rendering: bool,
+    /// Linux: the GPU is too old for WebKit's GPU compositor, so `auto` already
+    /// renders in software.
+    pub legacy_gpu: bool,
     /// The proxy URL the running webviews were created with (`""` = none). When
     /// it differs from the saved settings, a restart is pending.
     pub proxy_in_use: String,
@@ -195,6 +200,14 @@ pub fn get_settings(window: tauri::Webview, app: tauri::AppHandle) -> Result<Set
         platform: std::env::consts::OS,
         menubar_supported: crate::menubar::supported(),
         tiling_wm: crate::decorations::tiling_wm(),
+        #[cfg(target_os = "linux")]
+        software_rendering: crate::gpu::software_rendering_active(),
+        #[cfg(not(target_os = "linux"))]
+        software_rendering: false,
+        #[cfg(target_os = "linux")]
+        legacy_gpu: crate::gpu::legacy_gpu_detected(),
+        #[cfg(not(target_os = "linux"))]
+        legacy_gpu: false,
         proxy_in_use: crate::proxy::in_use(),
         proxy_supported: crate::proxy::engine_supported(),
         single_window_active: crate::sessions::enabled(),
@@ -380,7 +393,9 @@ pub fn set_account_photo(
     if !accounts::load(&app).accounts.iter().any(|a| a.id == id) {
         return Err("unknown account".into());
     }
-    crate::accountphoto::set(&app, &id, &png)
+    crate::accountphoto::set(&app, &id, &png)?;
+    crate::appicon::apply_account(&app, &id);
+    Ok(())
 }
 
 #[tauri::command]
@@ -394,6 +409,7 @@ pub fn remove_account_photo(
     }
     lock::require_unlocked(&app)?;
     crate::accountphoto::clear(&app, &id);
+    crate::appicon::apply_account(&app, &id);
     Ok(())
 }
 

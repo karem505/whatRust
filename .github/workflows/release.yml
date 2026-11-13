@@ -53,16 +53,27 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # x86_64 and aarch64 for every OS. `target` cross-compiles where the
+        # runner's own architecture is the other one; `bundles` limits the
+        # formats where one can't be built for that target (WiX/MSI has no ARM64).
         include:
           - platform: ubuntu-22.04
+          - platform: ubuntu-22.04-arm
           - platform: windows-latest
+          - platform: windows-latest
+            target: aarch64-pc-windows-msvc
+            args: --target aarch64-pc-windows-msvc --bundles nsis
           - platform: macos-latest
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin
+    name: build (${{ matrix.platform }}${{ matrix.target && format(', {0}', matrix.target) || '' }})
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install Linux deps
-        if: matrix.platform == 'ubuntu-22.04'
+        if: startsWith(matrix.platform, 'ubuntu-')
         run: |
           sudo apt update
           sudo apt install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
@@ -70,10 +81,22 @@ jobs:
             desktop-file-utils
 
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          targets: ${{ matrix.target }}
 
       - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: "./src-tauri -> target"
+          key: ${{ matrix.target }}
+
+      # ring (rustls) builds its ARM64 Windows assembly with clang; the runner
+      # image ships LLVM but not on PATH.
+      - name: Put clang on PATH (Windows ARM64)
+        if: matrix.target == 'aarch64-pc-windows-msvc'
+        shell: bash
+        run: |
+          echo "C:\\Program Files\\LLVM\\bin" >> "$GITHUB_PATH"
+          "/c/Program Files/LLVM/bin/clang" --version | head -1
 
       # Release notes live in the repo (docs/release-notes/<tag>.md) and become
       # the release body, so a release never goes out with an empty page.
@@ -100,20 +123,21 @@ jobs:
           releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: ${{ env.RELEASE_TAG != '' }}
           prerelease: false
+          args: ${{ matrix.args }}
 
       # Issue #22: the bundler copies the build host's libwayland-client into the
       # AppImage, and on any distro with a newer Mesa that old copy stops Mesa's
       # EGL from loading (blank window, EGL_BAD_PARAMETER). Strip the host-only
       # libraries, repack, verify, and replace the asset tauri-action uploaded.
       - name: Strip host-only libraries from the AppImage
-        if: matrix.platform == 'ubuntu-22.04'
+        if: startsWith(matrix.platform, 'ubuntu-')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           APPIMAGE_EXTRACT_AND_RUN: "1"
         run: |
           curl -fsSL -o "$RUNNER_TEMP/appimagetool" \
-            https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-x86_64.AppImage
+            "https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-$(uname -m).AppImage"
           chmod +x "$RUNNER_TEMP/appimagetool"
           set -- src-tauri/target/release/bundle/appimage/*.AppImage
           [ -f "$1" ] || { echo "no AppImage was built" >&2; exit 1; }
@@ -201,9 +225,10 @@ jobs:
           done < assets.txt
           # A release must carry the bundles the updater looks for; fail rather than
           # publish one it cannot use.
-          for pattern in '*_x64-setup.exe' '*_x64_en-US.msi' '*_aarch64.dmg' '*.app.tar.gz' \
-                         '*_amd64.deb' '*_amd64.AppImage' 'whatRust_x86_64.flatpak' \
-                         'whatRust_aarch64.flatpak'; do
+          for pattern in '*_x64-setup.exe' '*_x64_en-US.msi' '*_arm64-setup.exe' \
+                         '*_aarch64.dmg' '*_x64.dmg' '*_aarch64.app.tar.gz' '*_x64.app.tar.gz' \
+                         '*_amd64.deb' '*_amd64.AppImage' '*_arm64.deb' '*_aarch64.AppImage' \
+                         'whatRust_x86_64.flatpak' 'whatRust_aarch64.flatpak'; do
             compgen -G "release-assets/$pattern" >/dev/null \
               || { echo "::error::release $RELEASE_TAG has no asset matching $pattern"; exit 1; }
           done

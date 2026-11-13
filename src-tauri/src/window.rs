@@ -60,6 +60,8 @@ fn safari_ua(macos_major: u64) -> String {
 }
 
 const BRIDGE_JS: &str = include_str!("../resources/bridge.js");
+/// Hides WhatsApp's "get the desktop app" prompts (issue #83, upsell.js).
+const UPSELL_JS: &str = include_str!("../resources/upsell.js");
 /// Opens (or closes) the privacy blur panel in an account page (privacy.js).
 #[cfg(windows)]
 pub(crate) const PRIVACY_PANEL_JS: &str =
@@ -122,6 +124,11 @@ macro_rules! account_webview {
             .initialization_script(BRIDGE_JS)
             .initialization_script(MEDIA_JS)
             .initialization_script(include_str!("../resources/privacy.js"))
+            .initialization_script(if crate::settings::load($app).hide_app_banner {
+                UPSELL_JS
+            } else {
+                ""
+            })
             // Drag-and-drop is done by capturing the OS drop in Rust and streaming the file
             // into the page (see `register_drop_handler` + bridge.js `__whatrustDropFeed`).
             // We deliberately KEEP Tauri's drag-drop handler enabled (except on Windows, see
@@ -273,7 +280,7 @@ pub(crate) fn build_account_window(
     crate::proxy::check_platform(&crate::settings::load(app))?;
 
     let url = "https://web.whatsapp.com/".parse().expect("valid url");
-    let icon = crate::appicon::current(app);
+    let icon = crate::appicon::for_account(app, &account.id);
 
     let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
         .title(format!("whatRust — {}", account.name))
@@ -1198,6 +1205,10 @@ fn register_focus_listener(app: &AppHandle, win: &WebviewWindow) {
             if let Some(active) = app_handle.try_state::<ActiveAccount>() {
                 *crate::lock::guard(&active) = label.clone();
             }
+            #[cfg(windows)]
+            if let Some(w) = app_handle.get_webview_window(&label) {
+                focus_webview_windows(&w);
+            }
         }
         // Menu-bar mode: losing focus dismisses a presented panel; the
         // webview keeps running while hidden (see `background_throttling`).
@@ -1206,6 +1217,23 @@ fn register_focus_listener(app: &AppHandle, win: &WebviewWindow) {
             crate::menubar::on_focus_lost(&app_handle, &label);
         }
         _ => {}
+    });
+}
+
+/// Windows (issue #85): activating the window with Alt+Tab focuses the
+/// top-level window but not WebView2's child window, so the composer shows a
+/// caret yet keys go nowhere until a click. Hand keyboard focus to the webview;
+/// WebView2 then restores focus to the element that had it in the page.
+#[cfg(windows)]
+fn focus_webview_windows(win: &WebviewWindow) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC;
+    let _ = win.with_webview(|webview| {
+        // SAFETY: with_webview runs on the UI thread that owns the controller.
+        let _ = unsafe {
+            webview
+                .controller()
+                .MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC)
+        };
     });
 }
 

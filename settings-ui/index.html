@@ -10,7 +10,7 @@
   </head>
   <body>
     <header class="app-header"><div><strong>Configurações</strong><span>whatRust</span></div><button id="back-to-chat" type="button" class="secondary back-button" aria-label="Voltar ao WhatsApp" title="Voltar ao WhatsApp" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5 M12 5l-7 7 7 7"/></svg><span>Voltar ao WhatsApp</span></button></header>
-    <div class="settings-layout"><nav class="settings-nav" aria-label="Configurações"><a href="#sec-contas">Contas</a><a href="#sec-notificacoes">Notificações</a><a href="#sec-aparencia">Aparência</a><a href="#sec-seguranca">Segurança</a><a href="#sec-sistema">Inicialização</a><a href="#sec-rede">Rede</a><a href="#sec-atalhos">Atalhos</a><a href="#sec-diagnostico">Diagnóstico</a><a class="nav-about" href="#sec-atualizacoes">Sobre o whatRust</a></nav>
+    <div class="settings-layout"><nav class="settings-nav" aria-label="Configurações"><a href="#sec-contas">Contas</a><a href="#sec-notificacoes">Notificações</a><a href="#sec-aparencia">Aparência</a><a href="#sec-seguranca">Segurança</a><a href="#sec-sistema">Inicialização</a><a href="#sec-rede">Rede</a><a href="#sec-atalhos">Atalhos</a><a href="#sec-diagnostico">Diagnóstico</a><a class="nav-about" href="#sec-atualizacoes"><span class="nav-about-text"><span>Sobre o whatRust</span><span class="nav-version" id="nav_version"></span></span></a></nav>
     <!-- Local preferences use familiar WhatsApp rows: titled
          groups of boxed-list rows, a title + subtitle on the left and the control
          on the right. Element ids are what main.js uses; keep them stable. -->
@@ -87,6 +87,11 @@
               <option value="1.15">Grande</option>
             </select>
           </label>
+          <label class="row">
+            <span class="row-text"><span class="row-title">Ocultar anúncios do app do WhatsApp</span>
+              <span class="row-subtitle">Esconde os convites para baixar o WhatsApp para Windows ou Mac. Vale ao reiniciar o whatRust.</span></span>
+            <input type="checkbox" class="switch" id="hide_app_banner" />
+          </label>
           <label class="row linux-only" id="title_bar_row" hidden>
             <span class="row-text"><span class="row-title">Barra de título</span>
               <span class="row-subtitle" id="title_bar_subtitle">Gerenciadores de janelas lado a lado, como o Hyprland, não usam barra de título.</span></span>
@@ -94,6 +99,14 @@
               <option value="auto">Automático</option>
               <option value="show">Mostrar</option>
               <option value="hide">Ocultar</option>
+            </select>
+          </label>
+          <label class="row linux-only" id="rendering_row" hidden>
+            <span class="row-text"><span class="row-title">Renderização</span>
+              <span class="row-subtitle" id="rendering_subtitle">Use o modo compatível se a janela ficar em branco em placas de vídeo antigas. Vale ao reiniciar o whatRust.</span></span>
+            <select id="rendering">
+              <option value="auto">Automático</option>
+              <option value="software">Compatível (sem GPU)</option>
             </select>
           </label>
           <label class="row">

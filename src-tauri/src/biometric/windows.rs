@@ -1,8 +1,9 @@
 use super::Availability;
 use tauri::Manager;
 use windows::core::{factory, HSTRING};
-// In windows-rs 0.61 the async operation types live in the windows-future crate,
-// NOT windows::Foundation. `IAsyncOperation::get()` (blocking) is from there too.
+// Since windows-rs 0.61 the async operation types live in the windows-future crate,
+// NOT windows::Foundation. Blocking wait: `IAsyncOperation::join()` (windows-future
+// 0.3; it was `get()` in 0.2).
 use windows::Security::Credentials::UI::{
     UserConsentVerificationResult, UserConsentVerifier, UserConsentVerifierAvailability,
 };
@@ -11,7 +12,7 @@ use windows_future::IAsyncOperation;
 use windows::Win32::System::WinRT::IUserConsentVerifierInterop;
 
 pub fn availability() -> Availability {
-    match UserConsentVerifier::CheckAvailabilityAsync().and_then(|op| op.get()) {
+    match UserConsentVerifier::CheckAvailabilityAsync().and_then(|op| op.join()) {
         Ok(UserConsentVerifierAvailability::Available) => Availability::Available,
         Ok(_) => Availability::NotConfigured,
         Err(_) => Availability::Unsupported,
@@ -20,7 +21,7 @@ pub fn availability() -> Availability {
 
 pub fn authenticate(app: &tauri::AppHandle, reason: &str) -> Result<bool, String> {
     // MUST query availability first, or RequestVerification hangs.
-    let _ = UserConsentVerifier::CheckAvailabilityAsync().and_then(|op| op.get());
+    let _ = UserConsentVerifier::CheckAvailabilityAsync().and_then(|op| op.join());
 
     let win = app
         .get_window("lock")
@@ -34,7 +35,7 @@ pub fn authenticate(app: &tauri::AppHandle, reason: &str) -> Result<bool, String
     let op: IAsyncOperation<UserConsentVerificationResult> =
         unsafe { interop.RequestVerificationForWindowAsync(hwnd, &msg) }
             .map_err(|e| e.to_string())?;
-    match op.get() {
+    match op.join() {
         Ok(UserConsentVerificationResult::Verified) => Ok(true),
         Ok(_) => Ok(false),
         Err(e) => Err(e.to_string()),

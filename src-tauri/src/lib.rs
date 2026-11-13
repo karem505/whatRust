@@ -88,6 +88,12 @@ pub fn run() {
     if smoke_mode {
         context.config_mut().identifier = "com.karem.whatrust.smoke".into();
     }
+    // Linux (issue #87): software rendering on GPUs too old for WebKit's GPU
+    // compositor (blank window after login), or when Settings → Rendering asks
+    // for it. Needs the identifier to find settings.json; still before any
+    // webview exists.
+    #[cfg(target_os = "linux")]
+    gpu::apply_software_rendering(&context.config().identifier);
     let mut builder = tauri::Builder::default();
 
     // single-instance MUST be registered first.

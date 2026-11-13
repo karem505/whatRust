@@ -39,8 +39,12 @@ ASSETS=$(printf '%s' "$JSON" | tr ',' '\n' | grep browser_download_url | sed -E 
 
 case "$OS" in
   Linux)
-    URL=$(pick '\.AppImage$')
-    [ -n "$URL" ] || { red "No .AppImage asset in the latest release."; exit 1; }
+    case "$ARCH" in
+      aarch64|arm64) PAT='_aarch64\.AppImage$' ;;
+      *)             PAT='_(amd64|x86_64)\.AppImage$' ;;
+    esac
+    URL=$(pick "$PAT")
+    [ -n "$URL" ] || { red "No ${ARCH} .AppImage asset in the latest release."; exit 1; }
     DEST="${HOME}/.local/bin"; mkdir -p "$DEST"
     OUT="${DEST}/${APP}.AppImage"
     grn "Downloading $(basename "$URL")…"

@@ -33,6 +33,7 @@
     st = s;
     const m = s.method;
     $("upd_current").textContent = s.current;
+    if ($("nav_version")) $("nav_version").textContent = s.current ? "v" + s.current : "";
     $("upd_method").textContent = m.label;
     $("upd_last").textContent = when(s.lastCheck);
     $("auto_update_install_subtitle").textContent = autoInstallNote(m);
@@ -106,7 +107,8 @@
     $("upd_error").textContent = s.error || "";
     show("upd_error", !!s.error && s.state !== "checking");
     show("upd_install", install && !busy);
-    $("upd_install").textContent = m.id === "flatpak" ? t("Baixar e abrir") : t("Baixar e instalar");
+    // Flatpak installs on the host too since v0.6.16 (falls back to opening the bundle).
+    $("upd_install").textContent = t("Baixar e instalar");
     show("upd_apply", apply);
     show("upd_restart", restart);
     show("upd_page", page);
