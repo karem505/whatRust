@@ -35,6 +35,7 @@
 - [Getting started](#getting-started)
 - [FAQ](#faq)
 - [Limitations](#limitations)
+- [Star history](#star-history)
 - [Contributing](#contributing)
 - [Disclaimer](#disclaimer)
 - [License](#license)
@@ -304,6 +305,18 @@ whatRust doesn't talk to WhatsApp's servers itself: it shows the official `web.w
   files because Tauri does not yet route OS drops through the File Transfer portal.
   whatRust writes only to Downloads, its sandbox data, and its optional autostart entry.
   The wrapped WhatsApp page has no general filesystem API.
+
+## Star history
+
+whatRust passed **300 GitHub stars** in November 2026, and almost half of them came in November alone (144 new stars in the first two weeks, after 70 in October). If whatRust is useful to you, a ⭐ helps other Linux, Windows and macOS users find a lightweight WhatsApp Desktop alternative.
+
+<a href="https://www.star-history.com/#karem505/whatRust&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=karem505/whatrust&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=karem505/whatrust&type=Date" />
+    <img alt="whatRust GitHub star history: growth of the open-source WhatsApp desktop client for Linux, Windows and macOS" src="https://api.star-history.com/svg?repos=karem505/whatrust&type=Date" />
+  </picture>
+</a>
 
 ## Contributing
 
