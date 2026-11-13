@@ -1198,6 +1198,10 @@ fn register_focus_listener(app: &AppHandle, win: &WebviewWindow) {
             if let Some(active) = app_handle.try_state::<ActiveAccount>() {
                 *crate::lock::guard(&active) = label.clone();
             }
+            #[cfg(windows)]
+            if let Some(w) = app_handle.get_webview_window(&label) {
+                focus_webview_windows(&w);
+            }
         }
         // Menu-bar mode: losing focus dismisses a presented panel; the
         // webview keeps running while hidden (see `background_throttling`).
@@ -1206,6 +1210,23 @@ fn register_focus_listener(app: &AppHandle, win: &WebviewWindow) {
             crate::menubar::on_focus_lost(&app_handle, &label);
         }
         _ => {}
+    });
+}
+
+/// Windows (issue #85): activating the window with Alt+Tab focuses the
+/// top-level window but not WebView2's child window, so the composer shows a
+/// caret yet keys go nowhere until a click. Hand keyboard focus to the webview;
+/// WebView2 then restores focus to the element that had it in the page.
+#[cfg(windows)]
+fn focus_webview_windows(win: &WebviewWindow) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC;
+    let _ = win.with_webview(|webview| {
+        // SAFETY: with_webview runs on the UI thread that owns the controller.
+        let _ = unsafe {
+            webview
+                .controller()
+                .MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC)
+        };
     });
 }
 
