@@ -17,7 +17,12 @@ try {
   throw "Couldn't reach the GitHub release. Is $repo public with a published release? ($_)"
 }
 
-$asset = $rel.assets | Where-Object { $_.name -match '-setup\.exe$' } | Select-Object -First 1
+# ARM64 Windows gets the ARM64 installer (PROCESSOR_ARCHITEW6432 covers an
+# x64 PowerShell running emulated on ARM64); x64 builds run there too if a
+# release has no ARM64 one.
+$arch = if ($env:PROCESSOR_ARCHITEW6432 -eq 'ARM64' -or $env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
+$asset = $rel.assets | Where-Object { $_.name -match "_$arch-setup\.exe$" } | Select-Object -First 1
+if (-not $asset) { $asset = $rel.assets | Where-Object { $_.name -match '_x64-setup\.exe$' } | Select-Object -First 1 }
 if (-not $asset) { $asset = $rel.assets | Where-Object { $_.name -match '\.msi$' } | Select-Object -First 1 }
 if (-not $asset) { throw "No .exe/.msi installer in the latest release (the build may still be running)." }
 
