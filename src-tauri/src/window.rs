@@ -522,6 +522,30 @@ fn is_call_popup(url: &tauri::Url, has_window_features: bool) -> bool {
     }
 }
 
+/// What a call pop-out may navigate to (issue #96 review): it must never turn
+/// into a general browser window with our init scripts.
+#[cfg(any(windows, test))]
+#[derive(Debug, PartialEq, Eq)]
+enum PopupNav {
+    /// `about:blank` or a WhatsApp page: let it load.
+    Allow,
+    /// A foreign web/mail/phone link: system handler, popup stays out of it.
+    External,
+    /// `file:`, `javascript:`, anything else.
+    Deny,
+}
+
+#[cfg(any(windows, test))]
+fn popup_navigation(url: &tauri::Url) -> PopupNav {
+    if url.as_str() == "about:blank" || is_whatsapp_origin(url.as_str()) {
+        PopupNav::Allow
+    } else if crate::opener::is_openable_external(url) {
+        PopupNav::External
+    } else {
+        PopupNav::Deny
+    }
+}
+
 /// Open the call pop-out as a real window that shares the opener's WebView2
 /// environment (cookies/session) and gets the same media permissions.
 #[cfg(windows)]
@@ -546,7 +570,45 @@ fn open_call_popup(
     .inner_size(960.0, 640.0)
     .disable_drag_drop_handler();
     let builder = account_webview!(builder, app, popup_label);
+    // Replaces the macro's `file:` guard, so the decision keeps denying `file:`.
+    let reached_whatsapp = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let nav_app = app.clone();
+    let nav_label = label.clone();
+    let builder = builder.on_navigation(move |url| match popup_navigation(url) {
+        PopupNav::Allow => {
+            if url.as_str() != "about:blank" {
+                reached_whatsapp.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+            true
+        }
+        PopupNav::External => {
+            crate::opener::open_url(&nav_app, url.clone());
+            if !reached_whatsapp.load(std::sync::atomic::Ordering::SeqCst) {
+                let app = nav_app.clone();
+                let label = nav_label.clone();
+                let _ = nav_app.run_on_main_thread(move || {
+                    if let Some(w) = app.get_webview_window(&label) {
+                        let _ = w.destroy();
+                    }
+                });
+            }
+            false
+        }
+        PopupNav::Deny => false,
+    });
     let win = builder.build()?;
+    // Close the pop-out together with the opener's window.
+    if let Some(opener) = app.get_webview(opener_label) {
+        let app = app.clone();
+        let popup = label.clone();
+        opener.window().on_window_event(move |event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                if let Some(w) = app.get_webview_window(&popup) {
+                    let _ = w.destroy();
+                }
+            }
+        });
+    }
     let handle = app.clone();
     win.as_ref()
         .with_webview(move |platform| enable_popup_media_windows(platform, handle))?;
@@ -2337,6 +2399,17 @@ mod tests {
             )
         );
         assert_eq!(route("about:blank"), NewWindowRoute::Ignore);
+        // Issue #96 review: popup navigation guard.
+        let nav = |u: &str| super::popup_navigation(&u.parse().unwrap());
+        assert_eq!(nav("about:blank"), super::PopupNav::Allow);
+        assert_eq!(nav("https://web.whatsapp.com/call"), super::PopupNav::Allow);
+        assert_eq!(nav("https://example.com/"), super::PopupNav::External);
+        assert_eq!(
+            nav("https://web.whatsapp.com.evil.com/"),
+            super::PopupNav::External
+        );
+        assert_eq!(nav("file:///etc/passwd"), super::PopupNav::Deny);
+        assert_eq!(nav("javascript:alert(1)"), super::PopupNav::Deny);
         // Issue #96: the call pop-out classifier.
         let popup = |u: &str, f: bool| super::is_call_popup(&u.parse().unwrap(), f);
         assert!(popup("about:blank", false));
