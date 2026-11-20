@@ -120,6 +120,12 @@ macro_rules! account_webview {
             } else {
                 String::new()
             })
+            .initialization_script(if crate::settings::load($app).page_overlays {
+                ""
+            } else {
+                // Issue #95: keep the page's header untouched.
+                "window.__WHATRUST_NO_OVERLAY=true;"
+            })
             .initialization_script(include_str!("../resources/integration.js"))
             .initialization_script(BRIDGE_JS)
             .initialization_script(MEDIA_JS)
