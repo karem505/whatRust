@@ -148,7 +148,24 @@ macro_rules! account_webview {
             .on_new_window({
                 let app = $app.clone();
                 let label = $label.clone();
-                move |url, _features| {
+                move |url, features| {
+                    // Issue #96: WhatsApp's call "bigger view" button is a
+                    // window.open() popup that must exist for the call to
+                    // survive. Denying it made WhatsApp hang up. Windows only.
+                    #[cfg(windows)]
+                    if is_call_popup(
+                        &url,
+                        features.size().is_some() || features.position().is_some(),
+                    ) {
+                        match open_call_popup(&app, &label, features) {
+                            Ok(window) => {
+                                return tauri::webview::NewWindowResponse::Create { window }
+                            }
+                            Err(e) => crate::dlog::log(&format!("call popup: create failed: {e}")),
+                        }
+                    }
+                    #[cfg(not(windows))]
+                    let _ = features;
                     route_new_window(&app, &label, url);
                     tauri::webview::NewWindowResponse::Deny
                 }
@@ -511,6 +528,94 @@ fn new_window_route(url: &tauri::Url) -> NewWindowRoute {
         NewWindowRoute::External(url.clone())
     } else {
         NewWindowRoute::Ignore
+    }
+}
+
+/// Whether a `window.open` request is WhatsApp's own call pop-out (issue #96):
+/// a blank document the opener fills in, or a same-origin WhatsApp Web page
+/// opened with explicit window features (size/position). Everything else keeps
+/// going through [`new_window_route`] (system browser / in-app link).
+#[cfg(any(windows, test))]
+fn is_call_popup(url: &tauri::Url, has_window_features: bool) -> bool {
+    match url.scheme() {
+        "about" => url.as_str() == "about:blank",
+        "https" => has_window_features && is_whatsapp_origin(url.as_str()),
+        _ => false,
+    }
+}
+
+/// Open the call pop-out as a real window that shares the opener's WebView2
+/// environment (cookies/session) and gets the same media permissions.
+#[cfg(windows)]
+fn open_call_popup(
+    app: &AppHandle,
+    opener_label: &str,
+    features: tauri::webview::NewWindowFeatures,
+) -> tauri::Result<WebviewWindow> {
+    let label = format!("callpopup-{opener_label}");
+    if let Some(existing) = app.get_webview_window(&label) {
+        let _ = existing.destroy();
+    }
+    let popup_label = label.clone();
+    let builder = WebviewWindowBuilder::new(
+        app,
+        &label,
+        WebviewUrl::External("about:blank".parse().expect("valid url")),
+    )
+    .window_features(features)
+    .title("WhatsApp")
+    .min_inner_size(320.0, 240.0)
+    .inner_size(960.0, 640.0)
+    .disable_drag_drop_handler();
+    let builder = account_webview!(builder, app, popup_label);
+    let win = builder.build()?;
+    let handle = app.clone();
+    win.as_ref()
+        .with_webview(move |platform| enable_popup_media_windows(platform, handle))?;
+    crate::dlog::log("call popup: window created");
+    Ok(win)
+}
+
+/// Windows: microphone/camera/notification permissions for the call pop-out, same
+/// policy as [`enable_media_windows`] (WhatsApp origin only), without the
+/// account-specific notification/keyboard hooks.
+#[cfg(windows)]
+fn enable_popup_media_windows(webview: tauri::webview::PlatformWebview, _app: AppHandle) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2, ICoreWebView2PermissionRequestedEventArgs, COREWEBVIEW2_PERMISSION_KIND,
+        COREWEBVIEW2_PERMISSION_KIND_CAMERA, COREWEBVIEW2_PERMISSION_KIND_MICROPHONE,
+        COREWEBVIEW2_PERMISSION_STATE_ALLOW, COREWEBVIEW2_PERMISSION_STATE_DENY,
+    };
+    use webview2_com::PermissionRequestedEventHandler;
+    // SAFETY: with_webview runs on the UI thread where the WebView2 controller lives.
+    unsafe {
+        let Ok(core) = webview.controller().CoreWebView2() else {
+            return;
+        };
+        let handler = PermissionRequestedEventHandler::create(Box::new(
+            move |_wv: Option<ICoreWebView2>,
+                  args: Option<ICoreWebView2PermissionRequestedEventArgs>|
+                  -> windows_core::Result<()> {
+                if let Some(args) = args {
+                    let mut kind = COREWEBVIEW2_PERMISSION_KIND::default();
+                    args.PermissionKind(&mut kind)?;
+                    let mut uri = windows_core::PWSTR::null();
+                    args.Uri(&mut uri)?;
+                    let uri = webview2_com::take_pwstr(uri);
+                    let allow = is_whatsapp_origin(&uri)
+                        && (kind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE
+                            || kind == COREWEBVIEW2_PERMISSION_KIND_CAMERA);
+                    args.SetState(if allow {
+                        COREWEBVIEW2_PERMISSION_STATE_ALLOW
+                    } else {
+                        COREWEBVIEW2_PERMISSION_STATE_DENY
+                    })?;
+                }
+                Ok(())
+            },
+        ));
+        let mut token: i64 = 0;
+        let _ = core.add_PermissionRequested(&handler, &mut token);
     }
 }
 
@@ -2254,6 +2359,16 @@ mod tests {
             )
         );
         assert_eq!(route("about:blank"), NewWindowRoute::Ignore);
+        // Issue #96: the call pop-out classifier.
+        let popup = |u: &str, f: bool| super::is_call_popup(&u.parse().unwrap(), f);
+        assert!(popup("about:blank", false));
+        assert!(popup("about:blank", true));
+        assert!(popup("https://web.whatsapp.com/call?x=1", true));
+        assert!(!popup("https://web.whatsapp.com/call?x=1", false));
+        assert!(!popup("https://example.com/", true));
+        assert!(!popup("https://web.whatsapp.com.evil.com/", true));
+        assert!(!popup("about:srcdoc", true));
+        assert!(!popup("javascript:alert(1)", true));
         assert_eq!(route("file:///etc/passwd"), NewWindowRoute::Ignore);
         assert_eq!(route("javascript:alert(1)"), NewWindowRoute::Ignore);
     }
