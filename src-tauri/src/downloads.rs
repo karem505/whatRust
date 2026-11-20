@@ -45,6 +45,7 @@ impl Downloads {
         let mut inner = self.0.lock().unwrap_or_else(|e| e.into_inner());
         let requested = inner.requested.remove(url);
         let path = path.or(requested)?;
+        let path = add_sniffed_extension(path);
         inner.next_id += 1;
         let id = inner.next_id;
         if inner.finished.len() >= KEEP {
@@ -165,6 +166,115 @@ pub fn place_in(dir: &Path, destination: &mut PathBuf) {
         counter += 1;
     }
     *destination = candidate;
+}
+
+/// Whether the name the engine picked is no name at all (issue #92): WebKitGTK
+/// gives `blob:` downloads an empty suggested name, so wry ends up with the
+/// download folder itself, or with `" (1)"` after its de-dup step replaced the
+/// folder's own name one level up.
+#[cfg(any(not(windows), test))]
+fn is_unnamed(destination: &Path) -> bool {
+    let Some(name) = destination.file_name().and_then(|n| n.to_str()) else {
+        return true;
+    };
+    let t = name.trim();
+    let counter_only = t
+        .strip_prefix('(')
+        .and_then(|r| r.strip_suffix(')'))
+        .is_some_and(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()));
+    t.is_empty() || counter_only || destination.is_dir()
+}
+
+/// `yyyymmdd-hhmmss` (UTC) for a Unix time, for generated file names.
+#[cfg(any(not(windows), test))]
+pub fn timestamp_name(unix_secs: u64) -> String {
+    let days = (unix_secs / 86_400) as i64;
+    let rem = unix_secs % 86_400;
+    // Civil-from-days (Howard Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!(
+        "{y:04}{m:02}{d:02}-{:02}{:02}{:02}",
+        rem / 3_600,
+        rem % 3_600 / 60,
+        rem % 60
+    )
+}
+
+/// Issue #92: if `destination` carries no usable file name, replace it with
+/// `<download_dir>/whatsapp-<stamp>` (never overwriting an existing file). The
+/// extension is added later from the file's content (`add_sniffed_extension`),
+/// as the engine reports no MIME type here.
+#[cfg(any(not(windows), test))]
+pub fn name_unnamed(destination: &mut PathBuf, download_dir: &Path, stamp: &str) {
+    if !is_unnamed(destination) {
+        return;
+    }
+    let mut candidate = download_dir.join(format!("whatsapp-{stamp}"));
+    let mut counter = 1;
+    while candidate.exists() {
+        candidate = download_dir.join(format!("whatsapp-{stamp} ({counter})"));
+        counter += 1;
+    }
+    *destination = candidate;
+}
+
+/// File extension for well-known content, from its first bytes.
+pub fn sniff_extension(head: &[u8]) -> Option<&'static str> {
+    let starts = |m: &[u8]| head.starts_with(m);
+    if starts(&[0xFF, 0xD8, 0xFF]) {
+        Some("jpg")
+    } else if starts(b"\x89PNG\r\n\x1a\n") {
+        Some("png")
+    } else if starts(b"GIF87a") || starts(b"GIF89a") {
+        Some("gif")
+    } else if head.len() >= 12 && &head[..4] == b"RIFF" && &head[8..12] == b"WEBP" {
+        Some("webp")
+    } else if starts(b"%PDF-") {
+        Some("pdf")
+    } else if head.len() >= 12 && &head[4..8] == b"ftyp" {
+        Some("mp4")
+    } else if starts(b"OggS") {
+        Some("ogg")
+    } else if starts(b"ID3") {
+        Some("mp3")
+    } else if starts(&[0x1A, 0x45, 0xDF, 0xA3]) {
+        Some("webm")
+    } else {
+        None
+    }
+}
+
+/// A finished download saved without any extension (a `blob:` download) gets
+/// the one its content implies. Anything unrecognised, or any rename that
+/// would overwrite a file, leaves the path alone.
+fn add_sniffed_extension(path: PathBuf) -> PathBuf {
+    use std::io::Read;
+    if path.extension().is_some() {
+        return path;
+    }
+    let mut head = [0u8; 16];
+    let n = match std::fs::File::open(&path).and_then(|mut f| f.read(&mut head)) {
+        Ok(n) => n,
+        Err(_) => return path,
+    };
+    let Some(ext) = sniff_extension(&head[..n]) else {
+        return path;
+    };
+    let mut name = path.as_os_str().to_os_string();
+    name.push(format!(".{ext}"));
+    let renamed = PathBuf::from(name);
+    if renamed.exists() || std::fs::rename(&path, &renamed).is_err() {
+        return path;
+    }
+    renamed
 }
 
 #[cfg(test)]
@@ -315,5 +425,53 @@ mod tests {
         assert!(!js.contains("/home/ada"), "{js}");
         assert!(toast_js(Some((8, Path::new("/dl/setup.exe")))).contains("\"canOpen\":false"));
         assert!(toast_js(None).contains("\"ok\":false"));
+    }
+
+    #[test]
+    fn unnamed_destinations_get_a_generated_name_inside_the_folder() {
+        let d = scratch("unnamed");
+        // wry: push("") onto the folder, then set_file_name(" (1)").
+        for bad in [d.clone(), d.parent().unwrap().join(" (1)"), d.join("(2)")] {
+            let mut dest = bad;
+            name_unnamed(&mut dest, &d, "20261120-061700");
+            assert_eq!(dest, d.join("whatsapp-20261120-061700"));
+        }
+        std::fs::write(d.join("whatsapp-20261120-061700"), b"x").unwrap();
+        let mut dest = d.clone();
+        name_unnamed(&mut dest, &d, "20261120-061700");
+        assert_eq!(dest, d.join("whatsapp-20261120-061700 (1)"));
+        // A real name is untouched.
+        let mut real = d.join("photo.jpg");
+        name_unnamed(&mut real, &d, "x");
+        assert_eq!(real, d.join("photo.jpg"));
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn timestamps_are_utc_civil_time() {
+        assert_eq!(timestamp_name(0), "19700101-000000");
+        assert_eq!(timestamp_name(1_700_000_000), "20231114-221320");
+        assert_eq!(timestamp_name(951_782_400 + 86_399), "20000229-235959");
+    }
+
+    #[test]
+    fn extension_follows_the_content() {
+        assert_eq!(sniff_extension(&[0xFF, 0xD8, 0xFF, 0xE0]), Some("jpg"));
+        assert_eq!(sniff_extension(b"\x89PNG\r\n\x1a\n...."), Some("png"));
+        assert_eq!(sniff_extension(b"RIFF\0\0\0\0WEBPVP8 "), Some("webp"));
+        assert_eq!(sniff_extension(b"\0\0\0\x18ftypmp42"), Some("mp4"));
+        assert_eq!(sniff_extension(b"hello"), None);
+        assert_eq!(sniff_extension(b""), None);
+        let d = scratch("sniff");
+        let f = d.join("whatsapp-1");
+        std::fs::write(&f, b"GIF89a....").unwrap();
+        assert_eq!(add_sniffed_extension(f), d.join("whatsapp-1.gif"));
+        let unknown = d.join("blob");
+        std::fs::write(&unknown, b"plain").unwrap();
+        assert_eq!(add_sniffed_extension(unknown.clone()), unknown);
+        let named = d.join("a.bin");
+        std::fs::write(&named, b"GIF89a").unwrap();
+        assert_eq!(add_sniffed_extension(named.clone()), named);
+        std::fs::remove_dir_all(&d).unwrap();
     }
 }

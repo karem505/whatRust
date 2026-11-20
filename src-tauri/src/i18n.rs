@@ -173,6 +173,8 @@ static EN_TABLE: &[(&str, &str)] = &[
     // download folder and app icon
     ("A pasta não existe.", "The folder does not exist."),
     ("Não é possível gravar nessa pasta.", "That folder is not writable."),
+    ("Todos os arquivos", "All files"),
+    ("Salvar arquivo", "Save file"),
     ("Pasta de downloads", "Download folder"),
     ("Ícone do aplicativo", "App icon"),
     ("A imagem tem mais de 5 MB.", "The image is larger than 5 MB."),
