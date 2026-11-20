@@ -177,7 +177,10 @@ macro_rules! account_webview {
                                 .unwrap_or("download");
                             let Some(path) = choose_download_destination(
                                 suggested,
-                                custom_dir.as_deref(),
+                                custom_dir
+                                    .clone()
+                                    .or_else(|| app.path().download_dir().ok())
+                                    .as_deref(),
                                 webview.window().hwnd().ok(),
                             ) else {
                                 crate::dlog::log("download: save dialog cancelled");
@@ -187,7 +190,19 @@ macro_rules! account_webview {
                         }
                         #[cfg(not(windows))]
                         {
-                            ensure_download_destination(destination, app.path().download_dir().ok());
+                            let base = app.path().download_dir().ok();
+                            ensure_download_destination(destination, base.clone());
+                            // Issue #92: WebKitGTK gives blob: downloads no name.
+                            crate::downloads::name_unnamed(
+                                destination,
+                                &base.unwrap_or_else(std::env::temp_dir),
+                                &crate::downloads::timestamp_name(
+                                    std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .map(|d| d.as_secs())
+                                        .unwrap_or(0),
+                                ),
+                            );
                             if let Some(dir) = &custom_dir {
                                 crate::downloads::place_in(dir, destination);
                             }
@@ -439,10 +454,17 @@ fn choose_download_destination(
     for (slot, unit) in buffer.iter_mut().zip(suggested_name.encode_utf16()) {
         *slot = unit;
     }
-    let filter: Vec<u16> = "Todos os arquivos\0*.*\0\0".encode_utf16().collect();
-    let title: Vec<u16> = "Salvar arquivo\0".encode_utf16().collect();
-    // The dialog opens in the configured download folder (issue #40); without
-    // one, Windows picks its usual last-used folder.
+    // Issue #90: our own strings follow the app language (the dialog's buttons
+    // follow Windows'). Filter is "<label>\0*.*\0\0"; title is NUL-terminated.
+    let filter: Vec<u16> = format!("{}\0*.*\0\0", crate::i18n::tr("Todos os arquivos"))
+        .encode_utf16()
+        .collect();
+    let title: Vec<u16> = format!("{}\0", crate::i18n::tr("Salvar arquivo"))
+        .encode_utf16()
+        .collect();
+    // The dialog opens in the configured download folder (issue #40) or else
+    // the user's Downloads folder; without an initial dir Windows falls back to
+    // the process folder (System32 when launched from autostart, issue #90).
     let initial: Vec<u16> = {
         use std::os::windows::ffi::OsStrExt;
         initial_dir
