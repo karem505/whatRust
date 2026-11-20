@@ -192,6 +192,11 @@ pub fn initialize(app: &AppHandle, hidden: bool) -> tauri::Result<Window> {
         }
         _ => {}
     });
+    // #91: the shell child is created at a fixed 1100x800 and only resized by the
+    // handlers above. A maximized/fullscreen size restored by the window-state
+    // plugin lands before they exist, leaving the shell (empty-state card and top
+    // bar) stuck at its initial size in the top-left. Apply the real size now.
+    schedule_layout(app, "main");
     Ok(w)
 }
 
