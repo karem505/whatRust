@@ -197,18 +197,7 @@ pub fn apply_gstreamer_env() {
     if std::env::var_os("GST_PLUGIN_FEATURE_RANK").is_none() {
         std::env::set_var("GST_PLUGIN_FEATURE_RANK", va_decoders_off());
     }
-    set_default_env(AUDIO_MIXER_ENV, "1");
 }
-
-/// One audio stream for the whole webview. Without it WebKitGTK opens a new
-/// PulseAudio/PipeWire stream for every sound WhatsApp plays (notification,
-/// sent-message tick, each voice note) and keeps each one, paused, for as long
-/// as the page holds the element, so the system volume mixer fills with
-/// dozens of «whatrust» entries. With the mixer WebKit routes every player
-/// through one shared sink. Needs the GStreamer `inter` and `audiomixer`
-/// elements (both in the GNOME runtime); WebKit falls back to one stream per
-/// player when they are missing. `WEBKIT_GST_ENABLE_AUDIO_MIXER=0` turns it off.
-const AUDIO_MIXER_ENV: &str = "WEBKIT_GST_ENABLE_AUDIO_MIXER";
 
 #[cfg(test)]
 mod tests {
