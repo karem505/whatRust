@@ -79,6 +79,7 @@ pub fn run() {
     gpu::apply_webkit_renderer_env();
     // Linux: hardware-decoded video frames come out black on a canvas in
     // WebKitGTK, which breaks WhatsApp's video thumbnails; decode in software.
+    // Also route all webview audio through one stream instead of one per sound.
     #[cfg(target_os = "linux")]
     gpu::apply_gstreamer_env();
 
