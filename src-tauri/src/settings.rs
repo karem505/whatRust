@@ -70,6 +70,11 @@ pub struct Settings {
     /// an account page is created, so a change applies after a restart. On by
     /// default: both people in the issue asked for it.
     pub hide_app_banner: bool,
+    /// Show whatRust's own controls (account switcher, settings gear) inside
+    /// WhatsApp's header (issue #95). Off leaves the page's DOM and CSS alone.
+    /// Read when an account page is created, so a change applies after a
+    /// restart. On by default.
+    pub page_overlays: bool,
 }
 
 impl Default for Settings {
@@ -102,6 +107,7 @@ impl Default for Settings {
             title_bar: crate::decorations::AUTO.to_string(),
             rendering: RENDERING_AUTO.to_string(),
             hide_app_banner: true,
+            page_overlays: true,
         }
     }
 }
@@ -482,6 +488,15 @@ mod tests {
             ..Settings::default()
         };
         assert_eq!(blank.sanitized().download_dir, None);
+    }
+
+    #[test]
+    fn page_overlays_default_on_and_round_trips() {
+        let s: Settings = serde_json::from_str(r#"{"notifications":false}"#).unwrap();
+        assert!(s.page_overlays);
+        let off: Settings = serde_json::from_str(r#"{"page_overlays":false}"#).unwrap();
+        assert!(!off.page_overlays);
+        assert!(!off.sanitized().page_overlays);
     }
 
     #[test]

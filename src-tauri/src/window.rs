@@ -120,6 +120,12 @@ macro_rules! account_webview {
             } else {
                 String::new()
             })
+            .initialization_script(if crate::settings::load($app).page_overlays {
+                ""
+            } else {
+                // Issue #95: keep the page's header untouched.
+                "window.__WHATRUST_NO_OVERLAY=true;"
+            })
             .initialization_script(include_str!("../resources/integration.js"))
             .initialization_script(BRIDGE_JS)
             .initialization_script(MEDIA_JS)
@@ -148,7 +154,24 @@ macro_rules! account_webview {
             .on_new_window({
                 let app = $app.clone();
                 let label = $label.clone();
-                move |url, _features| {
+                move |url, features| {
+                    // Issue #96: WhatsApp's call "bigger view" button is a
+                    // window.open() popup that must exist for the call to
+                    // survive. Denying it made WhatsApp hang up. Windows only.
+                    #[cfg(windows)]
+                    if is_call_popup(
+                        &url,
+                        features.size().is_some() || features.position().is_some(),
+                    ) {
+                        match open_call_popup(&app, &label, features) {
+                            Ok(window) => {
+                                return tauri::webview::NewWindowResponse::Create { window }
+                            }
+                            Err(e) => crate::dlog::log(&format!("call popup: create failed: {e}")),
+                        }
+                    }
+                    #[cfg(not(windows))]
+                    let _ = features;
                     route_new_window(&app, &label, url);
                     tauri::webview::NewWindowResponse::Deny
                 }
@@ -177,7 +200,10 @@ macro_rules! account_webview {
                                 .unwrap_or("download");
                             let Some(path) = choose_download_destination(
                                 suggested,
-                                custom_dir.as_deref(),
+                                custom_dir
+                                    .clone()
+                                    .or_else(|| app.path().download_dir().ok())
+                                    .as_deref(),
                                 webview.window().hwnd().ok(),
                             ) else {
                                 crate::dlog::log("download: save dialog cancelled");
@@ -187,7 +213,19 @@ macro_rules! account_webview {
                         }
                         #[cfg(not(windows))]
                         {
-                            ensure_download_destination(destination, app.path().download_dir().ok());
+                            let base = app.path().download_dir().ok();
+                            ensure_download_destination(destination, base.clone());
+                            // Issue #92: WebKitGTK gives blob: downloads no name.
+                            crate::downloads::name_unnamed(
+                                destination,
+                                &base.unwrap_or_else(std::env::temp_dir),
+                                &crate::downloads::timestamp_name(
+                                    std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .map(|d| d.as_secs())
+                                        .unwrap_or(0),
+                                ),
+                            );
                             if let Some(dir) = &custom_dir {
                                 crate::downloads::place_in(dir, destination);
                             }
@@ -439,10 +477,17 @@ fn choose_download_destination(
     for (slot, unit) in buffer.iter_mut().zip(suggested_name.encode_utf16()) {
         *slot = unit;
     }
-    let filter: Vec<u16> = "Todos os arquivos\0*.*\0\0".encode_utf16().collect();
-    let title: Vec<u16> = "Salvar arquivo\0".encode_utf16().collect();
-    // The dialog opens in the configured download folder (issue #40); without
-    // one, Windows picks its usual last-used folder.
+    // Issue #90: our own strings follow the app language (the dialog's buttons
+    // follow Windows'). Filter is "<label>\0*.*\0\0"; title is NUL-terminated.
+    let filter: Vec<u16> = format!("{}\0*.*\0\0", crate::i18n::tr("Todos os arquivos"))
+        .encode_utf16()
+        .collect();
+    let title: Vec<u16> = format!("{}\0", crate::i18n::tr("Salvar arquivo"))
+        .encode_utf16()
+        .collect();
+    // The dialog opens in the configured download folder (issue #40) or else
+    // the user's Downloads folder; without an initial dir Windows falls back to
+    // the process folder (System32 when launched from autostart, issue #90).
     let initial: Vec<u16> = {
         use std::os::windows::ffi::OsStrExt;
         initial_dir
@@ -489,6 +534,156 @@ fn new_window_route(url: &tauri::Url) -> NewWindowRoute {
         NewWindowRoute::External(url.clone())
     } else {
         NewWindowRoute::Ignore
+    }
+}
+
+/// Whether a `window.open` request is WhatsApp's own call pop-out (issue #96):
+/// a blank document the opener fills in, or a same-origin WhatsApp Web page
+/// opened with explicit window features (size/position). Everything else keeps
+/// going through [`new_window_route`] (system browser / in-app link).
+#[cfg(any(windows, test))]
+fn is_call_popup(url: &tauri::Url, has_window_features: bool) -> bool {
+    match url.scheme() {
+        "about" => url.as_str() == "about:blank",
+        "https" => has_window_features && is_whatsapp_origin(url.as_str()),
+        _ => false,
+    }
+}
+
+/// What a call pop-out may navigate to (issue #96 review): it must never turn
+/// into a general browser window with our init scripts.
+#[cfg(any(windows, test))]
+#[derive(Debug, PartialEq, Eq)]
+enum PopupNav {
+    /// `about:blank` or a WhatsApp page: let it load.
+    Allow,
+    /// A foreign web/mail/phone link: system handler, popup stays out of it.
+    External,
+    /// `file:`, `javascript:`, anything else.
+    Deny,
+}
+
+#[cfg(any(windows, test))]
+fn popup_navigation(url: &tauri::Url) -> PopupNav {
+    if url.as_str() == "about:blank" || is_whatsapp_origin(url.as_str()) {
+        PopupNav::Allow
+    } else if crate::opener::is_openable_external(url) {
+        PopupNav::External
+    } else {
+        PopupNav::Deny
+    }
+}
+
+/// Open the call pop-out as a real window that shares the opener's WebView2
+/// environment (cookies/session) and gets the same media permissions.
+#[cfg(windows)]
+fn open_call_popup(
+    app: &AppHandle,
+    opener_label: &str,
+    features: tauri::webview::NewWindowFeatures,
+) -> tauri::Result<WebviewWindow> {
+    let label = format!("callpopup-{opener_label}");
+    if let Some(existing) = app.get_webview_window(&label) {
+        let _ = existing.destroy();
+    }
+    let popup_label = label.clone();
+    let builder = WebviewWindowBuilder::new(
+        app,
+        &label,
+        WebviewUrl::External("about:blank".parse().expect("valid url")),
+    )
+    .window_features(features)
+    .title("WhatsApp")
+    .min_inner_size(320.0, 240.0)
+    .inner_size(960.0, 640.0)
+    .disable_drag_drop_handler();
+    let builder = account_webview!(builder, app, popup_label);
+    // Replaces the macro's `file:` guard, so the decision keeps denying `file:`.
+    let reached_whatsapp = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let nav_app = app.clone();
+    let nav_label = label.clone();
+    let builder = builder.on_navigation(move |url| match popup_navigation(url) {
+        PopupNav::Allow => {
+            if url.as_str() != "about:blank" {
+                reached_whatsapp.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+            true
+        }
+        PopupNav::External => {
+            crate::opener::open_url(&nav_app, url.clone());
+            if !reached_whatsapp.load(std::sync::atomic::Ordering::SeqCst) {
+                let app = nav_app.clone();
+                let label = nav_label.clone();
+                let _ = nav_app.run_on_main_thread(move || {
+                    if let Some(w) = app.get_webview_window(&label) {
+                        let _ = w.destroy();
+                    }
+                });
+            }
+            false
+        }
+        PopupNav::Deny => false,
+    });
+    let win = builder.build()?;
+    // Close the pop-out together with the opener's window.
+    if let Some(opener) = app.get_webview(opener_label) {
+        let app = app.clone();
+        let popup = label.clone();
+        opener.window().on_window_event(move |event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                if let Some(w) = app.get_webview_window(&popup) {
+                    let _ = w.destroy();
+                }
+            }
+        });
+    }
+    let handle = app.clone();
+    win.as_ref()
+        .with_webview(move |platform| enable_popup_media_windows(platform, handle))?;
+    crate::dlog::log("call popup: window created");
+    Ok(win)
+}
+
+/// Windows: microphone/camera/notification permissions for the call pop-out, same
+/// policy as [`enable_media_windows`] (WhatsApp origin only), without the
+/// account-specific notification/keyboard hooks.
+#[cfg(windows)]
+fn enable_popup_media_windows(webview: tauri::webview::PlatformWebview, _app: AppHandle) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2, ICoreWebView2PermissionRequestedEventArgs, COREWEBVIEW2_PERMISSION_KIND,
+        COREWEBVIEW2_PERMISSION_KIND_CAMERA, COREWEBVIEW2_PERMISSION_KIND_MICROPHONE,
+        COREWEBVIEW2_PERMISSION_STATE_ALLOW, COREWEBVIEW2_PERMISSION_STATE_DENY,
+    };
+    use webview2_com::PermissionRequestedEventHandler;
+    // SAFETY: with_webview runs on the UI thread where the WebView2 controller lives.
+    unsafe {
+        let Ok(core) = webview.controller().CoreWebView2() else {
+            return;
+        };
+        let handler = PermissionRequestedEventHandler::create(Box::new(
+            move |_wv: Option<ICoreWebView2>,
+                  args: Option<ICoreWebView2PermissionRequestedEventArgs>|
+                  -> windows_core::Result<()> {
+                if let Some(args) = args {
+                    let mut kind = COREWEBVIEW2_PERMISSION_KIND::default();
+                    args.PermissionKind(&mut kind)?;
+                    let mut uri = windows_core::PWSTR::null();
+                    args.Uri(&mut uri)?;
+                    let uri = webview2_com::take_pwstr(uri);
+                    let allow = is_whatsapp_origin(&uri)
+                        && (kind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE
+                            || kind == COREWEBVIEW2_PERMISSION_KIND_CAMERA);
+                    args.SetState(if allow {
+                        COREWEBVIEW2_PERMISSION_STATE_ALLOW
+                    } else {
+                        COREWEBVIEW2_PERMISSION_STATE_DENY
+                    })?;
+                }
+                Ok(())
+            },
+        ));
+        let mut token: i64 = 0;
+        let _ = core.add_PermissionRequested(&handler, &mut token);
     }
 }
 
@@ -2232,6 +2427,27 @@ mod tests {
             )
         );
         assert_eq!(route("about:blank"), NewWindowRoute::Ignore);
+        // Issue #96 review: popup navigation guard.
+        let nav = |u: &str| super::popup_navigation(&u.parse().unwrap());
+        assert_eq!(nav("about:blank"), super::PopupNav::Allow);
+        assert_eq!(nav("https://web.whatsapp.com/call"), super::PopupNav::Allow);
+        assert_eq!(nav("https://example.com/"), super::PopupNav::External);
+        assert_eq!(
+            nav("https://web.whatsapp.com.evil.com/"),
+            super::PopupNav::External
+        );
+        assert_eq!(nav("file:///etc/passwd"), super::PopupNav::Deny);
+        assert_eq!(nav("javascript:alert(1)"), super::PopupNav::Deny);
+        // Issue #96: the call pop-out classifier.
+        let popup = |u: &str, f: bool| super::is_call_popup(&u.parse().unwrap(), f);
+        assert!(popup("about:blank", false));
+        assert!(popup("about:blank", true));
+        assert!(popup("https://web.whatsapp.com/call?x=1", true));
+        assert!(!popup("https://web.whatsapp.com/call?x=1", false));
+        assert!(!popup("https://example.com/", true));
+        assert!(!popup("https://web.whatsapp.com.evil.com/", true));
+        assert!(!popup("about:srcdoc", true));
+        assert!(!popup("javascript:alert(1)", true));
         assert_eq!(route("file:///etc/passwd"), NewWindowRoute::Ignore);
         assert_eq!(route("javascript:alert(1)"), NewWindowRoute::Ignore);
     }
