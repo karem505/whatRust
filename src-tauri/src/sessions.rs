@@ -47,6 +47,9 @@ pub struct Sessions {
     view_visibility: Mutex<HashMap<String, bool>>,
     applied_bounds: Mutex<HashMap<String, (i32, i32, u32, u32)>>,
     pending_layout: Mutex<HashSet<String>>,
+    /// Latest controls report per account view, applied once it has held
+    /// for FALLBACK_SETTLE (see `integration_changed`).
+    controls_seq: Mutex<HashMap<String, u64>>,
 }
 
 fn state(app: &AppHandle) -> tauri::State<'_, Sessions> {
@@ -530,14 +533,8 @@ fn sync_menu(app: &AppHandle, parent: &str) {
     // Shown only when the chat list loaded but the in-page controls could not
     // attach. Before the first report, and with no account selected (the shell
     // page has its own controls), the window keeps a single title bar.
-    let hidden = selected(app, parent).is_none_or(|label| {
-        app.state::<crate::integration::Integration>()
-            .0
-            .lock()
-            .unwrap()
-            .get(&label)
-            .is_none_or(|adapter| adapter.mounted || !adapter.loaded)
-    });
+    let hidden = selected(app, parent)
+        .is_none_or(|label| !crate::lock::guard(&state(app).fallback).contains(&label));
     let changed = {
         let s = state(app);
         let mut menus = crate::lock::guard(&s.menus_hidden);
@@ -553,15 +550,42 @@ fn sync_menu(app: &AppHandle, parent: &str) {
     }
 }
 
+/// How long a controls report must hold before the fallback chrome follows it.
+/// Showing or hiding the chrome moves the page, which re-lays WhatsApp's header
+/// out and can flip the in-page controls; acting at once made the two chase
+/// each other every frame. Brief flips never reach the layout.
+const FALLBACK_SETTLE: std::time::Duration = std::time::Duration::from_secs(3);
+
 pub fn integration_changed(app: &AppHandle, label: &str, controls_ok: bool) {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+    crate::lock::guard(&state(app).controls_seq).insert(label.to_string(), seq);
+    let handle = app.clone();
+    let label = label.to_string();
+    std::thread::spawn(move || {
+        std::thread::sleep(FALLBACK_SETTLE);
+        // A newer report for this view supersedes this one.
+        if crate::lock::guard(&state(&handle).controls_seq).get(&label) != Some(&seq) {
+            return;
+        }
+        let ui = handle.clone();
+        let _ = handle.run_on_main_thread(move || apply_controls(&ui, &label, controls_ok));
+    });
+}
+
+fn apply_controls(app: &AppHandle, label: &str, controls_ok: bool) {
     let s = state(app);
     let mut f = crate::lock::guard(&s.fallback);
-    if controls_ok {
-        f.remove(label);
+    let changed = if controls_ok {
+        f.remove(label)
     } else {
-        f.insert(label.into());
-    }
+        f.insert(label.into())
+    };
     drop(f);
+    // Re-laying out for an unchanged state would only move the page again.
+    if !changed {
+        return;
+    }
     if let Some(v) = app.get_webview(label) {
         let parent = v.window();
         if selected(app, parent.label()).as_deref() == Some(label) {
