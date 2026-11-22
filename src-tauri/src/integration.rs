@@ -15,6 +15,8 @@ pub struct Integration(pub Mutex<HashMap<String, Adapter>>);
 pub struct Adapter {
     pub mounted: bool,
     pub detector: bool,
+    /// The chat list (`#pane-side`) is on screen: WhatsApp finished loading.
+    pub loaded: bool,
     pub theme: Option<String>,
     #[serde(skip)]
     pub last_signal: Option<Instant>,
@@ -127,8 +129,10 @@ pub fn report_integration(
     app: AppHandle,
     mounted: bool,
     detector: bool,
+    loaded: Option<bool>,
     theme: Option<String>,
 ) -> Result<(), String> {
+    let loaded = loaded.unwrap_or(false);
     remote(&window)?;
     app.state::<Integration>()
         .0
@@ -139,6 +143,7 @@ pub fn report_integration(
         .clone_from(&Adapter {
             mounted,
             detector,
+            loaded,
             theme: theme.filter(|t| matches!(t.as_str(), "dark" | "light")),
             last_signal: None,
             signals: 0,
@@ -147,7 +152,7 @@ pub fn report_integration(
     crate::dlog::log(&format!(
         "integration: layout completed controls_mounted={mounted} detector={detector}"
     ));
-    if detector && !FIRST_CHAT_LIST.swap(true, std::sync::atomic::Ordering::SeqCst) {
+    if loaded && !FIRST_CHAT_LIST.swap(true, std::sync::atomic::Ordering::SeqCst) {
         if let Some(t) = STARTED.get() {
             crate::dlog::log(&format!(
                 "startup: first chat list ready after {:.1}s",
@@ -155,7 +160,7 @@ pub fn report_integration(
             ));
         }
     }
-    if detector {
+    if loaded {
         // The first chat list is on screen: start the staggered accounts.
         let ui = app.clone();
         let _ = app.run_on_main_thread(move || crate::window::open_deferred_accounts(&ui));
