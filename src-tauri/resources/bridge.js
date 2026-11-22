@@ -97,6 +97,22 @@
     e.stopPropagation();
     invoke("zoom_step", { action: action });
   }, true);
+  // Ctrl+1..9 (Cmd on macOS) opens the Nth account, like browser tabs. Only
+  // with more than one account; otherwise the keys reach WhatsApp untouched.
+  function accountKeyIndex(e) {
+    if (e.isComposing || e.keyCode === 229 || e.altKey || e.shiftKey) return -1;
+    if (!(IS_MAC ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey)) return -1;
+    var m = /^(?:Digit|Numpad)([1-9])$/.exec(e.code || "");
+    return m ? Number(m[1]) - 1 : -1;
+  }
+  window.addEventListener("keydown", function (e) {
+    if (e.defaultPrevented) return;
+    var i = accountKeyIndex(e);
+    if (i < 0) return;
+    invoke("switcher_accounts").then(function (list) {
+      if (Array.isArray(list) && list.length > 1 && list[i]) invoke("switch_account", { id: list[i].id });
+    });
+  }, true);
   // A wheel notch, or a trackpad pinch (a burst of ctrl+wheel events), moves one
   // level: deltas accumulate to a threshold, then a short cooldown swallows the
   // rest of the burst.

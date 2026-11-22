@@ -169,7 +169,7 @@ function makeHarness(options = {}) {
           invocations.push({ cmd, args });
           return options.invokeRejects
             ? Promise.reject(new Error("Command " + cmd + " not allowed by ACL"))
-            : Promise.resolve();
+            : Promise.resolve(options.invokeResults && options.invokeResults[cmd]);
         },
       },
     },
@@ -728,6 +728,27 @@ async function testZoomShortcuts() {
   assert(zooms(mac).join() === "in", "Cmd zooms on macOS, bare Ctrl does not");
 }
 
+async function testAccountNumberKeys() {
+  const accounts = [{ id: "default" }, { id: "acct-1" }];
+  const h = makeHarness({ navigator: { platform: "Win32" }, invokeResults: { switcher_accounts: accounts } });
+  press(h, { key: "2", code: "Digit2", ctrlKey: true });
+  press(h, { key: "1", code: "Numpad1", ctrlKey: true });
+  press(h, { key: "3", code: "Digit3", ctrlKey: true });
+  for (const o of [{ code: "Digit1" }, { code: "Digit1", ctrlKey: true, shiftKey: true }, { code: "Digit1", ctrlKey: true, altKey: true }, { code: "Digit1", metaKey: true }])
+    press(h, { key: "1", ...o });
+  await sleep(0);
+  const switched = h.invocations.filter((c) => c.cmd === "switch_account").map((c) => c.args.id);
+  assert(switched.join() === "acct-1,default", "Ctrl+2 / Ctrl+Numpad1 open accounts 2 and 1; Ctrl+3 (no 3rd account) and other modifiers do nothing");
+  const one = makeHarness({ navigator: { platform: "Win32" }, invokeResults: { switcher_accounts: [{ id: "default" }] } });
+  press(one, { key: "1", code: "Digit1", ctrlKey: true });
+  await sleep(0);
+  assert(!one.invocations.some((c) => c.cmd === "switch_account"), "a single account never switches");
+  const mac = makeHarness({ navigator: { platform: "MacIntel" }, invokeResults: { switcher_accounts: accounts } });
+  press(mac, { key: "2", code: "Digit2", metaKey: true });
+  await sleep(0);
+  assert(mac.invocations.some((c) => c.cmd === "switch_account" && c.args.id === "acct-1"), "Cmd+2 on macOS");
+}
+
 async function testZoomWheelCoalesces() {
   const h = makeHarness({ navigator: { platform: "Win32" } });
   const wheel = (o) => { const e = keyEvent({ deltaY: 0, deltaMode: 0, ...o }); for (const fn of h.listeners.wheel || []) fn(e); return e; };
@@ -779,6 +800,7 @@ const tests = [
   testDownloadToastStylesheetIsWellFormed,
   testScrollbarsAreThinAndTranslucent,
   testZoomShortcuts,
+  testAccountNumberKeys,
   testZoomWheelCoalesces,
   testWindowsNativePreferenceAndFallback,
   testNativePermissionAndAsyncErrorFallback,
