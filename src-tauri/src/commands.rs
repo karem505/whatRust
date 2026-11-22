@@ -141,18 +141,25 @@ pub fn set_unread(
     // A new unread chat while the window is in the background: make sure the
     // user hears about it even when WhatsApp raises its own notification where
     // whatRust can't see it (issue #3). Covered by a real notification, this
-    // stays silent; see notify::unread_increased. A dismissed menu-bar panel
-    // is a hidden window, so `is_visible()` already says nobody is watching.
-    let focused = if crate::sessions::enabled() {
-        crate::sessions::account_focused(&app, window.label())
-    } else {
-        window.window().is_focused().unwrap_or(false)
-            && window.window().is_visible().unwrap_or(false)
-    };
+    // stays silent; see notify::unread_increased.
+    let focused = account_in_front(&app, &window);
     if !cfg!(windows)
         && crate::notify::fallback_due(previous, count, focused, settled.unwrap_or(false))
     {
         crate::notify::unread_increased(&app, window.label(), count);
+    }
+}
+
+/// Whether the account shown in `window` is the one the user is looking at:
+/// its window is visible and focused, and in single-window mode it is also the
+/// selected account. A dismissed menu-bar panel is a hidden window, so
+/// `is_visible()` already rules it out.
+pub(crate) fn account_in_front(app: &tauri::AppHandle, window: &tauri::Webview) -> bool {
+    if crate::sessions::enabled() {
+        crate::sessions::account_focused(app, window.label())
+    } else {
+        window.window().is_focused().unwrap_or(false)
+            && window.window().is_visible().unwrap_or(false)
     }
 }
 

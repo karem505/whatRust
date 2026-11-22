@@ -5,6 +5,7 @@ mod applock;
 mod aumid;
 mod badge;
 mod biometric;
+mod clipboard;
 mod commands;
 mod decorations;
 mod dlog;
@@ -229,6 +230,7 @@ pub fn run() {
             commands::switcher_accounts,
             commands::switch_account,
             commands::zoom_step,
+            clipboard::paste_clipboard,
             commands::get_settings,
             commands::set_settings,
             commands::open_settings,

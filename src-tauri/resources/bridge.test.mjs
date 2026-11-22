@@ -167,9 +167,11 @@ function makeHarness(options = {}) {
       core: {
         invoke(cmd, args) {
           invocations.push({ cmd, args });
-          return options.invokeRejects
-            ? Promise.reject(new Error("Command " + cmd + " not allowed by ACL"))
-            : Promise.resolve();
+          if (options.invokeRejects) {
+            return Promise.reject(new Error("Command " + cmd + " not allowed by ACL"));
+          }
+          // `invokeResult(cmd, args)` lets a test choose what a command returns.
+          return Promise.resolve(options.invokeResult && options.invokeResult(cmd, args));
         },
       },
     },
@@ -775,7 +777,82 @@ async function testNativeBranchSendsNotificationIcon() {
   assert(invocations.filter((x) => x.cmd === "notification_icon").length === before, "data:/no icon: Rust handles it, nothing sent");
 }
 
+// --- clipboard image paste ---------------------------------------------------
+// Fire a paste the way the webview does. WebKitGTK sends an image-only
+// clipboard as `{ types: [], files: [] }`.
+function paste(h, clipboardData) {
+  for (const fn of h.listeners.paste || []) fn({ clipboardData });
+}
+const pasteCalls = (h) => h.invocations.filter((c) => c.cmd === "paste_clipboard").length;
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+// Rust answers paste_clipboard with the image as base64 PNG, or "" for none.
+const PNG_B64 = PNG.toString("base64");
+
+async function testEmptyPasteAttachesTheClipboardImage() {
+  console.log("an empty paste (WebKitGTK image clipboard) attaches the image Rust reads");
+  const h = makeHarness({
+    invokeResult: (cmd) => (cmd === "paste_clipboard" ? PNG_B64 : undefined),
+  });
+  paste(h, { types: [], files: [] });
+  await sleep(150);
+  assert(pasteCalls(h) === 1, "asks Rust for the clipboard image once");
+  const batch = h.mediaInput.batches[0] || [];
+  assert(batch.length === 1, "one file reaches the photo input, not the document input");
+  assert(h.docInput.batches.length === 0, "nothing goes to the document input");
+  const f = batch[0];
+  assert(f && f.name === "image.png" && f.type === "image/png", "named image.png with type image/png");
+  assert(f && f.bytes().equals(PNG), "bytes arrive unchanged");
+}
+
+async function testBrowserCopiedImageAlsoUsesTheNativeRead() {
+  console.log('"Copy image" from a browser (text/html only) still reads the image natively');
+  const h = makeHarness({ invokeResult: () => PNG_B64 });
+  paste(h, { types: ["text/html"], files: [] });
+  await sleep(150);
+  assert(pasteCalls(h) === 1, "text/html without text/plain still asks Rust");
+}
+
+async function testCopiedFilesAreReadNatively() {
+  console.log("files copied in a file manager (text/uri-list hidden by WebKitGTK) are read natively");
+  // What WebKitGTK showed for a Nautilus copy of a PDF and a PNG: the type is
+  // listed, but the list itself is withheld.
+  const h = makeHarness({ invokeResult: () => "" });
+  paste(h, { types: ["text/uri-list"], files: [], getData: () => "" });
+  await sleep(150);
+  assert(pasteCalls(h) === 1, "asks Rust, which streams the files through the drop feed");
+  assert(h.mediaInput.batches.length === 0 && h.docInput.batches.length === 0, "the empty answer attaches nothing itself");
+}
+
+async function testPastesTheWebviewHandlesNeverReachRust() {
+  console.log("text pastes and pastes that already carry a file are left alone");
+  const h = makeHarness({ invokeResult: () => PNG_B64 });
+  paste(h, { types: ["text/plain"], files: [] });
+  paste(h, { types: ["text/html", "text/plain"], files: [] });
+  paste(h, { types: ["Files"], files: [new FakeFile([PNG], "image.png", { type: "image/png" })] });
+  paste(h, null);
+  await sleep(150);
+  assert(pasteCalls(h) === 0, "no native read for text, delivered files or a missing clipboardData");
+  assert(h.mediaInput.batches.length === 0, "nothing is attached a second time");
+}
+
+async function testNoClipboardImageOrRefusalAttachesNothing() {
+  console.log("an empty answer or a refused command attaches nothing");
+  const empty = makeHarness({ invokeResult: () => "" });
+  paste(empty, { types: [], files: [] });
+  const refused = makeHarness({ invokeRejects: true });
+  paste(refused, { types: [], files: [] });
+  await sleep(150);
+  assert(pasteCalls(empty) === 1 && pasteCalls(refused) === 1, "both asked Rust");
+  assert(empty.mediaInput.batches.length === 0, "no image on the clipboard: nothing attached");
+  assert(refused.mediaInput.batches.length === 0, "locked / background account: nothing attached");
+}
+
 const tests = [
+  testEmptyPasteAttachesTheClipboardImage,
+  testBrowserCopiedImageAlsoUsesTheNativeRead,
+  testCopiedFilesAreReadNatively,
+  testPastesTheWebviewHandlesNeverReachRust,
+  testNoClipboardImageOrRefusalAttachesNothing,
   testDownloadToastStylesheetIsWellFormed,
   testScrollbarsAreThinAndTranslucent,
   testZoomShortcuts,

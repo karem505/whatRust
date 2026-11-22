@@ -1100,5 +1100,47 @@
       }
     };
     drop.log("drop injector v5 (batched chunks, incremental decode, ordered no-loss routing) ready");
+
+    // 5) Clipboard paste of images and files (Linux).
+    //    WebKitGTK hides both from the page and refuses navigator.clipboard.read():
+    //      - an image (screenshot, "Copy image") arrives as an EMPTY clipboardData;
+    //      - files copied in a file manager (PDF, video, ...) arrive as type
+    //        text/uri-list whose getData() is "" and with no files.
+    //    Either way WhatsApp gets nothing to attach. When a paste carries no file
+    //    and no plain text, ask Rust to read the system clipboard (clipboard.rs).
+    //    Copied files are streamed back through __whatrustDropFeed above, like a
+    //    drop; an image comes back as base64 PNG and goes through the same queue
+    //    and composer routing as a dropped photo.
+    //    Windows and macOS put pasted images and files in clipboardData.files, and
+    //    a text paste has text/plain, so neither ever reaches Rust.
+    drop.pasteNeedsNativeRead = function (data) {
+      if (!data) return false;
+      if (data.files && data.files.length) return false; // the webview delivered it
+      var types = Array.prototype.slice.call(data.types || []);
+      return types.indexOf("text/plain") === -1;
+    };
+    drop.pasteFromClipboard = function () {
+      return invoke("paste_clipboard").then(function (b64) {
+        // "" means no image: either nothing usable was on the clipboard, or Rust
+        // is streaming copied files through the drop feed. undefined means the
+        // command was refused (locked, background account).
+        if (typeof b64 !== "string" || !b64) return;
+        // "image.png" is the name Chrome gives a pasted image.
+        var file = new File([drop.b64ToBytes(b64)], "image.png", { type: "image/png" });
+        drop.log("paste: attaching clipboard image (" + file.size + " bytes)");
+        drop.runQueued(function () {
+          return drop.injectBatch([file]).catch(function (e) {
+            drop.log("paste inject error: " + e);
+            drop.attachFailed();
+          });
+        });
+      });
+    };
+    // Capture phase on window: runs before WhatsApp's own handlers, so a
+    // stopPropagation there cannot hide the paste from us. We only read the
+    // event and never cancel it, so text pastes behave exactly as before.
+    window.addEventListener("paste", function (e) {
+      if (drop.pasteNeedsNativeRead(e && e.clipboardData)) drop.pasteFromClipboard();
+    }, true);
   } catch (e) {}
 })();

@@ -627,6 +627,15 @@ fn enqueue_drop(
     }
 }
 
+/// Stream files the user copied in a file manager and pasted into `view`
+/// (clipboard.rs) exactly as if they had been dropped on it: same caps, MIME
+/// routing, composer queue and toasts. Blocks while streaming, so call it off
+/// the main thread and off the async workers.
+pub(crate) fn stream_pasted_files(view: &tauri::Webview, paths: &[std::path::PathBuf]) {
+    let drop_id = DROP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    stream_drop(view, drop_id, paths);
+}
+
 /// Per-account windows. Listen on the WEBVIEW, not the window: with tauri's
 /// `unstable` feature (needed for child webviews) a WebviewWindow's webview is
 /// created as a window child, so wry reports drops as `WebviewEvent::DragDrop`
@@ -1140,7 +1149,7 @@ fn mime_for(name: &str) -> &'static str {
 /// across multiple calls (streaming) MUST pass whole 3-byte groups on every call except the
 /// last — otherwise an interior partial group would be padded mid-stream. [`stream_chunks`]
 /// upholds that contract by emitting whole [`DROP_CHUNK_BYTES`] (multiple-of-3) chunks.
-fn base64_encode_into(out: &mut String, data: &[u8]) {
+pub(crate) fn base64_encode_into(out: &mut String, data: &[u8]) {
     const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     out.reserve(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {

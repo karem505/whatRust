@@ -27,6 +27,7 @@ const PAGE_COMMANDS: &[&str] = &[
     "switcher_accounts",
     "switch_account",
     "zoom_step",
+    "paste_clipboard",
 ];
 /// Commands only the local settings window may use.
 const SETTINGS_COMMANDS: &[&str] = &[

@@ -28,6 +28,7 @@ fn main() {
             "switcher_accounts",
             "switch_account",
             "zoom_step",
+            "paste_clipboard",
             // settings window
             "get_settings",
             "set_settings",
