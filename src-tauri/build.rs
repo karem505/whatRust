@@ -32,6 +32,8 @@ fn main() {
             "get_settings",
             "set_settings",
             "restart_app",
+            "export_backup",
+            "import_backup",
             "open_settings",
             "pick_download_dir",
             "choose_app_icon",

@@ -243,6 +243,161 @@ pub fn set_settings(
     Ok(crate::settings::apply(&app, &settings))
 }
 
+/// A whatRust settings backup: preferences and the account list (names and
+/// order). Never logins, chats or the app-lock password.
+#[derive(Serialize, serde::Deserialize)]
+struct Backup {
+    app: String,
+    format: u32,
+    settings: Settings,
+    accounts: Vec<BackupAccount>,
+    startup_account: Option<String>,
+}
+#[derive(Serialize, serde::Deserialize)]
+struct BackupAccount {
+    id: String,
+    name: String,
+    order: u32,
+}
+const BACKUP_APP: &str = "whatRust";
+const BACKUP_MAX_BYTES: u64 = 1 << 20;
+const ACCOUNT_NAME_MAX: usize = 64;
+
+/// Save settings + account list to a JSON file the user picks. `false` = cancelled.
+#[tauri::command]
+pub async fn export_backup(window: tauri::Webview, app: tauri::AppHandle) -> Result<bool, String> {
+    if is_remote(&window) {
+        return Err("forbidden".into());
+    }
+    lock::require_unlocked(&app)?;
+    let f = accounts::load(&app);
+    let backup = Backup {
+        app: BACKUP_APP.into(),
+        format: 1,
+        settings: crate::settings::load(&app),
+        accounts: f
+            .accounts
+            .iter()
+            .map(|a| BackupAccount {
+                id: a.id.clone(),
+                name: a.name.clone(),
+                order: a.order,
+            })
+            .collect(),
+        startup_account: f.startup_account.clone(),
+    };
+    use tauri_plugin_dialog::DialogExt;
+    let Some(path) = app
+        .dialog()
+        .file()
+        .set_title(tr("Salvar backup do whatRust"))
+        .add_filter("JSON", &["json"])
+        .set_file_name("whatrust-backup.json")
+        .set_parent(&window.window())
+        .blocking_save_file()
+    else {
+        return Ok(false);
+    };
+    let path = path.into_path().map_err(|e| e.to_string())?;
+    let json = serde_json::to_vec_pretty(&backup).map_err(|e| e.to_string())?;
+    std::fs::write(path, json).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+/// Apply a backup to `stored` settings and `f`: returns the settings to save and
+/// how many accounts were added. Existing accounts (same id) are renamed and
+/// reordered; others are added with a fresh profile (they need a QR login).
+fn merge_backup(
+    backup: Backup,
+    stored: &Settings,
+    f: &mut accounts::AccountsFile,
+) -> Result<(Settings, usize), String> {
+    if backup.app != BACKUP_APP || backup.format != 1 {
+        return Err(tr("Este arquivo não é um backup do whatRust.").into());
+    }
+    let mut settings = backup.settings.sanitized();
+    // Machine-specific: keep this computer's icon and download folder.
+    settings.custom_icon = stored.custom_icon;
+    settings.download_dir = stored.download_dir.clone();
+    let mut list = backup.accounts;
+    list.sort_by_key(|a| a.order);
+    let mut order: Vec<String> = Vec::new();
+    let mut added = 0;
+    for a in list {
+        let name: String = a.name.trim().chars().take(ACCOUNT_NAME_MAX).collect();
+        if name.is_empty() {
+            continue;
+        }
+        let id = if f.accounts.iter().any(|x| x.id == a.id) {
+            accounts::rename(f, &a.id, &name)?;
+            a.id
+        } else {
+            added += 1;
+            accounts::add(f, &name).id
+        };
+        if !order.contains(&id) {
+            order.push(id);
+        }
+    }
+    // Accounts only on this computer keep their place after the restored ones.
+    for a in &f.accounts {
+        if !order.contains(&a.id) {
+            order.push(a.id.clone());
+        }
+    }
+    accounts::reorder(f, &order)?;
+    if let Some(id) = backup
+        .startup_account
+        .filter(|id| f.accounts.iter().any(|a| &a.id == id))
+    {
+        accounts::set_startup_account(f, &id)?;
+    }
+    Ok((settings, added))
+}
+
+/// Restore a backup file the user picks. Returns `None` if cancelled, else the
+/// number of accounts added (they open after a restart).
+#[tauri::command]
+pub async fn import_backup(
+    window: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<Option<usize>, String> {
+    if is_remote(&window) {
+        return Err("forbidden".into());
+    }
+    lock::require_unlocked(&app)?;
+    use tauri_plugin_dialog::DialogExt;
+    let Some(path) = app
+        .dialog()
+        .file()
+        .set_title(tr("Restaurar backup do whatRust"))
+        .add_filter("JSON", &["json"])
+        .set_parent(&window.window())
+        .blocking_pick_file()
+    else {
+        return Ok(None);
+    };
+    let path = path.into_path().map_err(|e| e.to_string())?;
+    let not_backup = || tr("Este arquivo não é um backup do whatRust.").into_owned();
+    if std::fs::metadata(&path).map_err(|e| e.to_string())?.len() > BACKUP_MAX_BYTES {
+        return Err(not_backup());
+    }
+    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    let backup: Backup = serde_json::from_slice(&bytes).map_err(|_| not_backup())?;
+    let _guard = accounts::lock_mutations();
+    let mut f = accounts::load(&app);
+    let (mut settings, added) = merge_backup(backup, &crate::settings::load(&app), &mut f)?;
+    if added > 0 {
+        crate::window::ensure_isolation_supported()?;
+    }
+    crate::proxy::validate(&mut settings)?;
+    accounts::save(&app, &f).map_err(|e| e.to_string())?;
+    crate::settings::save(&app, &settings).map_err(|e| e.to_string())?;
+    crate::settings::apply(&app, &settings);
+    crate::tray::rebuild_menu(&app);
+    Ok(Some(added))
+}
+
 /// Relaunch the app (the proxy applies when webviews are created). Local
 /// settings window only, and not while locked.
 #[tauri::command]
@@ -1077,6 +1232,67 @@ pub fn reset_app_lock(
 #[cfg(test)]
 mod tests {
     use super::is_remote_label;
+    use super::{merge_backup, Backup, BackupAccount, BACKUP_APP};
+    use crate::accounts;
+    use crate::settings::Settings;
+
+    #[test]
+    fn backup_merge_renames_adds_and_keeps_local_paths() {
+        let mut f = accounts::AccountsFile::default();
+        let stored = Settings {
+            download_dir: Some("D:/here".into()),
+            ..Settings::default()
+        };
+        let backup = Backup {
+            app: BACKUP_APP.into(),
+            format: 1,
+            settings: Settings {
+                zoom: 0.9,
+                download_dir: Some("/elsewhere".into()),
+                ..Settings::default()
+            },
+            accounts: vec![
+                BackupAccount {
+                    id: "acct-9".into(),
+                    name: "Work".into(),
+                    order: 0,
+                },
+                BackupAccount {
+                    id: "default".into(),
+                    name: "  Home  ".into(),
+                    order: 1,
+                },
+                BackupAccount {
+                    id: "x".into(),
+                    name: "   ".into(),
+                    order: 2,
+                },
+            ],
+            startup_account: Some("default".into()),
+        };
+        let (s, added) = merge_backup(backup, &stored, &mut f).unwrap();
+        assert_eq!(added, 1);
+        assert_eq!(s.zoom, 0.9);
+        assert_eq!(s.download_dir.as_deref(), Some("D:/here"));
+        let mut list = f.accounts.clone();
+        list.sort_by_key(|a| a.order);
+        let names: Vec<_> = list.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(names, ["Work", "Home"]);
+        assert_eq!(f.startup_account.as_deref(), Some("default"));
+    }
+
+    #[test]
+    fn backup_from_another_app_is_refused() {
+        let mut f = accounts::AccountsFile::default();
+        let backup = Backup {
+            app: "other".into(),
+            format: 1,
+            settings: Settings::default(),
+            accounts: vec![],
+            startup_account: None,
+        };
+        assert!(merge_backup(backup, &Settings::default(), &mut f).is_err());
+    }
 
     #[test]
     fn is_remote_wa_prefix_is_true() {
