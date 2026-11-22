@@ -70,6 +70,9 @@ pub struct Settings {
     /// an account page is created, so a change applies after a restart. On by
     /// default: both people in the issue asked for it.
     pub hide_app_banner: bool,
+    /// Unload an account page that has not been opened for this many hours
+    /// (0 = never). It reloads when switched to; asleep, it gets no messages.
+    pub sleep_idle_hours: u32,
 }
 
 impl Default for Settings {
@@ -102,6 +105,7 @@ impl Default for Settings {
             title_bar: crate::decorations::AUTO.to_string(),
             rendering: RENDERING_AUTO.to_string(),
             hide_app_banner: true,
+            sleep_idle_hours: 0,
         }
     }
 }
@@ -231,6 +235,7 @@ impl Settings {
         self.download_dir = self.download_dir.filter(|d| !d.trim().is_empty());
         self.title_bar = crate::decorations::sanitize(&self.title_bar);
         self.rendering = sanitize_rendering(&self.rendering);
+        self.sleep_idle_hours = self.sleep_idle_hours.min(24 * 7);
         // Menu-bar-only mode needs WKWebView's inactive-scheduling policy
         // (macOS 14+). Dropping the flag here means a settings file or an
         // older build can never leave the app in a mode it cannot sustain.

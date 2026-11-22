@@ -47,6 +47,8 @@ pub struct Sessions {
     view_visibility: Mutex<HashMap<String, bool>>,
     applied_bounds: Mutex<HashMap<String, (i32, i32, u32, u32)>>,
     pending_layout: Mutex<HashSet<String>>,
+    /// When each account view was last shown (or built), for idle sleep.
+    last_seen: Mutex<HashMap<String, std::time::Instant>>,
 }
 
 fn state(app: &AppHandle) -> tauri::State<'_, Sessions> {
@@ -334,6 +336,7 @@ pub fn open_account(app: &AppHandle, account: &Account, hidden: bool) -> tauri::
     if app.get_webview(&label).is_none() {
         let view = crate::window::build_account_view(app, &parent, account)?;
         set_view_visible(app, &view, false);
+        crate::lock::guard(&state(app).last_seen).insert(label.clone(), std::time::Instant::now());
     }
     if crate::lock::guard(&state(app).main_active).is_none() {
         *crate::lock::guard(&state(app).main_active) = Some(label.clone());
@@ -382,6 +385,7 @@ fn activate_on_main(app: &AppHandle, label: &str) {
         return;
     };
     let parent = view.window();
+    crate::lock::guard(&state(app).last_seen).insert(label.to_string(), std::time::Instant::now());
     if parent.label() == "main" {
         *crate::lock::guard(&state(app).main_active) = Some(label.to_string());
     }
@@ -775,6 +779,47 @@ pub fn remove_view(app: &AppHandle, id: &str) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Should an account last shown `idle` ago sleep, given the setting in hours?
+fn idle_too_long(idle: std::time::Duration, hours: u32) -> bool {
+    hours > 0 && idle >= std::time::Duration::from_secs(u64::from(hours) * 3600)
+}
+
+/// Unload background accounts in the main window that have not been shown for
+/// `sleep_idle_hours`. Main thread. The shown account and detached windows are
+/// never touched; a sleeping account is rebuilt when switched to (activate).
+pub fn sleep_idle(app: &AppHandle) {
+    let hours = crate::settings::load(app).sleep_idle_hours;
+    if hours == 0 {
+        return;
+    }
+    let shown = crate::lock::guard(&state(app).main_active).clone();
+    for (label, view) in app.webviews() {
+        if !label.starts_with("wa-")
+            || view.window().label() != "main"
+            || shown.as_deref() == Some(label.as_str())
+        {
+            continue;
+        }
+        let idle = crate::lock::guard(&state(app).last_seen)
+            .get(&label)
+            .map(|t| t.elapsed());
+        if !idle.is_some_and(|idle| idle_too_long(idle, hours)) {
+            continue;
+        }
+        if view.close().is_ok() {
+            crate::lock::guard(&state(app).view_visibility).remove(&label);
+            crate::lock::guard(&state(app).last_seen).remove(&label);
+            crate::lock::guard(&state(app).fallback).remove(&label);
+            app.state::<crate::integration::Integration>()
+                .0
+                .lock()
+                .unwrap()
+                .remove(&label);
+            crate::dlog::log("sleep: idle account unloaded");
+        }
+    }
+}
+
 pub fn open_panel(app: &AppHandle, parent: Option<&str>) -> tauri::Result<()> {
     let _health = crate::ui_health::enter("account panel");
     if !crate::lock::is_unlocked(app) {
@@ -910,4 +955,17 @@ pub fn account_focused(app: &AppHandle, label: &str) -> bool {
             && selected(app, parent.label()).as_deref() == Some(label)
             && crate::lock::guard(&state(app).panel_parent).as_deref() != Some(parent.label())
     })
+}
+
+#[cfg(test)]
+mod sleep_tests {
+    use super::idle_too_long;
+    use std::time::Duration;
+
+    #[test]
+    fn sleeps_only_when_enabled_and_idle_long_enough() {
+        assert!(!idle_too_long(Duration::from_secs(10 * 3600), 0));
+        assert!(!idle_too_long(Duration::from_secs(3599), 1));
+        assert!(idle_too_long(Duration::from_secs(3600), 1));
+    }
 }
