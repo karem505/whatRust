@@ -393,8 +393,14 @@ pub async fn import_backup(
     crate::proxy::validate(&mut settings)?;
     accounts::save(&app, &f).map_err(|e| e.to_string())?;
     crate::settings::save(&app, &settings).map_err(|e| e.to_string())?;
-    crate::settings::apply(&app, &settings);
-    crate::tray::rebuild_menu(&app);
+    // Window, menu and shortcut changes belong on the UI thread (set_settings
+    // runs there as a sync command); this command is async for the dialog.
+    let ui = app.clone();
+    app.run_on_main_thread(move || {
+        crate::settings::apply(&ui, &settings);
+        crate::tray::rebuild_menu(&ui);
+    })
+    .map_err(|e| e.to_string())?;
     Ok(Some(added))
 }
 
