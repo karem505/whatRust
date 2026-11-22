@@ -289,6 +289,9 @@ fn install_menu(app: &AppHandle, w: &Window) -> tauri::Result<()> {
         .build()?;
     let menu = MenuBuilder::new(app).item(&submenu).build()?;
     w.set_menu(menu)?;
+    // set_menu shows the bar; re-apply the current visibility right away.
+    crate::lock::guard(&state(app).menus_hidden).remove(w.label());
+    sync_menu(app, w.label());
     let a = app.clone();
     let parent = w.label().to_string();
     w.on_menu_event(move |_, event| {
@@ -524,13 +527,16 @@ fn sync_menu(app: &AppHandle, parent: &str) {
         return;
     }
     let _health = crate::ui_health::enter("native menu");
-    let hidden = selected(app, parent).is_some_and(|label| {
+    // Shown only when the chat list loaded but the in-page controls could not
+    // attach. Before the first report, and with no account selected (the shell
+    // page has its own controls), the window keeps a single title bar.
+    let hidden = selected(app, parent).is_none_or(|label| {
         app.state::<crate::integration::Integration>()
             .0
             .lock()
             .unwrap()
             .get(&label)
-            .is_some_and(|adapter| adapter.mounted)
+            .is_none_or(|adapter| adapter.mounted || !adapter.detector)
     });
     let changed = {
         let s = state(app);
@@ -547,10 +553,10 @@ fn sync_menu(app: &AppHandle, parent: &str) {
     }
 }
 
-pub fn integration_changed(app: &AppHandle, label: &str, mounted: bool) {
+pub fn integration_changed(app: &AppHandle, label: &str, controls_ok: bool) {
     let s = state(app);
     let mut f = crate::lock::guard(&s.fallback);
-    if mounted {
+    if controls_ok {
         f.remove(label);
     } else {
         f.insert(label.into());

@@ -140,7 +140,9 @@ pub fn report_integration(
             last_signal: None,
             signals: 0,
         });
-    crate::sessions::integration_changed(&app, window.label(), mounted);
+    // Fallback chrome only when the chat list loaded but our controls could not
+    // attach; while WhatsApp is still loading the window keeps a single title bar.
+    crate::sessions::integration_changed(&app, window.label(), mounted || !detector);
     crate::dlog::log(&format!(
         "integration: layout completed controls_mounted={mounted} detector={detector}"
     ));
