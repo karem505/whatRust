@@ -130,6 +130,25 @@ function makeHarness(options = {}) {
   };
   mediaInput.onchange = onChange;
   docInput.onchange = onChange;
+  // `lazyInputs` mimics current WhatsApp Web: the file inputs do not exist until the
+  // attach menu's "Photos & videos" / "Document" entry is clicked, and the menu itself
+  // renders `menuDelayMs` after the attach (+) button is clicked.
+  const menu = { open: false, mounted: !options.lazyInputs, clicks: [] };
+  const clickable = (name, onClick) => ({
+    name,
+    closest: () => null,
+    click() {
+      menu.clicks.push(name);
+      onClick();
+    },
+  });
+  const plusButton = clickable("plus", () => {
+    setTimeout(() => (menu.open = true), options.menuDelayMs ?? 30);
+  });
+  const mediaItem = clickable("media item", () => (menu.mounted = true));
+  const docItem = clickable("document item", () => (menu.mounted = true));
+  // Something outside the menu the loose aria-label selector also matches.
+  const profilePhoto = clickable("profile photo", () => {});
   const body = new FakeElement("body");
   body.isRoot = true;
   const head = new FakeElement("head");
@@ -145,10 +164,19 @@ function makeHarness(options = {}) {
     readyState: "complete",
     addEventListener() {},
     querySelectorAll(sel) {
-      return sel === 'input[type="file"]' ? [mediaInput, docInput] : [];
+      if (sel === 'input[type="file"]') return menu.mounted ? [mediaInput, docInput] : [];
+      if (!options.lazyInputs) return [];
+      if (sel === '[aria-label*="hoto"]') return menu.open ? [profilePhoto, mediaItem] : [profilePhoto];
+      if (sel === '[data-icon="document"]' && menu.open) return [docItem];
+      return [];
     },
     querySelector(sel) {
       if (sel === "title") return null;
+      if (options.lazyInputs) {
+        if (sel === '[data-icon="plus"]') return plusButton;
+        const first = this.querySelectorAll(sel)[0];
+        if (first) return first;
+      }
       if (sel.includes("media-caption-input-container")) {
         return Date.now() < state.composerUntil ? {} : null;
       }
@@ -208,7 +236,7 @@ function makeHarness(options = {}) {
   const params = Object.keys(sandboxGlobals);
   const fn = new Function(...params, `"use strict";\n${bridgeSrc}`);
   fn(...params.map((k) => sandboxGlobals[k]));
-  return { window, listeners, document, head, mediaInput, docInput, logs, warns, invocations, navigator: sandboxGlobals.navigator };
+  return { window, listeners, document, head, mediaInput, docInput, menu, logs, warns, invocations, navigator: sandboxGlobals.navigator };
 }
 
 // Drive the feed the way window.rs stream_drop does.
@@ -847,7 +875,42 @@ async function testNoClipboardImageOrRefusalAttachesNothing() {
   assert(refused.mediaInput.batches.length === 0, "locked / background account: nothing attached");
 }
 
+// --- attach menu timing --------------------------------------------------------
+// The input appears only after the menu entry is clicked. The entry must be clicked
+// as soon as the menu renders, not after a 1 s wait for an input that never comes.
+async function testMenuEntryIsClickedAsSoonAsTheMenuRenders() {
+  console.log("lazily mounted input: the menu entry is clicked as soon as it renders");
+  for (const [kind, name, type, input, item] of [
+    ["media", "photo.png", "image/png", "mediaInput", "media item"],
+    ["document", "report.pdf", "application/pdf", "docInput", "document item"],
+  ]) {
+    const h = makeHarness({ lazyInputs: true, menuDelayMs: 30 });
+    const t0 = Date.now();
+    feedFile(h.window, 50, 0, name, type, "data");
+    h.window.__whatrustDropFeed({ op: "commit", drop: 50, files: 1 });
+    while (!h[input].batches.length && Date.now() - t0 < 2500) await sleep(10);
+    const took = Date.now() - t0;
+    assert(h[input].batches.length === 1, kind + ": the file reaches the " + kind + " input");
+    assert(took < 500, kind + ": attached in " + took + "ms (was over 1000ms)");
+    assert(h.menu.clicks.join(",") === "plus," + item, kind + ": opens the menu, then clicks only its entry");
+  }
+}
+
+async function testElementsOnThePageBeforeTheMenuAreNeverClicked() {
+  console.log("a loose selector match that predates the menu is never clicked");
+  // The menu renders slowly; meanwhile "Profile photo" already matches [aria-label*="hoto"].
+  const h = makeHarness({ lazyInputs: true, menuDelayMs: 200 });
+  feedFile(h.window, 51, 0, "photo.png", "image/png", "data");
+  h.window.__whatrustDropFeed({ op: "commit", drop: 51, files: 1 });
+  const t0 = Date.now();
+  while (!h.mediaInput.batches.length && Date.now() - t0 < 2500) await sleep(10);
+  assert(!h.menu.clicks.includes("profile photo"), "the profile photo button is left alone");
+  assert(h.mediaInput.batches.length === 1, "the photo still attaches once the menu renders");
+}
+
 const tests = [
+  testMenuEntryIsClickedAsSoonAsTheMenuRenders,
+  testElementsOnThePageBeforeTheMenuAreNeverClicked,
   testEmptyPasteAttachesTheClipboardImage,
   testBrowserCopiedImageAlsoUsesTheNativeRead,
   testCopiedFilesAreReadNatively,

@@ -852,14 +852,38 @@
       (b.closest('button,[role="button"],div[role="button"]') || b).click();
       return true;
     };
-    drop.clickMenuItem = function (kind) {
-      var sels =
-        kind === "media"
-          ? ['[data-testid="attach-image"]', '[data-icon="media-multiple"]', '[aria-label*="Photos"]', '[aria-label*="hoto"]']
-          : ['[data-testid="attach-document"]', '[data-icon="document"]', '[aria-label*="Document"]', '[aria-label*="ocument"]'];
-      var e = drop.qs(sels);
-      if (!e) return false;
+    // The attach menu's "Photos & videos" / "Document" entry, most specific selector first.
+    drop.menuItemSelectors = function (kind) {
+      return kind === "media"
+        ? ['[data-testid="attach-image"]', '[data-icon="media-multiple"]', '[aria-label*="Photos"]', '[aria-label*="hoto"]']
+        : ['[data-testid="attach-document"]', '[data-icon="document"]', '[aria-label*="Document"]', '[aria-label*="ocument"]'];
+    };
+    // Every element on the page that matches a menu-item selector.
+    drop.menuItemMatches = function (kind) {
+      var sels = drop.menuItemSelectors(kind), out = [];
+      for (var i = 0; i < sels.length; i++) {
+        var found = document.querySelectorAll(sels[i]);
+        for (var j = 0; j < found.length; j++) out.push(found[j]);
+      }
+      return out;
+    };
+    // The first menu-item match that is not in `stale`. The loose aria-label selectors
+    // can also match things outside the menu (a "Profile photo" button, say); anything
+    // already on the page before the menu opened is one of those, never the menu item.
+    drop.findMenuItem = function (kind, stale) {
+      var all = drop.menuItemMatches(kind);
+      for (var i = 0; i < all.length; i++) {
+        if (stale.indexOf(all[i]) === -1) return all[i];
+      }
+      return null;
+    };
+    drop.clickElement = function (e) {
       (e.closest('li,button,[role="button"],div[role="button"]') || e).click();
+    };
+    drop.clickMenuItem = function (kind) {
+      var e = drop.qs(drop.menuItemSelectors(kind));
+      if (!e) return false;
+      drop.clickElement(e);
       return true;
     };
     drop.poll = function (fn, ms) {
@@ -885,23 +909,39 @@
       input.dispatchEvent(new Event("input", { bubbles: true }));
       return true;
     };
-    // Open the attach menu (which mounts the lazily-rendered inputs) and inject into the
-    // one matching `kind`. If opening the menu alone doesn't mount it, click the matching
-    // submenu item to force it. No user gesture exists here, so the OS file picker can't
-    // open — only the input element is mounted, which is all we need.
+    // Open the attach menu and inject into the file input matching `kind`. Current
+    // WhatsApp Web mounts that input only when the menu's "Photos & videos" or
+    // "Document" entry is clicked, not when the menu opens. So after opening the menu,
+    // watch for EITHER the input (older versions mount it with the menu) OR the menu
+    // entry, and click the entry the moment it renders. Waiting for the input alone
+    // used to sit out its full 1 s timeout before clicking the entry (a visible delay
+    // on every drop and paste). No user gesture exists here, so the OS file picker
+    // can't open; only the input element is mounted, which is all we need.
     drop.mountAndInject = function (kind, files) {
       var find = kind === "media" ? drop.findMediaInput : drop.findDocInput;
+      var started = Date.now();
+      var injectInto = function (input, how) {
+        drop.log(kind + " input " + how + " after " + (Date.now() - started) + "ms");
+        return drop.inject(input, files);
+      };
       var existing = find();
-      if (existing) {
-        drop.log(kind + " input already present");
-        return Promise.resolve(drop.inject(existing, files));
-      }
+      if (existing) return Promise.resolve(injectInto(existing, "already present"));
+
+      var stale = drop.menuItemMatches(kind);
       drop.openMenu();
-      return drop.poll(find, 1000).then(function (input) {
-        if (input) return drop.inject(input, files);
-        drop.clickMenuItem(kind);
-        return drop.poll(find, 1000).then(function (input2) {
-          if (input2) return drop.inject(input2, files);
+      return drop.poll(function () {
+        var input = find();
+        if (input) return { input: input };
+        var item = drop.findMenuItem(kind, stale);
+        return item ? { item: item } : null;
+      }, 1000).then(function (hit) {
+        if (hit && hit.input) return injectInto(hit.input, "mounted with the menu");
+        // The entry rendered: click it. Nothing rendered within 1 s: the menu may be a
+        // version whose entry was already on the page, so try the plain lookup once.
+        if (hit) drop.clickElement(hit.item);
+        else drop.clickMenuItem(kind);
+        return drop.poll(find, 1000).then(function (input) {
+          if (input) return injectInto(input, "mounted by the menu entry");
           drop.log(kind + " input NOT found after opening attach menu");
           return false;
         });
