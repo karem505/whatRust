@@ -385,7 +385,17 @@ fn activate_on_main(app: &AppHandle, label: &str) {
         return;
     };
     let parent = view.window();
-    crate::lock::guard(&state(app).last_seen).insert(label.to_string(), std::time::Instant::now());
+    {
+        let now = std::time::Instant::now();
+        // The account being switched away from was on screen until now.
+        let previous = crate::lock::guard(&state(app).main_active).clone();
+        let sessions = state(app);
+        let mut seen = crate::lock::guard(&sessions.last_seen);
+        if let Some(previous) = previous {
+            seen.insert(previous, now);
+        }
+        seen.insert(label.to_string(), now);
+    }
     if parent.label() == "main" {
         *crate::lock::guard(&state(app).main_active) = Some(label.to_string());
     }
