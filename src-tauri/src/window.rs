@@ -89,6 +89,32 @@ pub fn open_account_window(app: &AppHandle, account: &Account, hidden: bool) -> 
     }
 }
 
+/// Upper bound on how long background accounts wait for the startup account.
+pub const DEFERRED_ACCOUNTS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
+static DEFERRED_OPENED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Builds (hidden) every account the staggered startup skipped. Main thread
+/// only; runs once, later calls are no-ops.
+pub fn open_deferred_accounts(app: &AppHandle) {
+    if DEFERRED_OPENED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    for account in &accounts::load(app).accounts {
+        if app
+            .get_webview(&accounts::window_label(&account.id))
+            .is_none()
+            && app
+                .get_webview_window(&accounts::window_label(&account.id))
+                .is_none()
+        {
+            if let Err(e) = open_account_window(app, account, true) {
+                crate::dlog::log(&format!("startup: deferred account failed: {e}"));
+            }
+        }
+    }
+    crate::dlog::log("startup: deferred accounts built");
+}
+
 // Keep navigation, injection and download hooks identical across platform builders.
 macro_rules! account_webview {
     ($builder:expr, $app:ident, $label:ident) => {

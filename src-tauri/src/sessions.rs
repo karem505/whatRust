@@ -366,6 +366,18 @@ fn activate_on_main(app: &AppHandle, label: &str) {
         crate::lock::show_lock_window(app);
         return;
     }
+    if app.get_webview(label).is_none() {
+        // Switched to an account the staggered startup has not built yet.
+        let account = accounts::id_from_label(label).and_then(|id| {
+            accounts::load(app)
+                .accounts
+                .into_iter()
+                .find(|a| a.id == id)
+        });
+        if let Some(account) = account {
+            let _ = crate::window::open_account_window(app, &account, true);
+        }
+    }
     let Some(view) = app.get_webview(label) else {
         return;
     };
