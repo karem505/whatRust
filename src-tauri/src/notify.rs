@@ -213,6 +213,9 @@ pub fn suppression(
     if !s.notifications {
         return Some("notifications_disabled");
     }
+    if source != Source::Test && crate::settings::quiet_now(s) {
+        return Some("quiet_hours");
+    }
     if source != Source::Test && focused && !s.notify_when_focused {
         return Some("foreground_disabled");
     }

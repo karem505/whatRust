@@ -27,6 +27,8 @@ argon2 = { version = "0.5.3", features = ["std"] }  # Argon2id password hashing 
 ureq = { version = "3", default-features = false, features = ["rustls", "socks-proxy"] }
 semver = "1"
 sha2 = "0.10"
+# Local time of day for Do Not Disturb; already in the tree (clock feature), no new crates.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Version-matched to wry 0.57's webkit2gtk so PlatformWebview::inner() types unify.

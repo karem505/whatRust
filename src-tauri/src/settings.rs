@@ -70,6 +70,11 @@ pub struct Settings {
     /// an account page is created, so a change applies after a restart. On by
     /// default: both people in the issue asked for it.
     pub hide_app_banner: bool,
+    /// Do Not Disturb: no whatRust notifications between `quiet_start` and
+    /// `quiet_end` (local time, "HH:MM"; the window may cross midnight).
+    pub quiet_hours: bool,
+    pub quiet_start: String,
+    pub quiet_end: String,
 }
 
 impl Default for Settings {
@@ -102,6 +107,9 @@ impl Default for Settings {
             title_bar: crate::decorations::AUTO.to_string(),
             rendering: RENDERING_AUTO.to_string(),
             hide_app_banner: true,
+            quiet_hours: false,
+            quiet_start: "22:00".to_string(),
+            quiet_end: "08:00".to_string(),
         }
     }
 }
@@ -212,6 +220,33 @@ pub fn step_zoom(current: f64, action: ZoomAction) -> f64 {
     }
 }
 
+/// Minutes after midnight for a "HH:MM" string, if valid.
+pub fn parse_hhmm(v: &str) -> Option<u32> {
+    let (h, m) = v.trim().split_once(':')?;
+    let (h, m) = (h.parse::<u32>().ok()?, m.parse::<u32>().ok()?);
+    (h < 24 && m < 60).then_some(h * 60 + m)
+}
+
+/// Is `now` (minutes after midnight) inside the quiet window? A window whose
+/// end is before its start crosses midnight; start == end means never.
+pub fn in_quiet_window(start: u32, end: u32, now: u32) -> bool {
+    if start <= end {
+        (start..end).contains(&now)
+    } else {
+        now >= start || now < end
+    }
+}
+
+/// True while Do Not Disturb is on and the local time is inside its window.
+pub fn quiet_now(s: &Settings) -> bool {
+    use chrono::Timelike;
+    let (Some(start), Some(end)) = (parse_hhmm(&s.quiet_start), parse_hhmm(&s.quiet_end)) else {
+        return false;
+    };
+    let now = chrono::Local::now();
+    s.quiet_hours && in_quiet_window(start, end, now.hour() * 60 + now.minute())
+}
+
 /// Bring a zoom factor into range. A non-finite value (a `null` or a string in
 /// the JSON deserialises to the default, but arithmetic in an older build could
 /// still have written a NaN) falls back to 1.0 rather than to a bound.
@@ -231,6 +266,12 @@ impl Settings {
         self.download_dir = self.download_dir.filter(|d| !d.trim().is_empty());
         self.title_bar = crate::decorations::sanitize(&self.title_bar);
         self.rendering = sanitize_rendering(&self.rendering);
+        if parse_hhmm(&self.quiet_start).is_none() {
+            self.quiet_start = "22:00".into();
+        }
+        if parse_hhmm(&self.quiet_end).is_none() {
+            self.quiet_end = "08:00".into();
+        }
         // Menu-bar-only mode needs WKWebView's inactive-scheduling policy
         // (macOS 14+). Dropping the flag here means a settings file or an
         // older build can never leave the app in a mode it cannot sustain.
@@ -689,5 +730,36 @@ mod blur_shortcut_tests {
     #[test]
     fn unparseable_shortcuts_never_match() {
         assert!(!same_shortcut("not a key", "not a key"));
+    }
+
+    #[test]
+    fn quiet_hours_parse_and_window() {
+        assert_eq!(crate::settings::parse_hhmm("22:00"), Some(1320));
+        assert_eq!(crate::settings::parse_hhmm("7:05"), Some(425));
+        assert_eq!(crate::settings::parse_hhmm("24:00"), None);
+        assert_eq!(crate::settings::parse_hhmm("ab"), None);
+        // Crosses midnight.
+        assert!(crate::settings::in_quiet_window(1320, 480, 1380));
+        assert!(crate::settings::in_quiet_window(1320, 480, 60));
+        assert!(!crate::settings::in_quiet_window(1320, 480, 600));
+        // Same day.
+        assert!(crate::settings::in_quiet_window(780, 840, 800));
+        assert!(!crate::settings::in_quiet_window(780, 840, 840));
+        // Empty window.
+        assert!(!crate::settings::in_quiet_window(600, 600, 600));
+    }
+
+    #[test]
+    fn bad_quiet_times_fall_back() {
+        let s = Settings {
+            quiet_start: "99:99".into(),
+            quiet_end: "".into(),
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(
+            (s.quiet_start.as_str(), s.quiet_end.as_str()),
+            ("22:00", "08:00")
+        );
     }
 }

@@ -1,6 +1,6 @@
 const invoke = window.__TAURI__.core.invoke;
 const LANGS = ["pt-BR", "en"];
-const BOOLS = ["close_to_tray", "start_minimized", "autostart", "notifications", "hotkey_enabled", "blur_hotkey_enabled", "menu_bar_icon", "menubar_only", "hide_dock_icon", "notify_when_focused", "notify_active_chat", "respect_muted", "single_window", "auto_update_check", "auto_update_install", "hide_app_banner"];
+const BOOLS = ["close_to_tray", "start_minimized", "autostart", "notifications", "hotkey_enabled", "blur_hotkey_enabled", "menu_bar_icon", "menubar_only", "hide_dock_icon", "notify_when_focused", "notify_active_chat", "respect_muted", "quiet_hours", "single_window", "auto_update_check", "auto_update_install", "hide_app_banner"];
 const ZOOM_DEFAULT = 1;
 const SINGLE_WINDOW_SUBTITLE = "Uma janela com um seletor de contas; as contas ocultas continuam conectadas. Requer reiniciar o whatRust.";
 
@@ -106,6 +106,10 @@ async function resetIcon() {
   } catch (e) { flash(String(e), 6000); }
 }
 
+function syncQuietRow() {
+  document.getElementById("quiet_times_row").hidden = !document.getElementById("quiet_hours").checked;
+}
+
 async function load() {
   const s = await invoke("get_settings");
   setMacRows(s.platform === "macos");
@@ -131,6 +135,9 @@ async function load() {
     const el = document.getElementById(f);
     if (el) el.checked = !!s[f];
   }
+  document.getElementById("quiet_start").value = s.quiet_start || "22:00";
+  document.getElementById("quiet_end").value = s.quiet_end || "08:00";
+  syncQuietRow();
   // Menu-bar-only needs WKWebView's inactive-scheduling policy (macOS 14+).
   // Below that the backend ignores the setting, so don't offer the switch.
   const menubarOnly = document.getElementById("menubar_only");
@@ -219,6 +226,8 @@ async function save() {
   s.rendering = document.getElementById("rendering").value || "auto";
   s.language = document.getElementById("language").value;
   s.download_dir = downloadDir;
+  s.quiet_start = document.getElementById("quiet_start").value || "22:00";
+  s.quiet_end = document.getElementById("quiet_end").value || "08:00";
   if (proxySupported) {
     s.proxy_mode = document.getElementById("proxy_mode").value;
     s.proxy_host = document.getElementById("proxy_host").value.trim();
@@ -449,6 +458,7 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("zoom").addEventListener("change", save);
   document.getElementById("title_bar").addEventListener("change", save);
   document.getElementById("rendering").addEventListener("change", save);
+  document.getElementById("quiet_hours").addEventListener("change", syncQuietRow);
   // The zoom shortcuts change it from the WhatsApp window; catch up on return.
   window.addEventListener("focus", () => {
     invoke("get_settings").then((s) => {
