@@ -49,6 +49,26 @@ class FakeDataTransfer {
     return this._files.slice();
   }
 }
+class FakeMediaElement {
+  constructor() {
+    this.muted = false;
+    this.loop = false;
+    this.isConnected = false;
+    this.plays = 0;
+  }
+  play() {
+    this.plays++;
+    return Promise.resolve();
+  }
+}
+// WhatsApp's alert tones are `new Audio(...)`; chat media is created with
+// document.createElement and is not tracked by bridge.js.
+class FakeAudio extends FakeMediaElement {
+  constructor(src) {
+    super();
+    this.src = src || "";
+  }
+}
 class FakeInput {
   constructor(accept) {
     this.accept = accept;
@@ -162,6 +182,9 @@ function makeHarness(options = {}) {
     ServiceWorkerRegistration: options.serviceWorkerRegistration,
     __WHATRUST_WINDOWS__: !!options.windows,
     __whatrustPreferNative: !!options.preferNative,
+    __whatrustSound: options.sound !== false,
+    Audio: FakeAudio,
+    HTMLMediaElement: FakeMediaElement,
     addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
     __TAURI__: {
       core: {
@@ -206,7 +229,7 @@ function makeHarness(options = {}) {
   const params = Object.keys(sandboxGlobals);
   const fn = new Function(...params, `"use strict";\n${bridgeSrc}`);
   fn(...params.map((k) => sandboxGlobals[k]));
-  return { window, listeners, document, head, mediaInput, docInput, logs, warns, invocations, navigator: sandboxGlobals.navigator };
+  return { window, listeners, document, head, mediaInput, docInput, logs, warns, invocations, navigator: sandboxGlobals.navigator, MediaElement: FakeMediaElement };
 }
 
 // Drive the feed the way window.rs stream_drop does.
@@ -599,6 +622,49 @@ async function testRiskyDownloadsAndFailures() {
   assert(toastsIn(document).length === 3, "at most three toasts stack up");
 }
 
+async function testNotificationSoundMutesAlertTones() {
+  console.log("notification sound off mutes WhatsApp's alert tones but not calls or chat media");
+  const { window: w, MediaElement } = makeHarness({ sound: false });
+
+  const tone = new w.Audio("https://static.whatsapp.net/rsrc.php/v4/tone.mp3");
+  await tone.play();
+  assert(tone.muted === true, "the message tone is muted");
+  assert(tone.plays === 1, "play still runs, so the page sees no error");
+
+  const ring = new w.Audio("https://static.whatsapp.net/rsrc.php/v4/ring.mp3");
+  ring.loop = true;
+  await ring.play();
+  assert(ring.muted === false, "a looped ringtone keeps its sound");
+
+  const media = new MediaElement();
+  await media.play();
+  assert(media.muted === false, "chat media (not created through Audio) is untouched");
+
+  const voice = new w.Audio("blob:https://web.whatsapp.com/1234");
+  await voice.play();
+  assert(voice.muted === false, "a voice note on a blob URL keeps its sound");
+
+  const attached = new w.Audio("https://static.whatsapp.net/rsrc.php/v4/attached.mp3");
+  attached.isConnected = true;
+  await attached.play();
+  assert(attached.muted === false, "an Audio element in the page is untouched");
+}
+
+async function testNotificationSoundToggleIsLive() {
+  console.log("the notification-sound toggle applies to elements already created");
+  const { window: w } = makeHarness();
+  const tone = new w.Audio("https://static.whatsapp.net/rsrc.php/v4/tone.mp3");
+  await tone.play();
+  assert(tone.muted === false, "sound on leaves the tone audible");
+  w.__whatrustSetNotificationSound(false);
+  assert(tone.muted === true, "turning it off mutes the existing element");
+  w.__whatrustSetNotificationSound(true);
+  assert(tone.muted === false, "turning it back on restores the element");
+  const next = new w.Audio("https://static.whatsapp.net/rsrc.php/v4/next.mp3");
+  await next.play();
+  assert(next.muted === false, "later tones follow the new value");
+}
+
 async function testNotificationPathIsLoggedOnceWithoutContent() {
   console.log("the notification path is logged once per path, never the content");
   const registered = [];
@@ -792,6 +858,8 @@ const tests = [
   testChromeShimsOnlyForAChromeUserAgent,
   testNotificationsReachTheNativeNotifyCommand,
   testNotificationPictureIsForwardedAsPng,
+  testNotificationSoundMutesAlertTones,
+  testNotificationSoundToggleIsLive,
   testPermissionsApiAgreesNotificationsAreGranted,
   testRefusedCommandsWarnOnceAndNeverThrow,
   testMixedDropLosesNothing,

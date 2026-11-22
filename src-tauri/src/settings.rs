@@ -15,6 +15,9 @@ pub struct Settings {
     pub blur_hotkey_enabled: bool,
     pub blur_hotkey: String,
     pub notifications: bool,
+    /// Play WhatsApp's own message alert tones and give the native toasts a
+    /// sound. Off silences both; calls still ring. On by default.
+    pub notification_sound: bool,
     pub notify_when_focused: bool,
     pub notify_active_chat: bool,
     pub respect_muted: bool,
@@ -83,6 +86,7 @@ impl Default for Settings {
             blur_hotkey_enabled: false,
             blur_hotkey: "CmdOrCtrl+Shift+B".to_string(),
             notifications: true,
+            notification_sound: true,
             notify_when_focused: true,
             notify_active_chat: true,
             respect_muted: true,
@@ -337,6 +341,7 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
         crate::i18n::refresh(app);
     }
     crate::window::apply_zoom_all(app, s.zoom);
+    crate::window::apply_notification_sound(app, s.notification_sound);
     crate::appicon::apply(app, s.custom_icon, false);
     crate::decorations::apply_all(app, &s.title_bar);
 
@@ -488,6 +493,7 @@ mod tests {
     fn old_settings_enable_new_notification_preferences() {
         let s: Settings = serde_json::from_str(r#"{"notifications":false}"#).unwrap();
         assert!(!s.notifications);
+        assert!(s.notification_sound);
         assert!(s.notify_when_focused && s.notify_active_chat && s.respect_muted);
     }
 
@@ -518,6 +524,7 @@ mod tests {
         let s = Settings::default();
         assert!(s.close_to_tray);
         assert!(s.notifications);
+        assert!(s.notification_sound);
         // The menu-bar mode is opt-in.
         assert!(!s.menubar_only);
         assert_eq!(s.hotkey, "CmdOrCtrl+Shift+W");

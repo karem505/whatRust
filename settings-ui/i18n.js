@@ -115,6 +115,8 @@
     // notifications
     "Receber notificações": "Receive notifications",
     "Ativa os avisos de mensagens do whatRust.": "Turns on whatRust message alerts.",
+    "Som de notificação": "Notification sound",
+    "Silencia os avisos sonoros de mensagens do WhatsApp. O toque de chamadas continua.": "Silences WhatsApp's message alert sounds. Calls still ring.",
     "Avisar com o aplicativo aberto": "Notify while the app is open",
     "Receber avisos mesmo com a janela em primeiro plano.": "Get alerts even when the window is in the foreground.",
     "Avisar na conversa que estou lendo": "Notify in the chat I am reading",

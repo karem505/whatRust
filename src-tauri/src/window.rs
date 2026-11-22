@@ -120,6 +120,12 @@ macro_rules! account_webview {
             } else {
                 String::new()
             })
+            // bridge.js mutes WhatsApp's own alert tones and reads this before
+            // the page's sound modules create their Audio elements.
+            .initialization_script(format!(
+                "window.__whatrustSound={};",
+                crate::settings::load($app).notification_sound
+            ))
             .initialization_script(include_str!("../resources/integration.js"))
             .initialization_script(BRIDGE_JS)
             .initialization_script(MEDIA_JS)
@@ -525,6 +531,19 @@ pub fn apply_zoom_all(app: &AppHandle, zoom: f64) {
     for a in accounts::load(app).accounts {
         if let Some(w) = app.get_webview(&accounts::window_label(&a.id)) {
             let _ = w.set_zoom(crate::settings::sanitize_zoom(zoom));
+        }
+    }
+}
+
+/// Apply the notification-sound setting to every open account page, so the
+/// toggle in Settings takes effect without reloading WhatsApp. Pages that are
+/// not open read the same value from their initialization script.
+pub fn apply_notification_sound(app: &AppHandle, on: bool) {
+    for a in accounts::load(app).accounts {
+        if let Some(v) = app.get_webview(&accounts::window_label(&a.id)) {
+            let _ = v.eval(format!(
+                "window.__whatrustSetNotificationSound&&window.__whatrustSetNotificationSound({on});"
+            ));
         }
     }
 }

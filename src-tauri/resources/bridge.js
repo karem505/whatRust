@@ -533,6 +533,66 @@
     }
   } catch (e) {}
 
+  // 2d) WhatsApp's own alert tones. The page plays message sounds through
+  //     `new Audio(...)` elements it creates once and reuses for the whole
+  //     session (WAWebNotificationTone and friends). Those are independent of
+  //     whatRust's notifications, so turning notifications off does not silence
+  //     them. Track the elements that constructor creates and mute only the
+  //     bundled UI tones while the user has notification sounds off.
+  //
+  //     Chat audio (voice notes, audio messages, status) also goes through
+  //     `new Audio`, but with a `blob:` URL: WhatsApp decrypts the media in the
+  //     page and hands it to the element that way. Only the alert tones come
+  //     from static.whatsapp.net. A looped element — the incoming-call ringtone
+  //     — is left alone.
+  (function () {
+    var soundOn = window.__whatrustSound !== false;
+    var alertAudios = [];
+    var silencedByUs = [];
+    function isAlertAudio(el) {
+      if (alertAudios.indexOf(el) < 0 || el.loop || el.isConnected) return false;
+      var src = String(el.currentSrc || el.src || "");
+      return /^https:\/\/static\.whatsapp\.net\//i.test(src);
+    }
+    function silence(el) {
+      if (soundOn || !isAlertAudio(el) || el.muted) return;
+      el.muted = true;
+      if (silencedByUs.indexOf(el) < 0) silencedByUs.push(el);
+    }
+    try {
+      if (typeof window.Audio === "function" && window.HTMLMediaElement) {
+        var NativeAudio = window.Audio;
+        var nativePlay = window.HTMLMediaElement.prototype.play;
+        window.Audio = new Proxy(NativeAudio, {
+          construct: function (target, args) {
+            var el = Reflect.construct(target, args);
+            alertAudios.push(el);
+            return el;
+          },
+        });
+        window.HTMLMediaElement.prototype.play = function () {
+          silence(this);
+          return nativePlay.apply(this, arguments);
+        };
+      }
+    } catch (e) {}
+    function apply(on) {
+      soundOn = on !== false;
+      for (var i = 0; i < alertAudios.length; i++) {
+        var el = alertAudios[i];
+        if (el.loop) continue;
+        if (soundOn) {
+          if (silencedByUs.indexOf(el) >= 0) el.muted = false;
+        } else {
+          silence(el);
+        }
+      }
+      if (soundOn) silencedByUs = [];
+    }
+    window.__whatrustSetNotificationSound = apply;
+    apply(soundOn);
+  })();
+
   // 3) Unread count — forward the raw <title> string on change; Rust parses it.
   // `settled`: the page has been up long enough that a rising count means new
   // messages, not WhatsApp syncing after a launch or reload (Rust only raises
