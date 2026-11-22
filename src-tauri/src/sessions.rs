@@ -536,7 +536,7 @@ fn sync_menu(app: &AppHandle, parent: &str) {
             .lock()
             .unwrap()
             .get(&label)
-            .is_none_or(|adapter| adapter.mounted || !adapter.detector)
+            .is_none_or(|adapter| adapter.mounted || !adapter.loaded)
     });
     let changed = {
         let s = state(app);

@@ -88,7 +88,7 @@ pub fn start(app: &AppHandle) {
             crate::dlog::log("smoke: real_whatsapp_login_screen_without_linked_account");
             result.push(json!({"test":"real_whatsapp_login_screen_without_linked_account","pass":login_ready}));
             for (step, mounted) in [false, true, false, true, false].into_iter().enumerate() {
-                eval(&app, &label, &format!("window.__menuStep=-1;window.__TAURI__.core.invoke('report_integration',{{mounted:{mounted},detector:false}}).then(()=>window.__menuStep={step})"))?;
+                eval(&app, &label, &format!("window.__menuStep=-1;window.__TAURI__.core.invoke('report_integration',{{mounted:{mounted},detector:false,loaded:true}}).then(()=>window.__menuStep={step})"))?;
                 for _ in 0..20 {
                     if eval(&app, &label, &format!("window.__menuStep==={step}"))? == "true" {
                         break;

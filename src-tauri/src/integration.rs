@@ -12,6 +12,8 @@ pub struct Integration(pub Mutex<HashMap<String, Adapter>>);
 pub struct Adapter {
     pub mounted: bool,
     pub detector: bool,
+    /// The chat list (`#pane-side`) is on screen: WhatsApp finished loading.
+    pub loaded: bool,
     pub theme: Option<String>,
     #[serde(skip)]
     pub last_signal: Option<Instant>,
@@ -124,8 +126,10 @@ pub fn report_integration(
     app: AppHandle,
     mounted: bool,
     detector: bool,
+    loaded: Option<bool>,
     theme: Option<String>,
 ) -> Result<(), String> {
+    let loaded = loaded.unwrap_or(false);
     remote(&window)?;
     app.state::<Integration>()
         .0
@@ -136,13 +140,14 @@ pub fn report_integration(
         .clone_from(&Adapter {
             mounted,
             detector,
+            loaded,
             theme: theme.filter(|t| matches!(t.as_str(), "dark" | "light")),
             last_signal: None,
             signals: 0,
         });
     // Fallback chrome only when the chat list loaded but our controls could not
     // attach; while WhatsApp is still loading the window keeps a single title bar.
-    crate::sessions::integration_changed(&app, window.label(), mounted || !detector);
+    crate::sessions::integration_changed(&app, window.label(), mounted || !loaded);
     crate::dlog::log(&format!(
         "integration: layout completed controls_mounted={mounted} detector={detector}"
     ));
