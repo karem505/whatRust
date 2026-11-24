@@ -1,8 +1,10 @@
-// Linux only (WebKitGTK): make attaching a video work.
+// Linux only (WebKitGTK): make attaching a video work, and keep WhatsApp's
+// alert sounds from leaving a media player in the desktop's media controls.
 //
 // whatRust presents itself to WhatsApp Web as Chrome on Linux, so WhatsApp runs
-// its Chromium code paths on WebKitGTK, where three engine behaviours differ.
-// Each was reproduced in a bare WebKitGTK 2.54 WebView, outside whatRust:
+// its Chromium code paths on WebKitGTK, where these engine behaviours differ.
+// Each was reproduced in a bare WebKitGTK WebView, outside whatRust (2.54; item 5
+// on 2.52):
 //
 // 1. A `blob:` video loaded with `preload=auto` (the default) is read through a
 //    buffering queue that hands the demuxer corrupted bytes: bogus MP4 atoms,
@@ -21,6 +23,14 @@
 //    WebKit decodes the whole video as an animated image and keeps every frame
 //    in memory: 2.4 GB for a 10 s 720p clip, over 16 GB for a 35 s screen
 //    recording, which froze the machine. Refuse it like Chromium does.
+// 5. Any sound a page plays registers it as a media player with the desktop
+//    (MPRIS, the GNOME media controls). WebKit only removes that player when
+//    the <audio> element is destroyed; pausing, muting or clearing `src` does
+//    not (clearing `src` even leaves it stuck at "Playing"). WhatsApp keeps its
+//    alert sounds (new message, "send_message") for reuse, so after the first
+//    one whatRust showed a media player until it quit (issue #120). Play those
+//    sounds from a copy in a hidden iframe and remove the iframe when the sound
+//    ends: destroying the document destroys the player.
 //
 // Hardware (VA-API) decoded frames also come out black or transparent on a
 // canvas; Rust turns those decoders off for the webview (see gpu.rs).
@@ -195,7 +205,76 @@
       } catch (e) {}
       return setAttr.call(this, name, value);
     };
-    note("blob video handling installed");
+    // -- 5. alert sounds must not leave a media player behind (#120) ----------
+    // An alert sound is an <audio> loading a file from WhatsApp's servers.
+    // Voice messages and other media play from `blob:` URLs and keep the
+    // engine's own playback, with its seeking and progress events.
+    var playNative = MP.play, pauseNative = MP.pause;
+    var isAlertSound = function (el) {
+      return el instanceof HTMLAudioElement && /^https:/.test(src.get.call(el) || "");
+    };
+    // The copy playing for each alert element, and the iframe that owns it.
+    var copies = new WeakMap();
+    function stopCopy(el) {
+      var c = copies.get(el);
+      if (!c) return;
+      copies.delete(el);
+      try { c.audio.pause(); } catch (e) {}
+      // Removing the iframe destroys its document, its <audio> and the player.
+      if (c.frame.parentNode) c.frame.parentNode.removeChild(c.frame);
+    }
+    MP.play = function () {
+      // Only in the top page: the copy's own iframe must never make copies.
+      if (window.top !== window || !isAlertSound(this)) return playNative.apply(this, arguments);
+      var el = this, frame = null, copy;
+      try {
+        frame = document.createElement("iframe");
+        setAttr.call(frame, "data-whatrust", "alert-sound");
+        setAttr.call(frame, "aria-hidden", "true");
+        frame.style.cssText = "display:none";
+        (document.body || document.documentElement).appendChild(frame);
+        copy = new frame.contentWindow.Audio(src.get.call(el));
+      } catch (e) {
+        if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+        return playNative.apply(this, arguments);
+      }
+      stopCopy(el); // a new alert restarts the sound, like replaying one element
+      copies.set(el, { frame: frame, audio: copy });
+      copy.loop = el.loop;
+      copy.volume = el.volume;
+      copy.muted = el.muted;
+      // Tell the page's element what its copy did, so WhatsApp's own listeners run.
+      var finish = function (type) {
+        return function () {
+          var c = copies.get(el);
+          if (!c || c.audio !== copy) return; // superseded by a newer play()
+          stopCopy(el);
+          el.dispatchEvent(new Event(type));
+        };
+      };
+      copy.addEventListener("ended", finish("ended"));
+      copy.addEventListener("error", finish("error"));
+      return copy.play().then(function () {
+        el.dispatchEvent(new Event("play"));
+        el.dispatchEvent(new Event("playing"));
+      }, function (err) {
+        // Refused (autoplay rules, say): play it the normal way instead, which
+        // brings the old leftover player back but never loses the sound.
+        stopCopy(el);
+        note("alert sound copy refused (" + (err && err.name) + "), playing natively");
+        return playNative.call(el);
+      });
+    };
+    MP.pause = function () {
+      if (copies.has(this)) {
+        stopCopy(this);
+        this.dispatchEvent(new Event("pause"));
+        return;
+      }
+      return pauseNative.apply(this, arguments);
+    };
+
+    note("blob video and alert sound handling installed");
   } catch (e) {
     note("not installed: " + e);
   }

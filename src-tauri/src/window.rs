@@ -66,7 +66,8 @@ const UPSELL_JS: &str = include_str!("../resources/upsell.js");
 #[cfg(windows)]
 pub(crate) const PRIVACY_PANEL_JS: &str =
     "window.__whatrustPrivacy&&window.__whatrustPrivacy.panel()";
-/// Linux only: makes attaching a video work on WebKitGTK (see the file header).
+/// Linux only: WebKitGTK fixes for attaching a video and for alert sounds that
+/// left a media player behind (see the file header).
 const MEDIA_JS: &str = if cfg!(target_os = "linux") {
     include_str!("../resources/media.js")
 } else {

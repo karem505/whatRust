@@ -8,7 +8,7 @@ import { test } from 'node:test';
 
 const source = readFileSync(new URL('./media.js', import.meta.url), 'utf8');
 
-function harness({ origin = 'https://web.whatsapp.com' } = {}) {
+function harness({ origin = 'https://web.whatsapp.com', copyPlay = 'resolve', inFrame = false } = {}) {
   const logs = [];
   class Event { constructor(type) { this.type = type; this.isTrusted = false; this.stopped = false; } stopImmediatePropagation() { this.stopped = true; } }
   class Element {
@@ -38,6 +38,33 @@ function harness({ origin = 'https://web.whatsapp.com' } = {}) {
     get readyState() { return this._rs; }
   }
   class HTMLVideoElement extends HTMLMediaElement {}
+  // The engine's own play()/pause(): calls are recorded, as `nativePlays`.
+  const nativePlays = [];
+  class HTMLAudioElement extends HTMLMediaElement {
+    constructor() { super('audio'); this.loop = false; this.volume = 1; this.muted = false; }
+    play() { nativePlays.push(this); return Promise.resolve(); }
+    pause() {}
+  }
+  HTMLMediaElement.prototype.play = HTMLAudioElement.prototype.play;
+  HTMLMediaElement.prototype.pause = HTMLAudioElement.prototype.pause;
+  delete HTMLAudioElement.prototype.play;
+  delete HTMLAudioElement.prototype.pause;
+  // An <audio> made by an iframe's window: the copy media.js plays. `end()`
+  // stands in for the sound finishing. `copyPlay: 'reject'` refuses playback.
+  const copies = [];
+  class FrameAudio {
+    constructor(url) { this.url = url; this.listeners = {}; this.paused = true; copies.push(this); }
+    addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }
+    play() {
+      if (copyPlay === 'reject') return Promise.reject(Object.assign(new Error('refused'), { name: 'NotAllowedError' }));
+      this.paused = false; return Promise.resolve();
+    }
+    pause() { this.paused = true; }
+    end(type = 'ended') { this.paused = true; (this.listeners[type] || []).forEach(fn => fn()); }
+  }
+  class HTMLIFrameElement extends Element {
+    constructor() { super('iframe'); this.contentWindow = { Audio: FrameAudio }; }
+  }
   class HTMLImageElement extends Element {
     constructor() { super('img'); this._src = ''; }
     get src() { return this._src; } set src(v) { this._src = String(v); }
@@ -48,16 +75,17 @@ function harness({ origin = 'https://web.whatsapp.com' } = {}) {
     disconnect() { if (this.node) this.node.observers = this.node.observers.filter(f => f !== this.fn); }
   }
   const body = new Element('body'); body.isRoot = true;
-  const document = { body, createElement: tag => (tag === 'video' ? new HTMLVideoElement(tag) : tag === 'audio' ? new HTMLMediaElement(tag) : tag === 'img' ? new HTMLImageElement() : new Element(tag)) };
+  const document = { body, createElement: tag => (tag === 'video' ? new HTMLVideoElement(tag) : tag === 'audio' ? new HTMLAudioElement() : tag === 'img' ? new HTMLImageElement() : tag === 'iframe' ? new HTMLIFrameElement() : new Element(tag)) };
   let n = 0;
   const URL = { createObjectURL: () => 'blob:https://web.whatsapp.com/' + (++n), revokeObjectURL() {} };
   const timers = [];
   const window = { location: { origin }, __TAURI__: { core: { invoke: (cmd, args) => { logs.push(args.msg); return Promise.resolve(); } } } };
-  runInNewContext(source, { window, document, URL, Event, Element, HTMLMediaElement, HTMLVideoElement, HTMLImageElement, MutationObserver,
-    WeakSet, WeakMap, Map, Object, String, setTimeout: fn => timers.push(fn) });
+  window.top = inFrame ? {} : window;
+  runInNewContext(source, { window, document, URL, Event, Element, HTMLMediaElement, HTMLVideoElement, HTMLAudioElement, HTMLImageElement, MutationObserver,
+    WeakSet, WeakMap, Map, Object, String, Promise, setTimeout: fn => timers.push(fn) });
   const flush = () => { while (timers.length) timers.shift()(); };
   const trusted = type => { const e = new Event(type); e.isTrusted = true; return e; };
-  return { document, body, URL, logs, flush, trusted, Element, HTMLMediaElement };
+  return { document, body, URL, logs, flush, trusted, Element, HTMLMediaElement, nativePlays, copies };
 }
 
 test('does nothing outside web.whatsapp.com', () => {
@@ -193,4 +221,95 @@ test('a video blob given to <img> is refused; image blobs and revoked URLs are n
   const later = document.createElement('img');
   later.src = video;
   assert.equal(later._src, video);
+});
+
+// --- 5. alert sounds (issue #120) -----------------------------------------------
+const ALERT = 'https://static.whatsapp.net/rsrc.php/send_message.mp3';
+const frames = body => body.children.filter(c => c.getAttribute('data-whatrust') === 'alert-sound');
+// The events media.js reports on the page's own element.
+const watch = (el, types) => { const seen = []; types.forEach(t => el.addEventListener(t, () => seen.push(t))); return seen; };
+
+test('an alert sound plays from a copy in a hidden iframe, removed when it ends', async () => {
+  const { document, body, nativePlays, copies } = harness();
+  const a = document.createElement('audio');
+  a.src = ALERT;
+  a.volume = 0.4;
+  const seen = watch(a, ['play', 'playing', 'ended']);
+  await a.play();
+  assert.equal(nativePlays.length, 0, 'the page element itself never plays');
+  assert.equal(copies.length, 1);
+  assert.equal(copies[0].url, ALERT);
+  assert.equal(copies[0].volume, 0.4, 'volume is carried over');
+  const [frame] = frames(body);
+  assert.ok(frame, 'the copy lives in an iframe');
+  assert.equal(frame.style.cssText, 'display:none');
+  assert.deepEqual(seen, ['play', 'playing']);
+  copies[0].end();
+  assert.equal(frames(body).length, 0, 'the iframe, and with it the media player, is gone');
+  assert.deepEqual(seen, ['play', 'playing', 'ended']);
+});
+
+test('a second alert restarts the sound and never leaves an iframe behind', async () => {
+  const { document, body, copies } = harness();
+  const a = document.createElement('audio');
+  a.src = ALERT;
+  await a.play();
+  await a.play(); // a second message before the first sound ended
+  assert.equal(frames(body).length, 1, 'only the newest copy remains');
+  assert.equal(copies[0].paused, true, 'the first copy was stopped');
+  const seen = watch(a, ['ended']);
+  copies[0].end(); // a late event from the stopped copy is ignored
+  assert.deepEqual(seen, []);
+  copies[1].end();
+  assert.equal(frames(body).length, 0);
+  assert.deepEqual(seen, ['ended']);
+});
+
+test('pause() and a load error remove the iframe too', async () => {
+  const { document, body, copies } = harness();
+  const a = document.createElement('audio');
+  a.src = ALERT;
+  a.loop = true; // a ringtone loops until WhatsApp pauses it
+  const seen = watch(a, ['pause', 'error']);
+  await a.play();
+  assert.equal(copies[0].loop, true);
+  a.pause();
+  assert.equal(frames(body).length, 0);
+  assert.equal(copies[0].paused, true);
+  await a.play();
+  copies[1].end('error');
+  assert.equal(frames(body).length, 0);
+  assert.deepEqual(seen, ['pause', 'error']);
+});
+
+test('voice messages and other blob media keep the engine playback', async () => {
+  const { document, body, URL, nativePlays, copies } = harness();
+  const voice = document.createElement('audio');
+  voice.src = URL.createObjectURL({ type: 'audio/ogg' });
+  await voice.play();
+  const video = document.createElement('video');
+  video.src = 'https://media.example/v.mp4';
+  await video.play();
+  assert.deepEqual(nativePlays, [voice, video]);
+  assert.equal(copies.length, 0);
+  assert.equal(frames(body).length, 0);
+});
+
+test('a refused copy falls back to playing the element itself', async () => {
+  const { document, body, logs, nativePlays } = harness({ copyPlay: 'reject' });
+  const a = document.createElement('audio');
+  a.src = ALERT;
+  await a.play();
+  assert.deepEqual(nativePlays, [a], 'the sound is never lost');
+  assert.equal(frames(body).length, 0, 'the unused iframe is removed');
+  assert.ok(logs.some(m => /alert sound copy refused \(NotAllowedError\)/.test(m)));
+});
+
+test('inside an iframe nothing is copied, so a copy can never copy itself', async () => {
+  const { document, body, nativePlays } = harness({ inFrame: true });
+  const a = document.createElement('audio');
+  a.src = ALERT;
+  await a.play();
+  assert.deepEqual(nativePlays, [a]);
+  assert.equal(frames(body).length, 0);
 });
