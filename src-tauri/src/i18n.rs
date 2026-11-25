@@ -230,6 +230,8 @@ static EN_TABLE: &[(&str, &str)] = &[
     ("Não foi possível processar os arquivos. Tente novamente.", "The files could not be processed. Try again."),
     ("Não foi possível enviar os arquivos ao WhatsApp. Tente novamente.", "The files could not be sent to WhatsApp. Try again."),
     ("O WhatsApp ainda não estava pronto para receber os arquivos. Tente novamente.", "WhatsApp was not ready to receive the files. Try again."),
+    ("Imagem não colada", "Image not pasted"),
+    ("A imagem da área de transferência é grande demais. Salve-a e anexe o arquivo.", "The clipboard image is too large. Save it and attach the file."),
     ("Alguns arquivos não foram anexados", "Some files were not attached"),
     ("arquivo", "file"),
     ("arquivos", "files"),
