@@ -241,6 +241,7 @@ jobs:
           for pattern in '*_x64-setup.exe' '*_x64_en-US.msi' '*_arm64-setup.exe' \
                          '*_aarch64.dmg' '*_x64.dmg' '*_aarch64.app.tar.gz' '*_x64.app.tar.gz' \
                          '*_amd64.deb' '*_amd64.AppImage' '*_arm64.deb' '*_aarch64.AppImage' \
+                         '*.x86_64.rpm' '*.aarch64.rpm' \
                          'whatRust_x86_64.flatpak' 'whatRust_aarch64.flatpak'; do
             compgen -G "release-assets/$pattern" >/dev/null \
               || { echo "::error::release $RELEASE_TAG has no asset matching $pattern"; exit 1; }
