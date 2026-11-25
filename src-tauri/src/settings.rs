@@ -65,6 +65,9 @@ pub struct Settings {
     /// fallback buttons do nothing useful; `show` / `hide` force it.
     /// Ignored on macOS and Windows. See `decorations`.
     pub title_bar: String,
+    /// Theme: `system` (default, follows WhatsApp and the OS), `light` or
+    /// `dark`. Applies immediately. See `theme`.
+    pub theme: String,
     /// Linux: `auto` uses the GPU, except on GPUs too old for WebKit's GPU
     /// compositor; `software` always renders in software (issue #87). Read at
     /// startup, so a change applies after a restart. See `gpu`.
@@ -117,6 +120,7 @@ impl Default for Settings {
             auto_update_check: true,
             auto_update_install: true,
             title_bar: crate::decorations::AUTO.to_string(),
+            theme: crate::theme::SYSTEM.to_string(),
             rendering: RENDERING_AUTO.to_string(),
             hide_app_banner: true,
             page_overlays: true,
@@ -279,6 +283,7 @@ impl Settings {
         self.language = crate::i18n::sanitize_code(&self.language);
         self.download_dir = self.download_dir.filter(|d| !d.trim().is_empty());
         self.title_bar = crate::decorations::sanitize(&self.title_bar);
+        self.theme = crate::theme::sanitize(&self.theme);
         self.rendering = sanitize_rendering(&self.rendering);
         self.sleep_idle_hours = self.sleep_idle_hours.min(24 * 7);
         if parse_hhmm(&self.quiet_start).is_none() {
@@ -396,6 +401,7 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
     crate::window::apply_notification_sound(app, s.notification_sound);
     crate::appicon::apply(app, s.custom_icon, false);
     crate::decorations::apply_all(app, &s.title_bar);
+    crate::theme::apply(app, &s.theme);
 
     // Menu-bar mode is only available where a hidden WKWebView keeps running
     // (macOS 14+); elsewhere the setting is ignored rather than dropping every

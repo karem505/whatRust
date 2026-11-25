@@ -333,6 +333,41 @@ fn install_menu(app: &AppHandle, w: &Window) -> tauri::Result<()> {
     Ok(())
 }
 
+/// `data-theme` for whatRust's own pages shown over `account`: the Theme
+/// setting when forced, else what WhatsApp's page reported for that account.
+fn page_theme(app: &AppHandle, account: Option<&str>) -> String {
+    let detected = account.and_then(|label| {
+        app.state::<crate::integration::Integration>()
+            .0
+            .lock()
+            .unwrap()
+            .get(label)
+            .and_then(|a| a.theme.clone())
+    });
+    crate::theme::resolve(&crate::theme::current(), detected)
+}
+
+/// Re-apply `data-theme` to the open panel and shells after the Theme setting
+/// changed.
+pub fn refresh_theme(app: &AppHandle) {
+    if let Some(panel) = app.get_webview("settings") {
+        let window = panel.window();
+        let theme = page_theme(app, selected(app, window.label()).as_deref());
+        if let Ok(json) = serde_json::to_string(&theme) {
+            let _ = panel.eval(format!("document.documentElement.dataset.theme={json}"));
+        }
+    }
+    let parents: std::collections::BTreeSet<String> = app
+        .webviews()
+        .into_values()
+        .filter(|v| v.label().starts_with("shell-"))
+        .map(|v| v.window().label().to_string())
+        .collect();
+    for parent in parents {
+        layout(app, &parent);
+    }
+}
+
 pub fn selected(app: &AppHandle, parent: &str) -> Option<String> {
     if parent == "main" {
         return crate::lock::guard(&state(app).main_active).clone();
@@ -567,17 +602,7 @@ fn layout_on_main(app: &AppHandle, parent: &str) {
             }
         }
         if shell {
-            let theme = active
-                .as_ref()
-                .and_then(|label| {
-                    app.state::<crate::integration::Integration>()
-                        .0
-                        .lock()
-                        .unwrap()
-                        .get(label)
-                        .and_then(|a| a.theme.clone())
-                })
-                .unwrap_or_else(|| "system".into());
+            let theme = page_theme(app, active.as_deref());
             if let Ok(json) = serde_json::to_string(&theme) {
                 let _=v.eval(format!("if(document.documentElement&&document.documentElement.dataset.theme!=={json})document.documentElement.dataset.theme={json}"));
             }
@@ -912,16 +937,7 @@ pub fn open_panel(app: &AppHandle, parent: Option<&str>) -> tauri::Result<()> {
         })
         .map(Ok)
         .unwrap_or_else(|| initialize(app, false))?;
-    let theme = selected(app, owner.label())
-        .and_then(|label| {
-            app.state::<crate::integration::Integration>()
-                .0
-                .lock()
-                .unwrap()
-                .get(&label)
-                .and_then(|a| a.theme.clone())
-        })
-        .unwrap_or_else(|| "system".into());
+    let theme = page_theme(app, selected(app, owner.label()).as_deref());
     let encoded_theme = serde_json::to_string(&theme).expect("theme string");
     let theme_script = format!("document.documentElement.dataset.theme={encoded_theme}");
     let panel = if let Some(v) = app.get_webview("settings") {
