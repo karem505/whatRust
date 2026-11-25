@@ -274,6 +274,7 @@ fn show_lock_window_inner(app: &AppHandle) {
         .build();
 
     if let Ok(win) = built {
+        crate::appicon::set_taskbar_icon(&win.as_ref().window(), &crate::appicon::current(app));
         // Unlock can race a queued window creation; never leave a stale lock
         // screen on top after authentication has already succeeded.
         if is_unlocked(app)

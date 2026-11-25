@@ -361,7 +361,7 @@ pub(crate) fn build_account_window(
         .inner_size(1100.0, 800.0)
         .min_inner_size(560.0, 480.0)
         .decorations(crate::decorations::show(app))
-        .icon(icon)?;
+        .icon(icon.clone())?;
     let builder = account_webview!(builder, app, label).visible(!start_hidden);
 
     // macOS: WKWebView can deliver Finder drops directly to WhatsApp's own drop
@@ -384,6 +384,7 @@ pub(crate) fn build_account_window(
 
     let builder = apply_isolation(builder, account, app);
     let win = builder.build()?;
+    crate::appicon::set_taskbar_icon(&win.as_ref().window(), &icon);
     // Issue #73: covers windows created after startup too (no-op once done).
     #[cfg(target_os = "macos")]
     crate::keys::install();
@@ -661,6 +662,7 @@ fn open_call_popup(
         PopupNav::Deny => false,
     });
     let win = builder.build()?;
+    crate::appicon::set_taskbar_icon(&win.as_ref().window(), &crate::appicon::current(app));
     // Close the pop-out together with the opener's window.
     if let Some(opener) = app.get_webview(opener_label) {
         let app = app.clone();
@@ -2109,7 +2111,9 @@ fn open_settings_legacy(app: &AppHandle) {
         .resizable(true)
         .visible(false)
         .build()
-    {
+        .inspect(|w| {
+            crate::appicon::set_taskbar_icon(&w.as_ref().window(), &crate::appicon::current(app))
+        }) {
         Ok(w) if crate::lock::is_unlocked(app) => {
             let _ = w.show();
             let _ = w.set_focus();

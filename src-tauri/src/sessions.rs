@@ -136,15 +136,17 @@ pub fn initialize(app: &AppHandle, hidden: bool) -> tauri::Result<Window> {
     if let Some(w) = app.get_window("main") {
         return Ok(w);
     }
+    let icon = crate::appicon::current(app);
     let w = WindowBuilder::new(app, "main")
         .title("whatRust")
         .background_color(tauri::utils::config::Color(22, 23, 23, 255))
         .inner_size(1100., 800.)
         .min_inner_size(560., 480.)
         .decorations(crate::decorations::show(app))
-        .icon(crate::appicon::current(app))?
+        .icon(icon.clone())?
         .visible(!hidden)
         .build()?;
+    crate::appicon::set_taskbar_icon(&w, &icon);
     #[cfg(windows)]
     install_menu(app, &w)?;
     let shell = WebviewBuilder::new("shell-main", WebviewUrl::App("shell.html".into()))
@@ -674,17 +676,19 @@ pub fn detach(app: &AppHandle, id: &str) -> Result<(), String> {
         return Ok(());
     }
     let parent_label = format!("detached-{id}");
+    let icon = crate::appicon::for_account(app, id);
     let w = WindowBuilder::new(app, &parent_label)
         .title(tr("whatRust — Conta destacada"))
         .background_color(tauri::utils::config::Color(22, 23, 23, 255))
         .inner_size(1000., 760.)
         .min_inner_size(560., 480.)
         .decorations(crate::decorations::show(app))
-        .icon(crate::appicon::for_account(app, id))
+        .icon(icon.clone())
         .map_err(|e| e.to_string())?
         .visible(false)
         .build()
         .map_err(|e| e.to_string())?;
+    crate::appicon::set_taskbar_icon(&w, &icon);
     #[cfg(windows)]
     install_menu(app, &w).map_err(|e| e.to_string())?;
     reparent_on_ui(app, &v, &w)?;

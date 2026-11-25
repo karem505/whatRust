@@ -113,6 +113,111 @@ pub fn for_account(app: &AppHandle, id: &str) -> Image<'static> {
     crate::accountphoto::image(app, id).unwrap_or_else(|| current(app))
 }
 
+/// `window.set_icon`, plus the Windows taskbar icon (see [`set_taskbar_icon`]).
+pub fn set_window_icon(window: &tauri::Window, image: &Image<'_>) {
+    let _ = window.set_icon(image.clone());
+    set_taskbar_icon(window, image);
+}
+
+/// Windows (issue #117): the taskbar button shows a window's ICON_BIG, but
+/// tauri's `icon()` / `set_icon()` go to tao's `set_window_icon`, which sets
+/// ICON_SMALL only. With no big icon and no class icon the taskbar falls back
+/// to the shell's blank-window icon. Put the same image on as the big icon.
+/// Call it after building a window and whenever its icon changes; elsewhere
+/// it does nothing.
+pub fn set_taskbar_icon(window: &tauri::Window, image: &Image<'_>) {
+    #[cfg(windows)]
+    {
+        let (w, h) = (image.width(), image.height());
+        let owned = Image::new_owned(image.rgba().to_vec(), w, h);
+        let target = window.clone();
+        let _ = window.run_on_main_thread(move || big_icon::set(&target, &owned));
+    }
+    #[cfg(not(windows))]
+    let _ = (window, image);
+}
+
+/// The ICON_BIG half of [`set_taskbar_icon`].
+#[cfg(windows)]
+mod big_icon {
+    use std::sync::Mutex;
+    use tauri::image::Image;
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CreateIcon, DestroyIcon, SendMessageW, HICON, ICON_BIG, WM_SETICON,
+    };
+
+    /// The big icon we last gave each window (HWND, HICON), freed once
+    /// replaced. A few entries: one per window that ever had an icon set.
+    static OURS: Mutex<Vec<(isize, isize)>> = Mutex::new(Vec::new());
+
+    /// Main thread only.
+    pub fn set(window: &tauri::Window, image: &Image<'_>) {
+        let Ok(hwnd) = window.hwnd() else {
+            return;
+        };
+        let Some((and_mask, bgra)) =
+            super::icon_planes(image.rgba(), image.width(), image.height())
+        else {
+            return;
+        };
+        // SAFETY: both buffers cover width x height pixels, laid out the way
+        // tao builds its ICON_SMALL (32-bit BGRA plus a mask).
+        let Ok(icon) = (unsafe {
+            CreateIcon(
+                None,
+                image.width() as i32,
+                image.height() as i32,
+                1,
+                32,
+                and_mask.as_ptr(),
+                bgra.as_ptr(),
+            )
+        }) else {
+            return;
+        };
+        // SAFETY: a live top-level window of this process, on its own thread.
+        unsafe {
+            let _ = SendMessageW(
+                hwnd,
+                WM_SETICON,
+                Some(WPARAM(ICON_BIG as usize)),
+                Some(LPARAM(icon.0 as isize)),
+            );
+        }
+        let key = hwnd.0 as isize;
+        let mut ours = OURS.lock().unwrap_or_else(|e| e.into_inner());
+        match ours.iter_mut().find(|(h, _)| *h == key) {
+            Some(slot) => {
+                let old = std::mem::replace(&mut slot.1, icon.0 as isize);
+                // SAFETY: an icon we created and the window no longer uses.
+                unsafe {
+                    let _ = DestroyIcon(HICON(old as _));
+                }
+            }
+            None => ours.push((key, icon.0 as isize)),
+        }
+    }
+}
+
+/// RGBA pixels as the two planes `CreateIcon` takes for a 32-bit icon: the
+/// AND mask (one byte per pixel, the inverted alpha, as tao does) and the
+/// colour plane in BGRA order. `None` when the buffer does not match the size.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn icon_planes(rgba: &[u8], width: u32, height: u32) -> Option<(Vec<u8>, Vec<u8>)> {
+    let pixels = (width as usize).checked_mul(height as usize)?;
+    if pixels == 0 || rgba.len() != pixels.checked_mul(4)? {
+        return None;
+    }
+    let mut bgra = rgba.to_vec();
+    let mut and_mask = Vec::with_capacity(pixels);
+    for px in bgra.chunks_exact_mut(4) {
+        and_mask.push(px[3].wrapping_sub(u8::MAX));
+        px.swap(0, 2);
+    }
+    Some((and_mask, bgra))
+}
+
 /// Re-apply one account's window icon (after its photo changed). Covers the
 /// per-account window and a window detached from the single window.
 pub fn apply_account(app: &AppHandle, id: &str) {
@@ -122,7 +227,7 @@ pub fn apply_account(app: &AppHandle, id: &str) {
     let icon = for_account(app, id);
     for label in [crate::accounts::window_label(id), format!("detached-{id}")] {
         if let Some(window) = app.get_window(&label) {
-            let _ = window.set_icon(icon.clone());
+            set_window_icon(&window, &icon);
         }
     }
 }
@@ -142,7 +247,7 @@ pub fn apply(app: &AppHandle, custom: bool, force: bool) {
         return;
     };
     for window in app.windows().into_values() {
-        let _ = window.set_icon(image.clone());
+        set_window_icon(&window, &image);
     }
     // Accounts with a photo keep it on their own window.
     for account in crate::accounts::load(app).accounts {
@@ -216,6 +321,26 @@ mod tests {
     #[test]
     fn the_bundled_icon_is_valid() {
         assert_eq!(validate(DEFAULT_ICON), Ok(()));
+    }
+
+    #[test]
+    fn taskbar_icon_planes_are_bgra_with_an_inverted_alpha_mask() {
+        // Two pixels: opaque red, transparent blue.
+        let rgba = [255, 0, 0, 255, 0, 0, 255, 0];
+        let (mask, bgra) = icon_planes(&rgba, 2, 1).unwrap();
+        assert_eq!(bgra, [0, 0, 255, 255, 255, 0, 0, 0]);
+        assert_eq!(mask, [0, 1]);
+        // The bundled icon converts at its real size.
+        let image = Image::from_bytes(DEFAULT_ICON).unwrap();
+        let (mask, bgra) = icon_planes(image.rgba(), image.width(), image.height()).unwrap();
+        assert_eq!(mask.len() as u32, image.width() * image.height());
+        assert_eq!(bgra.len(), image.rgba().len());
+    }
+
+    #[test]
+    fn taskbar_icon_planes_refuse_a_size_mismatch() {
+        assert!(icon_planes(&[0; 8], 2, 2).is_none());
+        assert!(icon_planes(&[], 0, 0).is_none());
     }
 
     #[test]
