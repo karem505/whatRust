@@ -48,6 +48,7 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let _ = integration::STARTED.set(std::time::Instant::now());
     // macOS: force overlay scrollers BEFORE any window/webview is created —
     // AppKit caches NSScroller.preferredScrollerStyle on first use, and
     // WKWebView's page scrollers are native, so web CSS cannot fix them.
@@ -360,13 +361,20 @@ pub fn run() {
             // preferred account must be the one made visible here. This keeps
             // every other account connected in the background and guarantees the
             // selected startup account is the first usable window.
-            for account in &f.accounts {
-                let is_startup = startup_label
-                    .as_deref()
-                    .is_some_and(|label| label == accounts::window_label(&account.id));
-                window::open_account_window(handle, account, open_hidden || !is_startup)?;
+            // Only the startup account boots now: WhatsApp Web start-up is
+            // CPU/disk heavy, and booting every account at once slows the one
+            // the user is waiting for. The rest follow once its chat list shows
+            // (integration.rs), after a safety timeout, or when switched to.
+            if let Some(account) = accounts::startup_account(&f) {
+                window::open_account_window(handle, account, open_hidden)?;
             }
-            dlog::log("startup: account windows built");
+            dlog::log("startup: startup account built, others deferred");
+            let deferred = handle.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(window::DEFERRED_ACCOUNTS_TIMEOUT);
+                let ui = deferred.clone();
+                let _ = deferred.run_on_main_thread(move || window::open_deferred_accounts(&ui));
+            });
             // tao's content view must not re-interpret keys the webview left
             // unhandled (issue #73); needs a tao window to exist.
             #[cfg(target_os = "macos")]
