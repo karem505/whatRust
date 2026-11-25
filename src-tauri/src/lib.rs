@@ -1,3 +1,5 @@
+#[cfg(windows)]
+mod accent;
 mod accountphoto;
 mod accounts;
 mod appicon;

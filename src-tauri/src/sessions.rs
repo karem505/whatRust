@@ -423,16 +423,7 @@ fn activate_on_main(app: &AppHandle, label: &str) {
     }
     *app.state::<ActiveAccount>().lock().unwrap() = label.to_string();
     sync_menu(app, parent.label());
-    let name = accounts::id_from_label(label)
-        .and_then(|id| {
-            accounts::load(app)
-                .accounts
-                .into_iter()
-                .find(|a| a.id == id)
-        })
-        .map(|a| a.name)
-        .unwrap_or_else(|| "WhatsApp".into());
-    let _ = parent.set_title(&format!("whatRust — {name}"));
+    refresh_title(app, &parent, label);
     let _ = parent.show();
     let _ = parent.unminimize();
     set_view_visible(app, &view, true);
@@ -441,6 +432,51 @@ fn activate_on_main(app: &AppHandle, label: &str) {
     let _ = parent.set_focus();
     let _ = view.set_focus();
     crate::integration::broadcast(app);
+}
+
+/// "whatRust — Personal · Work (3)": the shown account, then any other
+/// account with unread chats, so they are visible without switching.
+pub fn window_title(app: &AppHandle, label: &str) -> String {
+    let f = accounts::load(app);
+    let unread = app.state::<crate::accounts::UnreadMap>();
+    let unread = crate::lock::guard(&unread);
+    let shown = accounts::id_from_label(label);
+    let name = f
+        .accounts
+        .iter()
+        .find(|a| Some(a.id.as_str()) == shown)
+        .map_or("WhatsApp", |a| a.name.as_str());
+    let mut others: Vec<_> = f
+        .accounts
+        .iter()
+        .filter(|a| Some(a.id.as_str()) != shown)
+        .collect();
+    others.sort_by_key(|a| a.order);
+    let mut title = format!("whatRust — {name}");
+    for a in others {
+        if let Some(n) = unread.get(&a.id).filter(|n| **n > 0) {
+            title.push_str(&format!(" · {} ({n})", a.name));
+        }
+    }
+    title
+}
+
+/// Title and (Windows 11) border colour of a window showing `label`.
+pub fn refresh_title(app: &AppHandle, window: &Window, label: &str) {
+    let _ = window.set_title(&window_title(app, label));
+    #[cfg(windows)]
+    crate::accent::apply(app, window, label);
+}
+
+/// Re-title every account window, after an unread count or a name changed.
+pub fn refresh_titles(app: &AppHandle) {
+    for (wlabel, w) in app.windows() {
+        if wlabel == "main" || wlabel.starts_with("detached-") {
+            if let Some(label) = selected(app, &wlabel) {
+                refresh_title(app, &w, &label);
+            }
+        }
+    }
 }
 
 pub fn layout(app: &AppHandle, parent: &str) {
@@ -753,16 +789,7 @@ fn restore_main_after_detached_close(
     *app.state::<ActiveAccount>().lock().unwrap() = selected.clone();
     sync_menu(app, "main");
     if let (Some(window), Some(view)) = (app.get_window("main"), app.get_webview(&selected)) {
-        let name = accounts::id_from_label(&selected)
-            .and_then(|id| {
-                accounts::load(app)
-                    .accounts
-                    .into_iter()
-                    .find(|a| a.id == id)
-            })
-            .map(|account| account.name)
-            .unwrap_or_else(|| "WhatsApp".into());
-        let _ = window.set_title(&format!("whatRust — {name}"));
+        refresh_title(app, &window, &selected);
         let _ = window.show();
         let _ = window.unminimize();
         layout(app, "main");

@@ -136,6 +136,10 @@ pub fn set_unread(
 
     crate::tray::update_badge(&app, total);
     crate::tray::rebuild_menu(&app);
+    if previous != Some(count) {
+        let ui = app.clone();
+        let _ = app.run_on_main_thread(move || crate::sessions::refresh_titles(&ui));
+    }
     crate::integration::broadcast(&app);
 
     // A new unread chat while the window is in the background: make sure the
@@ -770,7 +774,7 @@ pub async fn rename_account(
         let visible_account = !crate::sessions::enabled()
             || crate::sessions::selected(&app, w.window().label()).as_deref() == Some(w.label());
         if visible_account {
-            let _ = w.window().set_title(&format!("whatRust — {name}"));
+            crate::sessions::refresh_title(&app, &w.window(), w.label());
         }
     }
     crate::tray::rebuild_menu(&app);

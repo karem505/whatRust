@@ -57,6 +57,7 @@ windows = { version = "0.62", features = [
   "Win32_UI_WindowsAndMessaging", # SW_SHOWNORMAL for ShellExecuteW
   "Win32_Globalization",      # GetUserDefaultLocaleName: default UI language
   "Win32_UI_Input_KeyboardAndMouse", # GetKeyState: Ctrl+Shift+P privacy panel (issue #80)
+  "Win32_Graphics_Dwm",       # DwmSetWindowAttribute: per-account window border colour (accent.rs)
 ] }
 windows-core = "0.62"
 # Since windows-rs 0.61 IAsyncOperation lives in the windows-future crate
