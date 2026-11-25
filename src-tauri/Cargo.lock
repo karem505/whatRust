@@ -4973,6 +4973,7 @@ version = "0.6.16"
 dependencies = [
  "argon2",
  "block2",
+ "chrono",
  "dispatch2",
  "gtk",
  "objc2",

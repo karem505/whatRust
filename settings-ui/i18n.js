@@ -129,6 +129,12 @@
     "Após 4 horas": "After 4 hours",
     "Após 8 horas": "After 8 hours",
     "Após 24 horas": "After 24 hours",
+    "Não perturbe": "Do not disturb",
+    "Sem avisos do whatRust neste horário. As mensagens continuam chegando.": "No whatRust notifications during these hours. Messages still arrive.",
+    "Horário do não perturbe": "Do not disturb hours",
+    "Pode passar da meia-noite, por exemplo 22:00 até 08:00.": "May cross midnight, for example 22:00 to 08:00.",
+    "Início do não perturbe": "Do not disturb start",
+    "Fim do não perturbe": "Do not disturb end",
     "Quando o silenciamento não puder ser confirmado, o detector adicional permanece silencioso.": "When muting cannot be confirmed, the additional detector stays silent.",
     "O detector adicional só usa mensagens novas identificáveis. Conversas silenciadas, histórico e estados desconhecidos não geram avisos adicionais.": "The additional detector only uses identifiable new messages. Muted chats, history and unknown states do not produce additional alerts.",
     // behavior
