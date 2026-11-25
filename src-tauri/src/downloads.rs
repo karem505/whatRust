@@ -252,6 +252,69 @@ pub fn sniff_extension(head: &[u8]) -> Option<&'static str> {
     }
 }
 
+/// Spellings of one file type's extension. A name that already ends in one of
+/// them can get the MIME type's own subtype appended on its way through the
+/// page or the engine: `photo.jpg.jpeg`, `song.mp3.mpeg` (issue #123).
+const EXTENSION_ALIASES: &[&[&str]] = &[
+    &["jpg", "jpeg", "jpe", "jfif"],
+    &["mp3", "mpeg", "mpga"],
+    &["mpg", "mpeg"],
+    &["tif", "tiff"],
+    &["htm", "html"],
+    &["m4a", "mp4"],
+    &["m4v", "mp4"],
+    &["mov", "quicktime"],
+    &["3gp", "3gpp"],
+    &["oga", "ogg"],
+    &["txt", "plain"],
+];
+
+/// `name` without a trailing extension that only repeats the one before it in
+/// another spelling (`IMG_1.jpg.jpeg` -> `IMG_1.jpg`, `a.MP3.mpeg` ->
+/// `a.MP3`). Anything else, including two different types (`notes.txt.pdf`) or
+/// a name that is only extensions, is returned unchanged.
+pub fn drop_alias_extension(name: &str) -> &str {
+    let Some((rest, last)) = name.rsplit_once('.') else {
+        return name;
+    };
+    let Some((stem, previous)) = rest.rsplit_once('.') else {
+        return name;
+    };
+    if stem.trim().is_empty() || previous.is_empty() || last.is_empty() {
+        return name;
+    }
+    let (previous, last) = (previous.to_ascii_lowercase(), last.to_ascii_lowercase());
+    let same_type = previous != last
+        && EXTENSION_ALIASES
+            .iter()
+            .any(|group| group.contains(&previous.as_str()) && group.contains(&last.as_str()));
+    if same_type {
+        rest
+    } else {
+        name
+    }
+}
+
+/// Apply [`drop_alias_extension`] to the file name of a download destination,
+/// without taking the name of a file already there.
+#[cfg(any(not(windows), test))]
+pub fn fix_alias_extension(destination: &mut PathBuf) {
+    let Some(name) = destination.file_name().and_then(|n| n.to_str()) else {
+        return;
+    };
+    let fixed = drop_alias_extension(name);
+    if fixed.len() == name.len() {
+        return;
+    }
+    let fixed = fixed.to_string();
+    destination.set_file_name(fixed);
+    if destination.exists() {
+        if let Some(dir) = destination.parent().map(Path::to_path_buf) {
+            place_in(&dir, destination);
+        }
+    }
+}
+
 /// A finished download saved without any extension (a `blob:` download) gets
 /// the one its content implies. Anything unrecognised, or any rename that
 /// would overwrite a file, leaves the path alone.
@@ -280,6 +343,54 @@ fn add_sniffed_extension(path: PathBuf) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_repeated_alias_extension_is_dropped() {
+        assert_eq!(
+            drop_alias_extension("IMG_20261124_164441.jpg.jpeg"),
+            "IMG_20261124_164441.jpg"
+        );
+        assert_eq!(drop_alias_extension("Bodies.mp3.mpeg"), "Bodies.mp3");
+        assert_eq!(drop_alias_extension("scan.TIF.tiff"), "scan.TIF");
+        assert_eq!(drop_alias_extension("page.htm.HTML"), "page.htm");
+        assert_eq!(drop_alias_extension("voice.m4a.mp4"), "voice.m4a");
+        assert_eq!(drop_alias_extension("a.b.jpeg.jpg"), "a.b.jpeg");
+    }
+
+    #[test]
+    fn other_names_are_left_alone() {
+        for name in [
+            "photo.jpg",
+            "photo.jpeg",
+            "photo",
+            "notes.txt.pdf",
+            "archive.tar.gz",
+            "same.pdf.pdf",
+            ".jpg.jpeg",
+            "x..jpeg",
+            "trailing.jpg.",
+            "Report v1.2.mp3",
+        ] {
+            assert_eq!(drop_alias_extension(name), name, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_destination_loses_only_the_repeated_extension() {
+        let mut p = PathBuf::from("/tmp/dl/IMG_1.jpg.jpeg");
+        fix_alias_extension(&mut p);
+        assert_eq!(p, PathBuf::from("/tmp/dl/IMG_1.jpg"));
+        let mut q = PathBuf::from("/tmp/dl/clip.mp4");
+        fix_alias_extension(&mut q);
+        assert_eq!(q, PathBuf::from("/tmp/dl/clip.mp4"));
+        // Never the name of a file that is already there.
+        let d = scratch("alias");
+        std::fs::write(d.join("IMG_2.jpg"), b"x").unwrap();
+        let mut r = d.join("IMG_2.jpg.jpeg");
+        fix_alias_extension(&mut r);
+        assert_eq!(r, d.join("IMG_2 (1).jpg"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     fn scratch(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("whatrust-dl-{name}-{}", std::process::id()));

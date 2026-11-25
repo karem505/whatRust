@@ -230,6 +230,8 @@ macro_rules! account_webview {
                                 .file_name()
                                 .and_then(|n| n.to_str())
                                 .unwrap_or("download");
+                            // Issue #123: `photo.jpg.jpeg` -> `photo.jpg`.
+                            let suggested = crate::downloads::drop_alias_extension(suggested);
                             let Some(path) = choose_download_destination(
                                 suggested,
                                 custom_dir
@@ -258,6 +260,8 @@ macro_rules! account_webview {
                                         .unwrap_or(0),
                                 ),
                             );
+                            // Issue #123: `photo.jpg.jpeg` -> `photo.jpg`.
+                            crate::downloads::fix_alias_extension(destination);
                             if let Some(dir) = &custom_dir {
                                 crate::downloads::place_in(dir, destination);
                             }
