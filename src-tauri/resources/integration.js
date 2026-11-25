@@ -101,7 +101,9 @@
   }
   function fits(target){
     var area=target.header.getBoundingClientRect(),r=host.getBoundingClientRect();
-    if(r.width<84||r.height<36||r.left<area.left||r.right>area.right+1||r.top<area.top||r.bottom>area.bottom+1)return false;
+    // 1px tolerance everywhere: at fractional device-pixel ratios (150% scaling at
+    // 85% zoom) the 84x40 controls snap to 83.9 one frame and 84 the next.
+    if(r.width<83||r.height<35||r.left<area.left-1||r.right>area.right+1||r.top<area.top-1||r.bottom>area.bottom+1)return false;
     return !Array.from(target.header.querySelectorAll("button,[role=button],h1,h2,[role=heading]")).some(function(e){
       if(host.contains(e))return false;var b=e.getBoundingClientRect();return b.width>0&&b.height>0&&r.left<b.right-1&&r.right>b.left+1&&r.top<b.bottom-1&&r.bottom>b.top+1;
     });
