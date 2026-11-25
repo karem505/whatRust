@@ -211,7 +211,7 @@ fn icon_planes(rgba: &[u8], width: u32, height: u32) -> Option<(Vec<u8>, Vec<u8>
     }
     let mut bgra = rgba.to_vec();
     let mut and_mask = Vec::with_capacity(pixels);
-    for px in bgra.chunks_exact_mut(4) {
+    for px in bgra.as_chunks_mut::<4>().0 {
         and_mask.push(px[3].wrapping_sub(u8::MAX));
         px.swap(0, 2);
     }
