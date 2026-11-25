@@ -39,8 +39,8 @@ pub struct Settings {
     /// Dock icon brings a hidden window back. Windows and Linux always show the
     /// tray icon, since there it is the only way back to a hidden window.
     pub menu_bar_icon: bool,
-    /// Interface language: `en` or `pt-BR`. Defaults to the OS language
-    /// (Portuguese for a Portuguese system, English otherwise).
+    /// Interface language: `en`, `pt-BR` or `es`. Defaults to the OS language
+    /// (Portuguese or Spanish for such a system, English otherwise).
     pub language: String,
     /// Folder downloads are saved to (issue #40). `None` keeps the OS Downloads
     /// folder. Checked when saved and again before each download; a folder that

@@ -1,8 +1,10 @@
 //! User-interface language. Portuguese (Brazil) is the source language: every
 //! user-visible string in the code is written in Portuguese, and `tr` looks the
-//! text up in the English table when English is selected. A string with no
-//! English entry is shown as written, so a missing translation can never blank
-//! the UI (and `every_literal_has_an_english_entry` fails the build of tests).
+//! text up in the English or Spanish table when that language is selected. A
+//! Spanish string with no entry falls back to English, and one with no English
+//! entry is shown as written, so a missing translation can never blank the UI
+//! (and `every_literal_has_an_english_entry` / `spanish_covers_every_english_entry`
+//! fail the tests).
 //!
 //! The language lives in `settings.json` (`language`); `set` mirrors it into a
 //! process-wide atomic so lookups never touch the disk.
@@ -14,18 +16,29 @@ use std::sync::atomic::{AtomicU8, Ordering};
 pub enum Lang {
     PtBr,
     En,
+    Es,
 }
 
 pub const PT_BR: &str = "pt-BR";
 pub const EN: &str = "en";
+pub const ES: &str = "es";
 
 impl Lang {
-    /// `pt`, `pt-BR`, `pt_PT.UTF-8`... mean Portuguese; anything else,
-    /// including an empty or unknown code, means English.
+    /// `pt`, `pt-BR`, `pt_PT.UTF-8`... mean Portuguese; `es`, `es-CL`,
+    /// `es_ES.UTF-8`... mean Spanish; anything else, including an empty or
+    /// unknown code, means English.
     pub fn from_code(code: &str) -> Lang {
         let code = code.trim().to_ascii_lowercase();
-        if code == "pt" || code.starts_with("pt-") || code.starts_with("pt_") {
+        let is = |p: &str| {
+            code == p
+                || code
+                    .strip_prefix(p)
+                    .is_some_and(|rest| rest.starts_with(['-', '_']))
+        };
+        if is("pt") {
             Lang::PtBr
+        } else if is("es") {
+            Lang::Es
         } else {
             Lang::En
         }
@@ -35,6 +48,7 @@ impl Lang {
         match self {
             Lang::PtBr => PT_BR,
             Lang::En => EN,
+            Lang::Es => ES,
         }
     }
 }
@@ -45,8 +59,8 @@ pub fn sanitize_code(code: &str) -> String {
 }
 
 /// Default for a fresh install or a settings.json written before the language
-/// setting existed: Portuguese when the operating system is set to Portuguese,
-/// English otherwise. Existing users keep the language they had (English).
+/// setting existed: Portuguese or Spanish when the operating system is set to
+/// one of them, English otherwise. Existing users keep the language they had (English).
 pub fn system_default() -> &'static str {
     Lang::from_code(&os_locale()).code()
 }
@@ -97,15 +111,19 @@ pub fn set(lang: Lang) {
 }
 
 pub fn current() -> Lang {
-    if CURRENT.load(Ordering::Relaxed) == Lang::En as u8 {
-        Lang::En
-    } else {
-        Lang::PtBr
+    match CURRENT.load(Ordering::Relaxed) {
+        x if x == Lang::En as u8 => Lang::En,
+        x if x == Lang::Es as u8 => Lang::Es,
+        _ => Lang::PtBr,
     }
 }
 
 fn english(s: &str) -> Option<&'static str> {
     EN_TABLE.iter().find(|(pt, _)| *pt == s).map(|(_, en)| *en)
+}
+
+fn spanish(s: &str) -> Option<&'static str> {
+    ES_TABLE.iter().find(|(pt, _)| *pt == s).map(|(_, es)| *es)
 }
 
 /// Translate a Portuguese source string into the current language.
@@ -117,6 +135,9 @@ pub fn tr_in(lang: Lang, s: &str) -> Cow<'_, str> {
     match lang {
         Lang::PtBr => Cow::Borrowed(s),
         Lang::En => english(s).map_or(Cow::Borrowed(s), Cow::Borrowed),
+        Lang::Es => spanish(s)
+            .or_else(|| english(s))
+            .map_or(Cow::Borrowed(s), Cow::Borrowed),
     }
 }
 
@@ -320,6 +341,149 @@ static EN_TABLE: &[(&str, &str)] = &[
     ("whatRust — Conta destacada", "whatRust — Detached account"),
 ];
 
+/// Spanish text for each Portuguese source string (same keys as `EN_TABLE`).
+/// A key missing here falls back to English; a test checks none is.
+static ES_TABLE: &[(&str, &str)] = &[
+    ("A pasta não existe.", "La carpeta no existe."),
+    ("Não é possível gravar nessa pasta.", "No se puede escribir en esa carpeta."),
+    ("Todos os arquivos", "Todos los archivos"),
+    ("Salvar arquivo", "Guardar archivo"),
+    ("Pasta de downloads", "Carpeta de descargas"),
+    ("Salvar backup do whatRust", "Guardar copia de seguridad de whatRust"),
+    ("Restaurar backup do whatRust", "Restaurar copia de seguridad de whatRust"),
+    ("Este arquivo não é um backup do whatRust.", "Este archivo no es una copia de seguridad de whatRust."),
+    ("Ícone do aplicativo", "Icono de la aplicación"),
+    ("A imagem tem mais de 5 MB.", "La imagen pesa más de 5 MB."),
+    ("O arquivo não é uma imagem PNG.", "El archivo no es una imagen PNG."),
+    ("A imagem precisa ser quadrada.", "La imagen debe ser cuadrada."),
+    ("A imagem é grande demais (máximo {0} px).", "La imagen es demasiado grande (máximo {0} px)."),
+    ("A imagem é pequena demais (mínimo {0} px).", "La imagen es demasiado pequeña (mínimo {0} px)."),
+    ("Não foi possível ler a imagem PNG.", "No se pudo leer la imagen PNG."),
+    ("Não é possível remover a última conta.", "No se puede eliminar la última cuenta."),
+    ("Conta não encontrada: {0}", "Cuenta no encontrada: {0}"),
+    ("Conta não encontrada", "Cuenta no encontrada"),
+    ("A ordem deve conter todas as contas uma única vez", "El orden debe incluir todas las cuentas una sola vez"),
+    ("Conta não está aberta", "La cuenta no está abierta"),
+    ("{0}; e não foi possível restaurar a conta: {1}", "{0}; y no se pudo restaurar la cuenta: {1}"),
+    ("As senhas não coincidem.", "Las contraseñas no coinciden."),
+    ("A senha deve ter pelo menos {0} caracteres.", "La contraseña debe tener al menos {0} caracteres."),
+    ("O bloqueio já está ativado.", "El bloqueo ya está activado."),
+    ("O bloqueio não está ativado.", "El bloqueo no está activado."),
+    ("A senha atual está incorreta.", "La contraseña actual es incorrecta."),
+    ("Defina uma senha de bloqueio primeiro.", "Primero define una contraseña de bloqueo."),
+    ("A autenticação biométrica não está disponível neste dispositivo.", "La autenticación biométrica no está disponible en este dispositivo."),
+    ("Ativar desbloqueio por biometria no whatRust", "Activar el desbloqueo biométrico en whatRust"),
+    ("Desbloquear o whatRust", "Desbloquear whatRust"),
+    ("Não foi possível confirmar a biometria.", "No se pudo confirmar la biometría."),
+    ("O desbloqueio por biometria não está ativado.", "El desbloqueo biométrico no está activado."),
+    ("O tempo para confirmar a biometria terminou.", "Se agotó el tiempo para confirmar la biometría."),
+    ("A redefinição precisa ser confirmada.", "Hay que confirmar el restablecimiento."),
+    ("Endereço do proxy inválido. Use um nome de host ou um endereço IP, sem http://, usuário ou senha.", "Dirección de proxy no válida. Usa un nombre de host o una dirección IP, sin http://, usuario ni contraseña."),
+    ("Tipo de proxy inválido.", "Tipo de proxy no válido."),
+    ("A porta do proxy deve estar entre 1 e 65535.", "El puerto del proxy debe estar entre 1 y 65535."),
+    ("Endereço do proxy inválido.", "Dirección de proxy no válida."),
+    ("O proxy exige macOS 14 (Sonoma) ou superior. Desative o proxy nas configurações.", "El proxy requiere macOS 14 (Sonoma) o posterior. Desactiva el proxy en la configuración."),
+    ("O proxy exige macOS 14 (Sonoma) ou superior.", "El proxy requiere macOS 14 (Sonoma) o posterior."),
+    ("Não foi possível concluir a redefinição. Feche outras instâncias do whatRust e tente novamente.", "No se pudo completar el restablecimiento. Cierra las otras instancias de whatRust e inténtalo de nuevo."),
+    ("whatRust — Bloqueado", "whatRust — Bloqueado"),
+    ("Download não encontrado", "Descarga no encontrada"),
+    ("Download concluído", "Descarga completa"),
+    ("Falha no download", "Error en la descarga"),
+    ("{0} — salvo no local escolhido.", "{0} — guardado en la ubicación elegida."),
+    ("Arquivo salvo no local escolhido.", "Archivo guardado en la ubicación elegida."),
+    ("Não foi possível baixar o arquivo. Tente novamente.", "No se pudo descargar el archivo. Inténtalo de nuevo."),
+    ("Não foi possível abrir o link", "No se pudo abrir el enlace"),
+    ("Não foi possível iniciar o navegador. Copie o link e abra-o no navegador.", "No se pudo iniciar el navegador. Copia el enlace y ábrelo en el navegador."),
+    ("Não foi possível abrir o arquivo", "No se pudo abrir el archivo"),
+    ("Abra o arquivo pela pasta em que ele foi salvo.", "Abre el archivo desde la carpeta donde se guardó."),
+    ("Nenhum arquivo foi anexado", "No se adjuntó ningún archivo"),
+    ("Não é possível arrastar esse item diretamente. Arraste o arquivo pelo Explorador de Arquivos ou use o botão de anexo (+).", "No se puede arrastrar este elemento directamente. Arrastra el archivo desde el Explorador de archivos o usa el botón de adjuntar (+)."),
+    ("Arquivos não anexados", "Archivos no adjuntados"),
+    ("Não foi possível processar os arquivos. Tente novamente.", "No se pudieron procesar los archivos. Inténtalo de nuevo."),
+    ("Não foi possível enviar os arquivos ao WhatsApp. Tente novamente.", "No se pudieron enviar los archivos a WhatsApp. Inténtalo de nuevo."),
+    ("O WhatsApp ainda não estava pronto para receber os arquivos. Tente novamente.", "WhatsApp todavía no estaba listo para recibir los archivos. Inténtalo de nuevo."),
+    ("Imagem não colada", "Imagen no pegada"),
+    ("A imagem da área de transferência é grande demais. Salve-a e anexe o arquivo.", "La imagen del portapapeles es demasiado grande. Guárdala y adjunta el archivo."),
+    ("Alguns arquivos não foram anexados", "Algunos archivos no se adjuntaron"),
+    ("arquivo", "archivo"),
+    ("arquivos", "archivos"),
+    ("{0} {1} acima do limite de 500 MB", "{0} {1} por encima del límite de 500 MB"),
+    ("{0} {1} acima do total de 500 MB por envio", "{0} {1} por encima del total de 500 MB por envío"),
+    ("{0} {1} acima do limite de 200 arquivos", "{0} {1} por encima del límite de 200 archivos"),
+    ("pastas ou arquivos especiais: {0}", "carpetas o archivos especiales: {0}"),
+    ("{0} {1} sem permissão de leitura", "{0} {1} sin permiso de lectura"),
+    ("{0} {1} alterados durante a leitura", "{0} {1} modificados durante la lectura"),
+    ("Não anexados: {0}.", "No adjuntados: {0}."),
+    ("Nova mensagem", "Mensaje nuevo"),
+    ("Você tem uma nova mensagem.", "Tienes un mensaje nuevo."),
+    ("Você tem novas mensagens em {0} conversas.", "Tienes mensajes nuevos en {0} chats."),
+    ("Você recebeu uma mensagem no WhatsApp.", "Recibiste un mensaje en WhatsApp."),
+    ("Teste do whatRust", "Prueba de whatRust"),
+    ("Se você está vendo este aviso, o Windows exibiu o teste.", "Si ves este aviso, Windows mostró la prueba."),
+    ("Ative as notificações antes do teste.", "Activa las notificaciones antes de la prueba."),
+    ("Teste solicitado. Confira o banner e a central do Windows; aceitação não confirma exibição.", "Prueba solicitada. Revisa el banner y el centro de notificaciones de Windows; que se acepte no confirma que se haya mostrado."),
+    ("Não foi possível abrir as configurações do Windows", "No se pudo abrir la configuración de Windows"),
+    ("Disponível no Windows", "Disponible en Windows"),
+    ("Não foi possível atualizar a inicialização automática: {0}", "No se pudo actualizar el inicio automático: {0}"),
+    ("Não foi possível registrar o atalho (ele pode estar em uso): {0}", "No se pudo registrar el atajo (puede estar en uso): {0}"),
+    ("O atalho para desfocar não pode ser igual ao atalho de mostrar/ocultar: {0}", "El atajo para desenfocar no puede ser igual al atajo para mostrar u ocultar: {0}"),
+    ("Contas…", "Cuentas…"),
+    ("Contas", "Cuentas"),
+    ("Configurações", "Configuración"),
+    ("Recarregar", "Recargar"),
+    ("Sair", "Salir"),
+    ("Bloquear agora", "Bloquear ahora"),
+    ("Bloquear", "Bloquear"),
+    ("{0} conversas não lidas — WhatsApp", "{0} chats sin leer — WhatsApp"),
+    ("Configurações do whatRust", "Configuración de whatRust"),
+    ("Voltar ao WhatsApp", "Volver a WhatsApp"),
+    ("Desfoque de privacidade…", "Desenfoque de privacidad…"),
+    ("Recarregar conta", "Recargar cuenta"),
+    ("Sair do whatRust", "Salir de whatRust"),
+    ("Instalador do Windows (NSIS)", "Instalador de Windows (NSIS)"),
+    ("Instalador do Windows (MSI)", "Instalador de Windows (MSI)"),
+    ("Aplicativo do macOS", "Aplicación de macOS"),
+    ("Compilado do código-fonte", "Compilado desde el código fuente"),
+    ("Outro tipo de instalação", "Otro tipo de instalación"),
+    ("Compilado do código-fonte: atualize o código e compile de novo, ou instale uma versão publicada.", "Compilado desde el código fuente: actualiza el código y vuelve a compilar, o instala una versión publicada."),
+    ("Esta instalação não pode ser atualizada pelo whatRust. Baixe a nova versão na página de lançamentos ou use o gerenciador de pacotes.", "whatRust no puede actualizar esta instalación. Descarga la nueva versión desde la página de versiones o usa tu gestor de paquetes."),
+    ("Proxy inválido: {0}", "Proxy no válido: {0}"),
+    ("Falha de rede: {0}", "Error de red: {0}"),
+    ("Resposta inesperada do GitHub: {0}", "Respuesta inesperada de GitHub: {0}"),
+    ("Nenhuma versão publicada encontrada.", "No se encontró ninguna versión publicada."),
+    ("Download interrompido: {0}", "Descarga interrumpida: {0}"),
+    ("Download incompleto ({0} de {1} bytes).", "Descarga incompleta ({0} de {1} bytes)."),
+    ("Esta versão não tem o arquivo SHA256SUMS; nada foi alterado.", "Esta versión no tiene el archivo SHA256SUMS; no se cambió nada."),
+    ("O SHA256SUMS não lista {0}; nada foi alterado.", "SHA256SUMS no incluye {0}; no se cambió nada."),
+    ("Esta versão não tem um arquivo para o seu tipo de instalação ({0}).", "Esta versión no tiene un archivo para tu tipo de instalación ({0})."),
+    ("Caminho do AppImage inválido.", "Ruta de AppImage no válida."),
+    ("Caminho do aplicativo inválido.", "Ruta de la aplicación no válida."),
+    ("O endereço do arquivo não pertence às versões oficiais do whatRust.", "La dirección del archivo no pertenece a las versiones oficiales de whatRust."),
+    ("Não foi possível criar uma pasta temporária: {0}", "No se pudo crear una carpeta temporal: {0}"),
+    ("{0} está danificado (a soma de verificação não confere); nada foi alterado.", "{0} está dañado (la suma de verificación no coincide); no se cambió nada."),
+    ("Não foi possível substituir {0}: {1}", "No se pudo reemplazar {0}: {1}"),
+    ("Não foi possível instalar a nova versão: {0}{1}", "No se pudo instalar la nueva versión: {0}{1}"),
+    ("Não foi possível descompactar a atualização.", "No se pudo descomprimir la actualización."),
+    ("A atualização não contém um aplicativo.", "La actualización no contiene una aplicación."),
+    ("A atualização não contém um aplicativo válido.", "La actualización no contiene una aplicación válida."),
+    ("A instalação foi cancelada.", "Se canceló la instalación."),
+    ("O dpkg não conseguiu instalar o pacote ({0}).", "dpkg no pudo instalar el paquete ({0})."),
+    ("O Flatpak não conseguiu instalar a atualização ({0}). O pacote verificado está em {1}; instale com: flatpak install {2} --reinstall {1}", "Flatpak no pudo instalar la actualización ({0}). El paquete verificado está en {1}; instálalo con: flatpak install {2} --reinstall {1}"),
+    ("O pkexec não foi encontrado. O pacote verificado está em {0}; instale com: sudo dpkg -i {0}", "No se encontró pkexec. El paquete verificado está en {0}; instálalo con: sudo dpkg -i {0}"),
+    ("Não foi possível iniciar o instalador: {0}", "No se pudo iniciar el instalador: {0}"),
+    ("whatRust {0} está disponível", "whatRust {0} está disponible"),
+    ("Abra Configurações → Atualizações para ver as novidades e instalar.", "Abre Configuración → Actualizaciones para ver las novedades e instalarla."),
+    ("whatRust {0} foi instalado", "whatRust {0} se instaló"),
+    ("Reinicie o whatRust para usar a nova versão (Configurações → Atualizações).", "Reinicia whatRust para usar la nueva versión (Configuración → Actualizaciones)."),
+    ("whatRust {0} está pronto para instalar", "whatRust {0} está listo para instalar"),
+    ("Abra Configurações → Atualizações e clique em Reiniciar e instalar.", "Abre Configuración → Actualizaciones y haz clic en Reiniciar e instalar."),
+    ("Não há atualização instalada para reiniciar.", "No hay ninguna actualización instalada para reiniciar."),
+    ("Não foi possível reiniciar o whatRust. Abra-o manualmente.", "No se pudo reiniciar whatRust. Ábrelo manualmente."),
+    ("Atualizar para {0}", "Actualizar a {0}"),
+    ("whatRust — Configurações", "whatRust — Configuración"),
+    ("whatRust — Conta destacada", "whatRust — Cuenta separada"),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -333,6 +497,44 @@ mod tests {
     fn english_translates_and_falls_back() {
         assert_eq!(tr_in(Lang::En, "Sair"), "Quit");
         assert_eq!(tr_in(Lang::En, "texto sem tradução"), "texto sem tradução");
+    }
+
+    #[test]
+    fn spanish_translates_and_falls_back() {
+        assert_eq!(tr_in(Lang::Es, "Sair"), "Salir");
+        assert_eq!(tr_in(Lang::Es, "texto sem tradução"), "texto sem tradução");
+        assert_eq!(
+            trf_in(Lang::Es, "Conta não encontrada: {0}", &[&"acct-1"]),
+            "Cuenta no encontrada: acct-1"
+        );
+    }
+
+    #[test]
+    fn spanish_covers_every_english_entry() {
+        let missing: Vec<_> = EN_TABLE
+            .iter()
+            .filter(|(pt, _)| spanish(pt).is_none())
+            .map(|(pt, _)| *pt)
+            .collect();
+        assert!(missing.is_empty(), "no Spanish entry for: {missing:#?}");
+        for (i, (pt, es)) in ES_TABLE.iter().enumerate() {
+            assert!(
+                english(pt).is_some(),
+                "Spanish entry with no English one: {pt}"
+            );
+            assert!(
+                ES_TABLE[i + 1..].iter().all(|(other, _)| other != pt),
+                "duplicate Spanish key {pt}"
+            );
+            for n in 0..4 {
+                let ph = format!("{{{n}}}");
+                assert_eq!(
+                    pt.contains(&ph),
+                    es.contains(&ph),
+                    "placeholder {ph} in {pt}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -360,6 +562,8 @@ mod tests {
         assert_eq!(sanitize_code("zz"), EN);
         assert_eq!(sanitize_code("pt-BR"), PT_BR);
         assert_eq!(sanitize_code("en"), EN);
+        assert_eq!(Lang::from_code("es"), Lang::Es);
+        assert_eq!(sanitize_code("es"), ES);
     }
 
     #[test]
@@ -370,6 +574,10 @@ mod tests {
         assert_eq!(Lang::from_code("en_US.UTF-8"), Lang::En);
         assert_eq!(Lang::from_code("ar-EG"), Lang::En);
         assert_eq!(Lang::from_code("ptx"), Lang::En);
+        assert_eq!(Lang::from_code("es_CL.UTF-8"), Lang::Es);
+        assert_eq!(Lang::from_code("es-419"), Lang::Es);
+        assert_eq!(Lang::from_code("es"), Lang::Es);
+        assert_eq!(Lang::from_code("est"), Lang::En);
         assert_eq!(Lang::from_code(""), Lang::En);
     }
 
