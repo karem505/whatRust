@@ -116,6 +116,8 @@
     "Receber notificações": "Receive notifications",
     "Ativa os avisos de mensagens do whatRust.": "Turns on whatRust message alerts.",
     "Som de notificação": "Notification sound",
+    "Silenciar som interno do WhatsApp Web": "Mute WhatsApp Web notification chime",
+    "Silencia o som interno das notificações do WhatsApp Web sem alterar os sons nativos de notificação do sistema. Requer reiniciar o whatRust.": "Suppresses WhatsApp Web's notification chime without changing native system notification sounds. Requires restarting whatRust.",
     "Silencia os avisos sonoros de mensagens do WhatsApp. O toque de chamadas continua.": "Silences WhatsApp's message alert sounds. Calls still ring.",
     "Avisar com o aplicativo aberto": "Notify while the app is open",
     "Receber avisos mesmo com a janela em primeiro plano.": "Get alerts even when the window is in the foreground.",

@@ -21,6 +21,8 @@ pub struct Settings {
     pub notify_when_focused: bool,
     pub notify_active_chat: bool,
     pub respect_muted: bool,
+    /// Opt-in: suppress auto-played WhatsApp Web notification chimes.
+    pub suppress_web_notification_sounds: bool,
     /// macOS only: the app lives in the menu bar, no Dock icon and no
     /// standard window. Every account stays connected in the background and
     /// opens as a panel from the tray. Off by default. Ignored on other platforms.
@@ -103,6 +105,7 @@ impl Default for Settings {
             notify_when_focused: true,
             notify_active_chat: true,
             respect_muted: true,
+            suppress_web_notification_sounds: false,
             menubar_only: false,
             single_window: false,
             hide_dock_icon: false,
@@ -556,6 +559,7 @@ mod tests {
         assert!(!s.notifications);
         assert!(s.notification_sound);
         assert!(s.notify_when_focused && s.notify_active_chat && s.respect_muted);
+        assert!(!s.suppress_web_notification_sounds);
     }
 
     #[cfg(target_os = "linux")]
