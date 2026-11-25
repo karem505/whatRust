@@ -69,17 +69,21 @@ The official WhatsApp Desktop app is built on Electron, which packs an entire Ch
 
 ## Features
 
-- **Multiple WhatsApp accounts** — run several numbers at once, each in its own window with a fully isolated login (add, rename, and remove accounts)
+- **Multiple WhatsApp accounts** — run several numbers at once, each in its own window with a fully isolated login (add, rename, and remove accounts). `Ctrl+1`…`Ctrl+9` (`Cmd` on macOS) switches to the Nth account. With all accounts in one window (always on Windows; **Settings → Accounts → Show all accounts in one window** elsewhere) the window title also lists the other accounts that have unread chats, and on Windows 11 the window border takes the shown account's colour
+- **Sleep unused accounts** (optional, all accounts in one window) — unload a background account that has not been opened for 1, 4, 8 or 24 hours to free its memory; it reloads when you switch to it, and gets no notifications while asleep (Settings → Appearance)
+- **Settings backup** — save your preferences and account list (names and order) to a JSON file and restore them on another computer; logins, chats and the lock password are never included (Settings → Appearance)
 - **Optional app lock** — password (Argon2id) or biometric (Windows Hello / Touch ID / Linux polkit); locks on launch, on demand, on hide-to-tray, or after idle
 - **System tray** icon with **close-to-tray** and an **unread message badge**
 - **Native OS notifications** for new messages
 - **Notification sound toggle** — silence WhatsApp's message alert tones and the native toast sound in Settings → Notifications; calls still ring
+- **Do not disturb** — no whatRust notifications between a start and an end time you choose (it may cross midnight); messages still arrive (Settings → Notifications)
 - **Display size** — a Smaller / Small / Default / Big page zoom in Settings, so the chat list stops crowding out the conversation on a high-DPI screen
 - **Custom download folder** — pick where downloads are saved in Settings → Appearance, or reset to the system Downloads folder. A folder that disappears or stops being writable falls back to Downloads. On Windows the Save As dialog opens in that folder. In the Flatpak the folder is chosen through the desktop portal (needs `xdg-desktop-portal`)
 - **Custom app icon** — choose a square PNG (32–1024 px, up to 5 MB) as the app icon in Settings → Appearance: Dock icon on macOS (the unread badge still shows on top), window and taskbar icons on Windows, window icon on Linux X11 (Wayland compositors use the `.desktop` icon, so it does not change there). The tray / menu-bar icon stays as is, and the icon is app-wide, not per account
 - **Persistent login** — scan the QR code once, stay signed in across restarts
 - **Voice messages** everywhere, plus **voice & video calls** on macOS and Windows (whatRust's Linux builds can't place calls — see the FAQ)
 - **Drag and drop files and images** — drop a photo, video, or document straight onto a chat to attach it
+- **Paste images and files** — `Ctrl+V` a screenshot, a copied image, or files copied in your file manager into a chat (Linux needed whatRust's help for this; Windows and macOS webviews do it themselves)
 - **Links open in your browser** — web, email, and phone links in chats go to your default apps; WhatsApp links (`wa.me`, group invites) stay in the app
 - **Opens `whatsapp://` links** — "Open app" / click-to-chat buttons on websites open the chat in whatRust (registered by the installers, the `.deb`, the Flatpak, and the one-line AppImage install)
 - **Download feedback** — a small toast confirms each download with **Open** and **Show in folder** buttons (programs and installers are only ever shown in their folder, never run)
@@ -89,6 +93,7 @@ The official WhatsApp Desktop app is built on Electron, which packs an entire Ch
 - **Automatic updates** — whatRust checks GitHub for a newer release shortly after start and every 6 hours, tells you, and installs it after checking its SHA-256 (Settings → Updates; see the FAQ). Turn it off in Settings → Updates
 - **Single instance** — relaunching focuses the running window; `whatrust --toggle` from a second launch shows/hides it
 - **Remembers window size and position**
+- **Controls in WhatsApp's header are optional** — on Windows and in the one-window mode, turn off *whatRust controls in WhatsApp's header* to leave the page exactly as WhatsApp draws it; the account switcher and Settings stay reachable from the window's menu and the tray (Settings → Appearance, applies after a restart)
 - **One-line install** on every platform
 - **Cross-platform**: Linux, Windows, and macOS from one Rust + Tauri codebase
 
@@ -149,7 +154,7 @@ OS supports it — before showing your chats. Enable it under **Settings → Sec
 |---|---|---|
 | **Linux** | WebKitGTK | Requires WebKitGTK **≥ 2.46.1** (older versions hang WhatsApp's QR login). AppImage may need `libfuse2`. |
 | **Windows 10/11** | WebView2 | Uses the Evergreen WebView2 runtime (preinstalled on Windows 11). |
-| **macOS** | WKWebView | macOS 12.1+ (SharedArrayBuffer for video upload needs Safari/WebKit 15.2; running **multiple accounts** needs macOS 14+); the current build is Apple Silicon (arm64). |
+| **macOS** | WKWebView | macOS 12.1+ (SharedArrayBuffer for video upload needs Safari/WebKit 15.2; running **multiple accounts** needs macOS 14+); builds for Apple Silicon (arm64) and Intel (x64). |
 
 ## Installation
 
@@ -183,7 +188,7 @@ irm https://raw.githubusercontent.com/karem505/whatRust/master/install.ps1 | iex
 ```
 Downloads and runs the latest NSIS installer (`.exe`); an `.msi` is also available on the release page.
 
-**Manual download** — grab a `.flatpak`, `.AppImage`/`.deb`, `.dmg`, `.exe`, or `.msi` from the [latest release](https://github.com/karem505/whatRust/releases/latest).
+**Manual download** — grab a `.flatpak`, `.AppImage`/`.deb`/`.rpm`, `.dmg`, `.exe`, or `.msi` from the [latest release](https://github.com/karem505/whatRust/releases/latest). The `.rpm` (Fedora, openSUSE; since 0.6.17) is updated by your package manager from a newer `.rpm`: whatRust tells you about a new version but does not install it itself.
 
 <details>
 <summary><b>Build from source</b> (Rust + Cargo + Tauri CLI)</summary>
@@ -191,7 +196,7 @@ Downloads and runs the latest NSIS installer (`.exe`); an `.msi` is also availab
 ```bash
 # Linux build dependencies (Ubuntu/Debian)
 sudo apt install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
-  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libhunspell-dev patchelf
+  libxdo-dev libdbus-1-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libhunspell-dev patchelf
 
 cargo install tauri-cli --version "^2.0" --locked
 
@@ -199,6 +204,7 @@ cargo tauri dev      # run in development
 cargo tauri build    # build installers for the current OS
 cd src-tauri && cargo test   # run the unit tests
 ```
+The checks a pull request must pass are listed in [CONTRIBUTING.md](CONTRIBUTING.md).
 </details>
 
 ## Getting started
@@ -221,6 +227,8 @@ whatRust uses your OS's native webview instead of bundling a Chromium engine (as
 
 ### How much RAM does whatRust use?
 whatRust's own native shell is small — around 90 MB. Your **total** memory use is mostly WhatsApp Web's own footprint and scales with how many chats and how much media you keep open — commonly a few hundred MB up to ~1 GB for busy accounts, similar to WhatsApp Web in a browser tab.
+
+One user's side-by-side check on Windows (Task Manager, whatRust 0.6.16, [#91](https://github.com/karem505/whatRust/issues/91), thanks @brianfauzanlukman): about 649 MB for whatRust (642.7 MB of WebView2 plus 6 MB for the app itself) against 861 MB across 10 processes for the official WhatsApp app. It is a single measurement, not a benchmark; your numbers depend on your chats and media. With several accounts, **Settings → Sleep unused accounts** frees the memory of accounts you have not opened for a while.
 
 ### Is whatRust lighter than the official WhatsApp Desktop app?
 Its native shell is lighter because it doesn't bundle a Chromium browser engine the way the Electron-based official app does, so it has less baseline overhead. The WhatsApp Web content itself uses a similar amount in either app.
@@ -254,6 +262,12 @@ How it installs depends on how you installed whatRust:
 | built from source | only reported |
 
 To turn it off, untick **Check for updates automatically** in **Settings → Updates** (the **Check now** button still works). **Install updates automatically** only applies where no password is needed; untick it to be asked first. Versions 0.6.10 and older do not have the updater: install the newest release by hand once.
+
+### Windows Defender or VirusTotal flags the `.exe` installer
+The Windows installers are not code-signed yet. Some antivirus engines flag unsigned NSIS installers (the `.exe`) by heuristics, while the `.msi`, with the same app inside, usually comes out clean ([#70](https://github.com/karem505/whatRust/issues/70), thanks @Iruhan21). Every release file is built on GitHub's public CI ([`release.yml`](.github/workflows/release.yml), logs on the Actions tab), and every release carries a `SHA256SUMS` file: if your download's SHA-256 matches, it is exactly the file CI built. If your antivirus blocks the `.exe`, use the `.msi` (x64).
+
+### The window stays blank after I log in (old graphics card, Linux)
+On GPUs with only OpenGL 2.1, WebKitGTK's GPU compositor can show the QR page but not WhatsApp's main page ([#87](https://github.com/karem505/whatRust/issues/87), thanks @yudhapriaw). Since 0.6.16, whatRust renders without the GPU automatically on Intel graphics older than Sandy Bridge. On any other GPU choose **Settings → Appearance → Rendering → Compatible** and restart whatRust.
 
 ### Is whatRust free and open source?
 Yes — whatRust is free and open source under the MIT License. The source is on [GitHub](https://github.com/karem505/whatRust).
@@ -298,7 +312,7 @@ whatRust doesn't talk to WhatsApp's servers itself: it shows the official `web.w
 - **Windows unread count**: Windows tray icons ignore text labels, so the unread *number* appears only in the hover tooltip (the icon still switches to a badged variant). macOS shows the count on the Dock icon and Linux on the tray icon.
 - **Linux launcher/dock badge**: the unread count is also sent to the launcher icon via the Unity `LauncherEntry` D-Bus API (.deb, AppImage with its `install.sh` desktop entry, and Flatpak). It shows on KDE Plasma's task manager, Dash to Dock / Ubuntu Dock, Plank and Latte; stock GNOME shows no app-icon badge without one of those extensions.
 - **Notification click** focuses the window on Windows only — elsewhere use the tray icon or the global shortcut.
-- **macOS** builds are unsigned and currently Apple Silicon (arm64) only. A `.dmg` downloaded with a browser shows "whatRust is damaged" until its quarantine flag is cleared (see Install).
+- **macOS** builds are unsigned (Apple Silicon and Intel). A `.dmg` downloaded with a browser shows "whatRust is damaged" until its quarantine flag is cleared (see Install).
 - **macOS and Windows file drops** go directly to WhatsApp through the native webview. Drag files from Finder/File Explorer onto the open conversation; use the attach (+) button if a drag source does not provide a file the webview can read.
 - **Linux drag-and-drop limits**: up to 200 files per drop, 500 MB per file, and 500 MB per drop total. Base64 transport is decoded incrementally while files stream in, but the page must still hold the final `File` data in memory. Larger batches can always be sent via WhatsApp's attach (+) → Document picker, which is not routed through these limits. Skipped files are reported in a notification. Native drops on macOS and Windows follow WhatsApp's own attachment limits.
 - **Multiple accounts on macOS** require macOS 14+ (older macOS runs a single account); Linux and Windows are unrestricted.
@@ -321,7 +335,7 @@ whatRust passed **300 GitHub stars** in November 2026, and almost half of them c
 
 ## Contributing
 
-Contributions to this open-source WhatsApp client are welcome — open an issue or a pull request on [GitHub](https://github.com/karem505/whatRust).
+Contributions to this open-source WhatsApp client are welcome — open an issue or a pull request on [GitHub](https://github.com/karem505/whatRust). [CONTRIBUTING.md](CONTRIBUTING.md) has the build steps, the checks CI runs on every pull request, and what a good bug report includes (suggested in [#94](https://github.com/karem505/whatRust/issues/94) by @nishujangra).
 
 ## Disclaimer
 
