@@ -131,6 +131,9 @@ async function load() {
     const el = document.getElementById(f);
     if (el) el.checked = !!s[f];
   }
+  const sleep = document.getElementById("sleep_idle_hours");
+  sleep.value = String(s.sleep_idle_hours || 0);
+  if (sleep.value === "") sleep.value = "0";
   // Menu-bar-only needs WKWebView's inactive-scheduling policy (macOS 14+).
   // Below that the backend ignores the setting, so don't offer the switch.
   const menubarOnly = document.getElementById("menubar_only");
@@ -219,6 +222,7 @@ async function save() {
   s.rendering = document.getElementById("rendering").value || "auto";
   s.language = document.getElementById("language").value;
   s.download_dir = downloadDir;
+  s.sleep_idle_hours = parseInt(document.getElementById("sleep_idle_hours").value, 10) || 0;
   if (proxySupported) {
     s.proxy_mode = document.getElementById("proxy_mode").value;
     s.proxy_host = document.getElementById("proxy_host").value.trim();

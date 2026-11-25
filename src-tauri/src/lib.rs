@@ -369,6 +369,15 @@ pub fn run() {
                 window::open_account_window(handle, account, open_hidden)?;
             }
             dlog::log("startup: startup account built, others deferred");
+            // Idle sleep (Settings → sleep_idle_hours) for single-window mode.
+            if cfg!(windows) || sessions::enabled() {
+                let sleeper = handle.clone();
+                std::thread::spawn(move || loop {
+                    std::thread::sleep(std::time::Duration::from_secs(300));
+                    let ui = sleeper.clone();
+                    let _ = sleeper.run_on_main_thread(move || sessions::sleep_idle(&ui));
+                });
+            }
             let deferred = handle.clone();
             std::thread::spawn(move || {
                 std::thread::sleep(window::DEFERRED_ACCOUNTS_TIMEOUT);

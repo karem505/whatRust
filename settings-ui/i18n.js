@@ -120,6 +120,13 @@
     "Avisar na conversa que estou lendo": "Notify in the chat I am reading",
     "Também avisar mensagens novas na conversa aberta.": "Also alert for new messages in the open chat.",
     "Respeitar conversas silenciadas": "Respect muted chats",
+    "Suspender contas sem uso": "Sleep unused accounts",
+    "Libera memória de contas em segundo plano. Uma conta suspensa não recebe avisos até ser aberta de novo.": "Frees memory used by background accounts. A sleeping account gets no notifications until you open it again.",
+    "Nunca": "Never",
+    "Após 1 hora": "After 1 hour",
+    "Após 4 horas": "After 4 hours",
+    "Após 8 horas": "After 8 hours",
+    "Após 24 horas": "After 24 hours",
     "Quando o silenciamento não puder ser confirmado, o detector adicional permanece silencioso.": "When muting cannot be confirmed, the additional detector stays silent.",
     "O detector adicional só usa mensagens novas identificáveis. Conversas silenciadas, histórico e estados desconhecidos não geram avisos adicionais.": "The additional detector only uses identifiable new messages. Muted chats, history and unknown states do not produce additional alerts.",
     // behavior
