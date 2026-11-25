@@ -508,6 +508,19 @@ fn escape_xml(s: &str) -> String {
         .replace('\'', "&apos;")
 }
 
+/// Toast XML for a message. Windows plays its default notification sound unless
+/// the XML carries a silent audio element; Settings → Notifications →
+/// Notification sound decides that.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn toast_xml(title: &str, body: &str, image: &str, silent: bool) -> String {
+    let audio = if silent {
+        "<audio silent=\"true\"/>"
+    } else {
+        ""
+    };
+    format!("<toast><visual><binding template=\"ToastGeneric\"><text>{}</text><text>{}</text>{image}</binding></visual>{audio}</toast>", escape_xml(title), escape_xml(body))
+}
+
 #[cfg(windows)]
 fn clear_history_before_delivery(app: &AppHandle, generation: u64) {
     use windows::{core::HSTRING, UI::Notifications::ToastNotificationManager};
@@ -650,6 +663,7 @@ fn windows_toast(
             ToastNotificationManager,
         },
     };
+    let silent = !crate::settings::load(app).notification_sound;
     let app = app.clone();
     let title = title.to_string();
     let body = body.to_string();
@@ -684,7 +698,7 @@ fn windows_toast(
                     )
                 })
                 .unwrap_or_default();
-            document.LoadXml(&HSTRING::from(format!("<toast><visual><binding template=\"ToastGeneric\"><text>{}</text><text>{}</text>{image}</binding></visual></toast>",escape_xml(&title),escape_xml(&body))))?;
+            document.LoadXml(&HSTRING::from(toast_xml(&title, &body, &image, silent)))?;
             let toast = ToastNotification::CreateToastNotification(&document)?;
             if let Some(d) = &delivery {
                 toast.SetTag(&HSTRING::from(
@@ -833,6 +847,14 @@ mod tests {
     #[test]
     fn notification_xml_cannot_be_broken_by_message_content() {
         assert_eq!(escape_xml("<&\"'\0"), "&lt;&amp;&quot;&apos;");
+    }
+    #[test]
+    fn toast_sound_obeys_the_setting() {
+        let loud = toast_xml("Bob", "hi", "", false);
+        assert!(!loud.contains("silent"));
+        let quiet = toast_xml("Bob", "hi", "", true);
+        assert!(quiet.contains("<audio silent=\"true\"/>"));
+        assert!(quiet.contains("<text>Bob</text><text>hi</text>"));
     }
     #[test]
     fn each_real_receipt_covers_only_one_visual_signal() {
