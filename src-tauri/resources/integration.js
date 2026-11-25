@@ -3,7 +3,7 @@
   function L(pt, en) { return window.__WR_LANG === "en" ? en : pt; }
   if (!(window.__WHATRUST_WINDOWS__ || window.__WHATRUST_SINGLE__) || location.origin !== "https://web.whatsapp.com") return;
   var state = { accounts: [], current_id: "", native_notifications: false };
-  var host, root, menu, gear, accountButton, accountName, accountBadge, status, lastReport = "", observer, scheduled, resizeObserver, resizeTarget, themeObserver;
+  var misses = 0, host, root, menu, gear, accountButton, accountName, accountBadge, status, lastReport = "", observer, scheduled, resizeObserver, resizeTarget, themeObserver;
   function call(cmd, args) { var t=window.__TAURI__;if(!t||!t.core)return Promise.resolve(null);return t.core.invoke(cmd, args).catch(function () { return null; }); }
   function button(text, fn) { var b=document.createElement("button");b.type="button";b.textContent=text;b.addEventListener("click",function(e){e.stopPropagation();fn();});return b; }
   function openPanel() { if(menu.open)menu.close();call("open_app_panel"); }
@@ -109,6 +109,9 @@
     });
   }
   function mount(){
+    // Issue #95: with page overlays off we never touch WhatsApp's header; only
+    // the message adapter below keeps running (native notifications need it).
+    if(window.__WHATRUST_NO_OVERLAY){if(host&&host.isConnected)host.remove();report(false,messageRows().length>0);scanMessages();if(observer)observer.takeRecords();return;}
     var target=anchor();if(!host)create();
     var resizeNode=document.getElementById("side")||document.documentElement;
     if(resizeObserver&&resizeTarget!==resizeNode){resizeObserver.disconnect();resizeObserver.observe(resizeNode);resizeTarget=resizeNode;}
@@ -116,8 +119,11 @@
       host.dataset.compact=String(target.header.getBoundingClientRect().width<560);
       if(host.parentNode!==target.row){if(menu.open)menu.close();target.row.appendChild(host);}
       if(!fits(target)&&host.dataset.compact!=="true")host.dataset.compact="true";
-      if(!fits(target)){host.remove();target=null;}
-    }else if(host.isConnected)host.remove();
+      // Issue #95: opening/closing the contact drawer re-lays the header out for
+      // a few frames. Removing the controls on the first bad measurement made
+      // the top bar flicker; only give up after several consecutive misses.
+      if(!fits(target)){if(host.isConnected&&++misses<4)schedule();else{host.remove();target=null;misses=0;}}else misses=0;
+    }else if(host.isConnected){if(++misses<4)schedule();else{host.remove();misses=0;}}
     report(!!target,messageRows().length>0);
     scanMessages();
     if(menu.open)positionMenu();

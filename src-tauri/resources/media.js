@@ -199,4 +199,105 @@
   } catch (e) {
     note("not installed: " + e);
   }
+
+  // -- 5. give back the sound stream of an <audio> left paused -------------
+  // WebKitGTK keeps one PulseAudio/PipeWire stream open for every <audio> that
+  // was played and then paused, for as long as the page holds the element.
+  // WhatsApp keeps its UI sounds around paused, so the system volume mixer
+  // fills with dozens of idle «whatrust» entries (reproduced in a bare WebKitGTK
+  // 2.54 WebView: 5 paused elements = 5 streams). After the element has been
+  // paused for a while, drop its media (that closes the stream) and put the
+  // source back, at the same position, on the next play(). Only <audio> with
+  // a network or data URL: never blob: media (voice notes, which the page may
+  // revoke), never srcObject (calls), never <video>. The page keeps seeing its
+  // own src. (A shared audio mixer, WEBKIT_GST_ENABLE_AUDIO_MIXER, also fixes
+  // the stream count but crashed the web process when a voice note played.)
+  try {
+    var AP = HTMLMediaElement.prototype;
+    var asrc = Object.getOwnPropertyDescriptor(AP, "src");
+    var nativePause = AP.pause, nativePlay = AP.play, nativeLoad = AP.load;
+    var removeAttr = Element.prototype.removeAttribute;
+    if (!asrc || !asrc.get || !asrc.set || !nativePause || !nativePlay || !nativeLoad) {
+      note("idle audio release: unsupported engine");
+    } else {
+      var IDLE_MS = window.__whatrustIdleAudioMs || 20000;
+      var parked = new WeakMap(); // element -> { src, time }
+      var timers = new WeakMap();
+      var releasable = function (el) {
+        if (!(el instanceof HTMLAudioElement) || !el.paused || el.srcObject) return false;
+        var u = asrc.get.call(el);
+        return typeof u === "string" && /^(https?|data):/i.test(u);
+      };
+      var cancel = function (el) {
+        var t = timers.get(el);
+        if (t) { clearTimeout(t); timers.delete(el); }
+      };
+      var release = function (el) {
+        timers.delete(el);
+        if (parked.has(el) || !releasable(el)) return;
+        parked.set(el, { src: asrc.get.call(el), time: el.currentTime || 0 });
+        removeAttr.call(el, "src");
+        nativeLoad.call(el);
+        note("released an idle audio stream");
+      };
+      var restore = function (el) {
+        var p = parked.get(el);
+        if (!p) return;
+        parked.delete(el);
+        asrc.set.call(el, p.src);
+        if (p.time > 0) { try { el.currentTime = p.time; } catch (e) {} }
+      };
+      AP.pause = function () {
+        var r = nativePause.apply(this, arguments);
+        try {
+          if (this instanceof HTMLAudioElement && !parked.has(this)) {
+            cancel(this);
+            var el = this;
+            timers.set(el, setTimeout(function () { release(el); }, IDLE_MS));
+          }
+        } catch (e) {}
+        return r;
+      };
+      AP.play = function () {
+        try { cancel(this); restore(this); } catch (e) {}
+        return nativePlay.apply(this, arguments);
+      };
+      AP.load = function () {
+        try { cancel(this); restore(this); } catch (e) {}
+        return nativeLoad.apply(this, arguments);
+      };
+      Object.defineProperty(AP, "src", {
+        configurable: true, enumerable: asrc.enumerable,
+        get: function () { var p = parked.get(this); return p ? p.src : asrc.get.call(this); },
+        set: function (v) {
+          try { cancel(this); parked.delete(this); } catch (e) {}
+          return asrc.set.call(this, v);
+        },
+      });
+      // While parked the element has no media: keep the page's position writes
+      // (WhatsApp rewinds a sound to 0 before replaying it) for restore().
+      var ct = Object.getOwnPropertyDescriptor(AP, "currentTime");
+      if (ct && ct.get && ct.set) {
+        Object.defineProperty(AP, "currentTime", {
+          configurable: true, enumerable: ct.enumerable,
+          get: function () { var p = parked.get(this); return p ? p.time : ct.get.call(this); },
+          set: function (v) {
+            var p = parked.get(this);
+            if (p) { var n = Number(v); p.time = isFinite(n) && n > 0 ? n : 0; return; }
+            return ct.set.call(this, v);
+          },
+        });
+      }
+      var setAttr5 = Element.prototype.setAttribute;
+      Element.prototype.setAttribute = function (name, value) {
+        try {
+          if (this instanceof HTMLMediaElement && String(name).toLowerCase() === "src") { cancel(this); parked.delete(this); }
+        } catch (e) {}
+        return setAttr5.call(this, name, value);
+      };
+      note("idle audio release installed");
+    }
+  } catch (e) {
+    note("idle audio release not installed: " + e);
+  }
 })();
