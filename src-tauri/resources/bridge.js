@@ -547,12 +547,20 @@
   //     — is left alone.
   (function () {
     var soundOn = window.__whatrustSound !== false;
+    // Every element the Audio constructor made, held weakly: voice notes go
+    // through `new Audio` too, and a plain list would keep each one (and its
+    // decoded media) alive for the whole session.
+    var constructed = typeof WeakSet === "function" ? new WeakSet() : null;
+    // Only the alert tones seen so far (a handful), so the toggle can reach them.
     var alertAudios = [];
     var silencedByUs = [];
     function isAlertAudio(el) {
-      if (alertAudios.indexOf(el) < 0 || el.loop || el.isConnected) return false;
+      if (!constructed || !constructed.has(el) || el.loop || el.isConnected) return false;
       var src = String(el.currentSrc || el.src || "");
       return /^https:\/\/static\.whatsapp\.net\//i.test(src);
+    }
+    function remember(el) {
+      if (isAlertAudio(el) && alertAudios.indexOf(el) < 0) alertAudios.push(el);
     }
     function silence(el) {
       if (soundOn || !isAlertAudio(el) || el.muted) return;
@@ -566,11 +574,13 @@
         window.Audio = new Proxy(NativeAudio, {
           construct: function (target, args) {
             var el = Reflect.construct(target, args);
-            alertAudios.push(el);
+            if (constructed) constructed.add(el);
+            remember(el);
             return el;
           },
         });
         window.HTMLMediaElement.prototype.play = function () {
+          remember(this);
           silence(this);
           return nativePlay.apply(this, arguments);
         };
