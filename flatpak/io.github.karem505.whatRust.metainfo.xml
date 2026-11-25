@@ -62,6 +62,12 @@
   </screenshots>
 
   <releases>
+    <release type="stable" version="0.7.0" date="2026-11-25">
+      <url type="details">https://github.com/karem505/whatRust/releases/tag/v0.7.0</url>
+      <description>
+        <p>Do not disturb hours, a switch for WhatsApp's notification sounds, optional sleep for accounts you have not opened, a settings backup, Ctrl+1 to 9 to switch accounts, and pasting images and copied files on Linux. With several accounts the one you open first loads first. Idle sounds no longer pile up in the volume mixer, downloads no longer get a doubled extension, and the Windows taskbar shows the app icon.</p>
+      </description>
+    </release>
     <release type="stable" version="0.6.16" date="2026-11-13">
       <url type="details">https://github.com/karem505/whatRust/releases/tag/v0.6.16</url>
       <description>
