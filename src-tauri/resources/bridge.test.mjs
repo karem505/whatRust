@@ -115,6 +115,11 @@ class FakeElement {
   }
 }
 
+// Static members are inherited, so null out fromBase64 explicitly: otherwise a
+// modern host's native decoder would win over the injected atob.
+class AtobOnlyUint8Array extends Uint8Array {}
+AtobOnlyUint8Array.fromBase64 = undefined;
+
 function makeHarness(options = {}) {
   const mediaInput = new FakeInput("image/*,video/mp4,video/3gpp,video/quicktime");
   const docInput = new FakeInput("*");
@@ -211,7 +216,11 @@ function makeHarness(options = {}) {
     console: { log: (m) => logs.push(String(m)), warn: (m) => warns.push(String(m)), error() {} },
     File: FakeFile,
     DataTransfer: FakeDataTransfer,
-    Uint8Array: options.Uint8Array || Uint8Array,
+    // bridge.js prefers Uint8Array.fromBase64 and only falls back to atob. Node
+    // 22+ ships the static, which would silently bypass every atob injected
+    // below (and hide the forced decode failures). Tests that want the fast path
+    // pass their own constructor; everyone else gets one without the static.
+    Uint8Array: options.Uint8Array || AtobOnlyUint8Array,
     Event: class {
       constructor(type) {
         this.type = type;
@@ -236,7 +245,20 @@ function makeHarness(options = {}) {
   const params = Object.keys(sandboxGlobals);
   const fn = new Function(...params, `"use strict";\n${bridgeSrc}`);
   fn(...params.map((k) => sandboxGlobals[k]));
-  return { window, listeners, document, head, mediaInput, docInput, menu, logs, warns, invocations, navigator: sandboxGlobals.navigator };
+  return {
+    window,
+    listeners,
+    document,
+    head,
+    mediaInput,
+    docInput,
+    menu,
+    logs,
+    warns,
+    invocations,
+    navigator: sandboxGlobals.navigator,
+    Uint8Array: sandboxGlobals.Uint8Array,
+  };
 }
 
 // Drive the feed the way window.rs stream_drop does.
@@ -307,6 +329,13 @@ async function testChunkReassemblyByteExact() {
   assert(!!file, "file arrived");
   assert(file && file.size === content.length, "size preserved across chunks");
   assert(file && file.bytes().equals(content), "bytes identical after reassembly");
+}
+
+function testHarnessIsolatesTheBase64Decoder() {
+  console.log("the harness does not leak the host's Uint8Array.fromBase64 into tests");
+  const { Uint8Array: U8 } = makeHarness();
+  assert(U8 !== Uint8Array, "harness shadows the host constructor");
+  assert(typeof U8.fromBase64 === "undefined", "default harness has no fromBase64 static");
 }
 
 async function testFromBase64FastPath() {
@@ -938,6 +967,7 @@ const tests = [
   testPureMediaGoesToMediaInput,
   testDistinctSameNamedFilesBothAttach,
   testChunkReassemblyByteExact,
+  testHarnessIsolatesTheBase64Decoder,
   testFromBase64FastPath,
   testChunksDecodeBeforeCommit,
   testIncompleteFileSkippedAbortHonored,
