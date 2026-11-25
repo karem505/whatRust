@@ -40,6 +40,8 @@ const SETTINGS_COMMANDS: &[&str] = &[
     "remove_account_photo",
     "open_contributor",
     "restart_app",
+    "export_backup",
+    "import_backup",
     "list_accounts",
     "add_account",
     "remove_account",

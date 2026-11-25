@@ -254,6 +254,8 @@ pub fn run() {
             commands::change_app_lock_password,
             commands::disable_app_lock,
             commands::restart_app,
+            commands::export_backup,
+            commands::import_backup,
             commands::set_app_lock_options,
             commands::set_biometric_enabled,
             commands::lock_app,

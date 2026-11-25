@@ -110,6 +110,25 @@ function syncQuietRow() {
   document.getElementById("quiet_times_row").hidden = !document.getElementById("quiet_hours").checked;
 }
 
+async function exportBackup() {
+  try {
+    if (await invoke("export_backup")) flash("Backup salvo ✓", 2500);
+  } catch (e) { flash(String(e), 6000); }
+}
+
+async function importBackup() {
+  try {
+    const added = await invoke("import_backup");
+    if (added === null || added === undefined) return;
+    await load();
+    if (added > 0 && await Dlg.confirm(t("Backup restaurado. {0} conta(s) nova(s) abrem após reiniciar e pedem o QR code.", [added]), { title: "Reiniciar agora?", okLabel: "Reiniciar" })) {
+      await invoke("restart_app");
+    } else {
+      flash("Backup restaurado ✓", 2500);
+    }
+  } catch (e) { flash(String(e), 6000); }
+}
+
 async function load() {
   const s = await invoke("get_settings");
   setMacRows(s.platform === "macos");
@@ -463,6 +482,8 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("title_bar").addEventListener("change", save);
   document.getElementById("rendering").addEventListener("change", save);
   document.getElementById("quiet_hours").addEventListener("change", syncQuietRow);
+  document.getElementById("export_backup").addEventListener("click", exportBackup);
+  document.getElementById("import_backup").addEventListener("click", importBackup);
   // The zoom shortcuts change it from the WhatsApp window; catch up on return.
   window.addEventListener("focus", () => {
     invoke("get_settings").then((s) => {

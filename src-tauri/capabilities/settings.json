@@ -13,6 +13,8 @@
     "allow-remove-account-photo",
     "allow-open-contributor",
     "allow-restart-app",
+    "allow-export-backup",
+    "allow-import-backup",
     "allow-list-accounts",
     "allow-add-account",
     "allow-remove-account",
