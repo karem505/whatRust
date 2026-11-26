@@ -37,6 +37,8 @@
 - [Limitations](#limitations)
 - [Star history](#star-history)
 - [Contributing](#contributing)
+- [Privacy](#privacy)
+- [Code signing policy](#code-signing-policy)
 - [Disclaimer](#disclaimer)
 - [License](#license)
 
@@ -336,6 +338,20 @@ whatRust passed **300 GitHub stars** in November 2026, and almost half of them c
 ## Contributing
 
 Contributions to this open-source WhatsApp client are welcome — open an issue or a pull request on [GitHub](https://github.com/karem505/whatRust). [CONTRIBUTING.md](CONTRIBUTING.md) has the build steps, the checks CI runs on every pull request, and what a good bug report includes (suggested in [#94](https://github.com/karem505/whatRust/issues/94) by @nishujangra).
+
+## Privacy
+
+whatRust collects no data and has no telemetry. It loads the official `web.whatsapp.com` page, and your chats stay between that page and WhatsApp's servers. The only other request it makes is the update check, which reads the latest release from GitHub's public API (`api.github.com`). Settings, logs and account profiles are stored only on your computer.
+
+## Code signing policy
+
+Windows builds are code signed for free through the [SignPath Foundation](https://signpath.org) program: free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org) (application in progress; see [#70](https://github.com/karem505/whatRust/issues/70)).
+
+- Committers and reviewers: [karem505](https://github.com/karem505) (community pull requests are reviewed before they are merged)
+- Approvers: [karem505](https://github.com/karem505)
+- Every release is built by GitHub Actions from the tagged source in this repository ([`release.yml`](.github/workflows/release.yml)).
+
+This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it (see [Privacy](#privacy)).
 
 ## Disclaimer
 
