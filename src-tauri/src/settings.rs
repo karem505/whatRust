@@ -575,8 +575,9 @@ mod tests {
         let off: Settings =
             serde_json::from_str(r#"{"show_unread_counts":false,"show_profile_picker":false}"#)
                 .unwrap();
-        assert!(!off.sanitized().show_unread_counts);
-        assert!(!off.sanitized().show_profile_picker);
+        let off = off.sanitized();
+        assert!(!off.show_unread_counts);
+        assert!(!off.show_profile_picker);
     }
 
     #[test]
