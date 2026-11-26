@@ -16,7 +16,7 @@ function check(name, fn) {
 }
 
 // Text that is the same in both languages, or a proper name.
-const SAME = new Set(["whatRust", "WhatsApp", "OK", "Português (Brasil)", "English", "Español", "⇄", "⋮", "⚙",
+const SAME = new Set(["whatRust", "WhatsApp", "OK", "Português (Brasil)", "English", "Español", "العربية", "Bahasa Indonesia", "⇄", "⋮", "⚙",
   "CmdOrCtrl+Shift+W", "CmdOrCtrl+Shift+B", "Cmd/Ctrl+Shift+W", "Cmd/Ctrl+Shift+B", "whatrust --toggle", "Esc", "SOCKS5", "HTTP", "127.0.0.1", "1080"]);
 
 function visibleTexts(html) {
@@ -87,18 +87,44 @@ check("every language option is offered", () => {
   assert.match(html, /<option value="pt-BR">/);
   assert.match(html, /<option value="en">/);
   assert.match(html, /<option value="es">/);
+  assert.match(html, /<option value="ar">/);
+  assert.match(html, /<option value="id">/);
 });
 
-check("Spanish has an entry for every English key, with the same placeholders", () => {
-  const { ES } = I18n;
-  const missing = Object.keys(EN).filter((k) => !(k in ES));
-  const extra = Object.keys(ES).filter((k) => !(k in EN));
-  assert.deepEqual(missing, [], "no Spanish entry");
-  assert.deepEqual(extra, [], "Spanish entry with no English one");
-  for (const [pt, es] of Object.entries(ES)) {
-    for (let i = 0; i < 4; i++) {
-      assert.equal(pt.includes(`{${i}}`), es.includes(`{${i}}`), `placeholder {${i}} in "${pt}"`);
+// English is mandatory; the other languages may lag behind (a missing key falls
+// back to English) but must not carry stale keys or broken placeholders.
+for (const [name, table] of [["Spanish", I18n.ES], ["Arabic", I18n.AR], ["Indonesian", I18n.ID]]) {
+  check(`${name} has no stale keys and keeps the placeholders`, () => {
+    const extra = Object.keys(table).filter((k) => !(k in EN));
+    assert.deepEqual(extra, [], `${name} entry with no English one`);
+    for (const [pt, text] of Object.entries(table)) {
+      for (let i = 0; i < 4; i++) {
+        assert.equal(pt.includes(`{${i}}`), text.includes(`{${i}}`), `placeholder {${i}} in "${pt}"`);
+      }
     }
+  });
+}
+
+check("Arabic and Indonesian are present, translate and fall back to English", () => {
+  const { AR, ID } = I18n;
+  assert.ok(Object.keys(AR).length > 200 && Object.keys(ID).length > 200);
+  assert.equal(AR["Cancelar"], "إلغاء");
+  assert.equal(ID["Cancelar"], "Batal");
+  assert.equal(AR["Configurações"], "الإعدادات");
+});
+
+check("only Arabic is right to left", () => {
+  const html = read("i18n.js");
+  assert.match(html, /function dir\(c\) \{ return c === "ar" \? "rtl" : "ltr"; \}/);
+  assert.match(html, /document\.documentElement\.dir = dir\(lang\)/);
+  assert.equal(I18n.dir(), "ltr");
+});
+
+check("the stylesheets use logical properties for left/right", () => {
+  for (const f of ["style.css", "dialog.css"]) {
+    const css = read(f);
+    assert.doesNotMatch(css, /text-align:\s*(left|right)/, f);
+    assert.doesNotMatch(css, /\b(margin|padding|border)-(left|right)\b/, f);
   }
 });
 

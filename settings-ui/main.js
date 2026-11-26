@@ -1,5 +1,5 @@
 const invoke = window.__TAURI__.core.invoke;
-const LANGS = ["pt-BR", "en", "es"];
+const LANGS = ["pt-BR", "en", "es", "ar", "id"];
 const BOOLS = ["close_to_tray", "start_minimized", "autostart", "notifications", "notification_sound", "suppress_web_notification_sounds", "hotkey_enabled", "blur_hotkey_enabled", "menu_bar_icon", "menubar_only", "hide_dock_icon", "notify_when_focused", "notify_active_chat", "respect_muted", "quiet_hours", "single_window", "auto_update_check", "auto_update_install", "hide_app_banner", "page_overlays"];
 const ZOOM_DEFAULT = 1;
 const SINGLE_WINDOW_SUBTITLE = "Uma janela com um seletor de contas; as contas ocultas continuam conectadas. Requer reiniciar o whatRust.";
@@ -339,7 +339,8 @@ function accountMenu(a, accounts, anchor) {
     menu.style.maxHeight=Math.max(40,Math.min(innerHeight-24,down?below:above))+"px";
     const height=menu.getBoundingClientRect().height;
     const top=down?r.bottom+gap:r.top-height-gap;
-    menu.style.left=Math.max(padding,Math.min(r.right-m.width,innerWidth-m.width-padding))+"px";
+    const edge=document.documentElement.dir==="rtl"?r.left:r.right-m.width;
+    menu.style.left=Math.max(padding,Math.min(edge,innerWidth-m.width-padding))+"px";
     menu.style.top=Math.max(padding,Math.min(top,innerHeight-height-padding))+"px";
   }
   menu.addEventListener("toggle",e=>{menu.dataset.open=String(e.newState==="open");anchor.setAttribute("aria-expanded",String(e.newState==="open"));if(e.newState==="closed")afterClose();});

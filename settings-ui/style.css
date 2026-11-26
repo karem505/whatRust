@@ -58,7 +58,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .app-header span { font-size: 12px; color: var(--dim); }
 .app-header button { color: var(--dim); font-weight: 400; }
 .settings-layout { display: flex; flex: 1; min-height: 0; overflow: hidden; }
-.settings-nav { flex: 0 0 300px; padding: 12px 8px; display: flex; flex-direction: column; gap: 4px; border-right: 1px solid var(--border); }
+.settings-nav { flex: 0 0 300px; padding: 12px 8px; display: flex; flex-direction: column; gap: 4px; border-inline-end: 1px solid var(--border); }
 .settings-nav a { display: flex; align-items: center; gap: 24px; padding: 16px 20px; border-radius:8px; min-height:56px; font-size: 15px; color: inherit; text-decoration: none; }
 .settings-nav a:hover, .settings-nav a[aria-current=page] { background: var(--hover); }
 .settings-nav svg { width: 22px; height: 22px; stroke: var(--dim); fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
@@ -80,12 +80,14 @@ label.row { cursor: pointer; }
 .entry-row input { flex: 1; min-width: 0; }
 input[type=text], input[type=password], input[type=number], select { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; background: transparent; color: inherit; }
 input[type=number] { width: 80px; }
-select { min-width: 120px; appearance: none; -webkit-appearance: none; padding-right: 36px; background-image: var(--chevron); background-repeat: no-repeat; background-position: right 12px center; background-size: 16px 16px; line-height: 1.4; }
+select { min-width: 120px; appearance: none; -webkit-appearance: none; padding-inline-end: 36px; background-image: var(--chevron); background-repeat: no-repeat; background-position: right 12px center; background-size: 16px 16px; line-height: 1.4; }
 select option { background: var(--bg); color: var(--fg); }
 .switch { appearance: none; -webkit-appearance: none; position: relative; width: 38px; height: 22px; margin: 0; flex: 0 0 38px; border: 0; border-radius: 12px; background: var(--switch-off); cursor: pointer; }
-.switch::before { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s; }
+.switch::before { content: ""; position: absolute; inset-inline-start: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s; }
 .switch:checked { background: var(--green); }
 .switch:checked::before { transform: translateX(16px); }
+[dir=rtl] .switch:checked::before { transform: translateX(-16px); }
+[dir=rtl] select { background-position: left 12px center; }
 .account-row { border-radius:8px; display: flex; align-items: center; min-height: 88px; gap: 15px; padding: 12px; }
 .account-row:hover { background:var(--hover); }
 .account-row:hover .account-avatar:not(.has-photo) { background: var(--control-hover); }
@@ -100,7 +102,7 @@ select option { background: var(--bg); color: var(--fg); }
 .contributors { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .contributors a { display: inline-block; padding: 6px 12px; border: 1px solid var(--border); border-radius: 16px; color: inherit; text-decoration: none; font-size: 13px; }
 .contributors a:hover { background: var(--hover); }
-.account-open { display: flex; flex: 1; min-width: 0; align-items: flex-start; flex-direction: column; gap: 5px; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; }
+.account-open { display: flex; flex: 1; min-width: 0; align-items: flex-start; flex-direction: column; gap: 5px; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: start; }
 .acct-name { font-size: 16px; max-width: 100%; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .acct-subtitle { font-size: 13px; color: var(--dim); font-weight: 400; }
 .account-more { display: grid; place-items: center; flex: 0 0 40px; font-size: 26px; line-height: 1; width: 40px; height: 40px; border-radius: 50%; padding: 0; color: var(--dim); background: transparent; transition: background-color .12s, color .12s; }
@@ -109,7 +111,7 @@ select option { background: var(--bg); color: var(--fg); }
 @media(prefers-reduced-motion:reduce) { .account-more { transition:none; } }
 .acct-unread { background: var(--green); color: var(--on-green); font-size: 12px; padding: 2px 7px; border-radius: 10px; }
 .account-actions { position: fixed; inset: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--fg); box-shadow: 0 2px 12px #0004; padding: 6px 0; width: 245px; max-width:calc(100vw - 24px); margin: 0; max-height: calc(100vh - 24px);overflow-y:auto;overscroll-behavior:contain; }
-.account-actions button { display: block; width: 100%; border-radius: 0; background: transparent; color: inherit; text-align: left; font-size: 14px; font-weight: 400; padding: 12px 22px; }
+.account-actions button { display: block; width: 100%; border-radius: 0; background: transparent; color: inherit; text-align: start; font-size: 14px; font-weight: 400; padding: 12px 22px; }
 .account-actions button:hover, .account-actions button:focus-visible { background: var(--hover); }
 .account-actions .danger { color: var(--danger); }
 .add-row { display: flex; gap: 10px; margin-top: 20px; }
@@ -119,7 +121,7 @@ select option { background: var(--bg); color: var(--fg); }
 .recording { outline: 2px dashed var(--green); }
 .hotkey-hint { font-size: 13px; color: var(--warn); }
 .footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 24px; border-top: 1px solid var(--border); }
-.footer button { padding: 10px 24px; margin-left: auto; }
+.footer button { padding: 10px 24px; margin-inline-start: auto; }
 .note { font-size: 13px; color: var(--green); }
 .prefs h3 { font-size: 14px; margin: 24px 0 6px; }
 @media(max-width:900px) { .settings-nav { flex-basis: 220px; } .settings-nav a { padding: 16px 20px; gap: 18px; } .prefs { padding: 26px 24px; } }
@@ -157,7 +159,7 @@ select option { background: var(--bg); color: var(--fg); }
 .notes { font-size: 13px; line-height: 1.55; max-height: 320px; overflow-y: auto; padding: 4px 0; overflow-wrap: anywhere; }
 .notes h4 { margin: 14px 0 4px; font-size: 14px; }
 .notes p { margin: 6px 0; }
-.notes ul { margin: 6px 0; padding-left: 20px; }
+.notes ul { margin: 6px 0; padding-inline-start: 20px; }
 .notes code, .notes pre { font: 12px ui-monospace, Menlo, Consolas, monospace; background: var(--hover); border-radius: 4px; }
 .notes code { padding: 1px 4px; }
 .notes pre { padding: 8px 10px; overflow-x: auto; white-space: pre-wrap; }
