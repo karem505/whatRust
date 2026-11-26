@@ -332,14 +332,20 @@ pub fn from_event(
     let s = crate::settings::load(app);
     let id = event_id();
     let r = app.state::<Recent>();
-    if let Some(reason) = suppression(
-        &s,
-        crate::lock::is_unlocked(app),
-        focused,
-        active,
-        source,
-        muted,
-    ) {
+    // Per-account switch (issues #118, #103). Tests from Settings still show.
+    let account_off = (source != Source::Test
+        && !crate::accounts::notifications_on(&crate::accounts::load(app), label))
+    .then_some("account_notifications_disabled");
+    if let Some(reason) = account_off.or_else(|| {
+        suppression(
+            &s,
+            crate::lock::is_unlocked(app),
+            focused,
+            active,
+            source,
+            muted,
+        )
+    }) {
         r.record(label, &id, source, "suppressed", Some(reason));
         crate::dlog::log(&format!("notification: {source:?} suppressed ({reason})"));
         #[cfg(windows)]
@@ -373,12 +379,12 @@ pub fn from_event(
     );
     #[cfg(not(windows))]
     {
-        use tauri_plugin_notification::NotificationExt;
-        let mut b = app.notification().builder().title(title).body(body);
-        if let Some(p) = icon {
-            b = b.icon(p.to_string_lossy());
-        }
-        r.finish(label, &id, identity, b.show().is_ok());
+        r.finish(
+            label,
+            &id,
+            identity,
+            os_notify(app, &title, &body, icon.as_deref()),
+        );
     }
 }
 fn attributed_title(app: &AppHandle, label: &str, title: &str) -> String {
@@ -508,13 +514,64 @@ pub fn show_with_icon(app: &AppHandle, title: &str, body: &str, icon: Option<&Pa
     );
     #[cfg(not(windows))]
     {
-        use tauri_plugin_notification::NotificationExt;
-        let mut b = app.notification().builder().title(title).body(body);
-        if let Some(p) = icon {
-            b = b.icon(p.to_string_lossy());
-        }
-        let _ = b.show();
+        let _ = os_notify(app, title, body, icon);
     }
+}
+
+/// The desktop file id GNOME and KDE match a notification to, without the
+/// `.desktop` suffix. It must be the name of the desktop file the package
+/// installed, or GNOME treats the sender as an unknown app and lists the
+/// notification without ever showing a banner (issue #119).
+/// - Flatpak: the Flatpak id.
+/// - AppImage: `whatrust`, the entry `install.sh` writes.
+/// - Otherwise (.deb/.rpm): `whatRust`, named after Tauri's productName.
+#[cfg(any(target_os = "linux", test))]
+fn desktop_entry(flatpak_id: Option<&str>, appimage: bool) -> String {
+    match (flatpak_id, appimage) {
+        (Some(id), _) => id.to_string(),
+        (None, true) => "whatrust".to_string(),
+        (None, false) => "whatRust".to_string(),
+    }
+}
+
+/// Linux: send through notify-rust directly so the notification names its
+/// desktop file (`desktop-entry`), uses normal urgency and the instant-message
+/// category. The notification plugin sends none of these.
+#[cfg(target_os = "linux")]
+fn os_notify(_app: &AppHandle, title: &str, body: &str, icon: Option<&Path>) -> bool {
+    use notify_rust::{Hint, Notification, Urgency};
+    let mut n = Notification::new();
+    n.appname("whatRust")
+        .summary(title)
+        .body(body)
+        .hint(Hint::DesktopEntry(desktop_entry(
+            crate::settings::flatpak_id().as_deref(),
+            std::env::var_os("APPIMAGE").is_some(),
+        )))
+        .hint(Hint::Urgency(Urgency::Normal))
+        .hint(Hint::Category("im.received".into()));
+    match icon {
+        Some(p) => n.icon(&p.to_string_lossy()),
+        None => n.auto_icon(),
+    };
+    match n.show() {
+        Ok(_) => true,
+        Err(e) => {
+            crate::dlog::log(&format!("notification: desktop service refused it ({e})"));
+            false
+        }
+    }
+}
+
+/// macOS: the notification plugin.
+#[cfg(target_os = "macos")]
+fn os_notify(app: &AppHandle, title: &str, body: &str, icon: Option<&Path>) -> bool {
+    use tauri_plugin_notification::NotificationExt;
+    let mut b = app.notification().builder().title(title).body(body);
+    if let Some(p) = icon {
+        b = b.icon(p.to_string_lossy());
+    }
+    b.show().is_ok()
 }
 #[derive(Clone)]
 #[cfg(windows)]
@@ -870,6 +927,15 @@ fn windows_toast(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn desktop_entry_names_the_installed_desktop_file() {
+        assert_eq!(
+            desktop_entry(Some("io.github.karem505.whatRust"), false),
+            "io.github.karem505.whatRust"
+        );
+        assert_eq!(desktop_entry(None, true), "whatrust");
+        assert_eq!(desktop_entry(None, false), "whatRust");
+    }
     #[test]
     fn notification_xml_cannot_be_broken_by_message_content() {
         assert_eq!(escape_xml("<&\"'\0"), "&lt;&amp;&quot;&apos;");

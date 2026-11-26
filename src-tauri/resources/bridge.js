@@ -631,17 +631,42 @@
     lastTitle = document.title;
     invoke("set_unread", { title: document.title, settled: Date.now() - pageStart > SETTLE_MS });
   }
+  // WhatsApp rewrites the title itself whenever its own unread state changes
+  // (new message, opening a chat, "Mark all as read"), so the title is the
+  // page's own count. The old code only watched the <title> node and polled
+  // every 2 s, so a swapped <title> node or a quick change could leave the
+  // badge stale (issue #98). Now: watch <title>, watch <head> (catches a
+  // replaced <title>), and re-read the title as soon as the chat list changes
+  // (debounced), so the badge follows within a fraction of a second. The
+  // poll is only a last resort.
+  var UNREAD_DEBOUNCE_MS = 120;
+  var unreadTimer = null;
+  function reportSoon() {
+    if (unreadTimer !== null) return;
+    unreadTimer = setTimeout(function () {
+      unreadTimer = null;
+      report();
+    }, UNREAD_DEBOUNCE_MS);
+  }
+  window.__whatrustReportUnread = report;
   function start() {
     try {
+      var opts = { childList: true, characterData: true, subtree: true };
       var el = document.querySelector("title");
-      if (el) {
-        new MutationObserver(report).observe(el, {
-          childList: true,
-          characterData: true,
-          subtree: true,
-        });
+      if (el) new MutationObserver(report).observe(el, opts);
+      if (document.head) new MutationObserver(report).observe(document.head, { childList: true, subtree: true, characterData: true });
+      // The chat list is built after load: attach once it exists.
+      var paneWatched = false;
+      function watchPane() {
+        if (paneWatched) return;
+        var pane = document.querySelector("#pane-side");
+        if (!pane) return;
+        paneWatched = true;
+        new MutationObserver(reportSoon).observe(pane, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["aria-label", "class"] });
       }
-      setInterval(report, 2000); // fallback if <title> node is swapped
+      watchPane();
+      setInterval(function () { watchPane(); report(); }, 500);
+      if (document.addEventListener) document.addEventListener("visibilitychange", report);
       report();
     } catch (e) {}
   }

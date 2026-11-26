@@ -30,6 +30,14 @@ pub struct Account {
     pub order: u32,
     #[serde(default)]
     pub store_uuid: Option<[u8; 16]>,
+    /// Per-account switch for OS notifications and WhatsApp's alert tones.
+    /// On by default; files written before it existed read as on.
+    #[serde(default = "default_true")]
+    pub notifications: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// The persisted accounts file. `next_seq` is a monotonic counter so a removed-then
@@ -52,6 +60,7 @@ impl Default for AccountsFile {
                 name: "WhatsApp".to_string(),
                 order: 0,
                 store_uuid: None,
+                notifications: true,
             }],
             next_seq: 1,
             startup_account: None,
@@ -79,6 +88,7 @@ pub fn add(f: &mut AccountsFile, name: &str) -> Account {
         name: name.to_string(),
         order,
         store_uuid: Some(gen_store_uuid()),
+        notifications: true,
     };
     f.accounts.push(acct.clone());
     acct
@@ -123,6 +133,23 @@ pub fn rename(f: &mut AccountsFile, id: &str, name: &str) -> Result<(), String> 
     };
     acct.name = name.to_string();
     Ok(())
+}
+
+/// Turn one account's notifications on or off. Errors if the id is unknown.
+pub fn set_notifications(f: &mut AccountsFile, id: &str, on: bool) -> Result<(), String> {
+    let Some(acct) = f.accounts.iter_mut().find(|a| a.id == id) else {
+        return Err(trf("Conta não encontrada: {0}", &[&id]));
+    };
+    acct.notifications = on;
+    Ok(())
+}
+
+/// Whether the account behind a window label may notify. Unknown accounts
+/// count as on, so a stale label never swallows a message.
+pub fn notifications_on(f: &AccountsFile, label: &str) -> bool {
+    id_from_label(label)
+        .and_then(|id| f.accounts.iter().find(|a| a.id == id))
+        .is_none_or(|a| a.notifications)
 }
 
 /// Exact permutation only: no omitted or repeated accounts.
@@ -298,6 +325,30 @@ pub fn gen_store_uuid() -> [u8; 16] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notifications_default_on_and_old_files_read_as_on() {
+        let f = AccountsFile::default();
+        assert!(notifications_on(&f, "wa-default"));
+        let old: AccountsFile = serde_json::from_str(
+            r#"{"accounts":[{"id":"default","name":"WhatsApp","order":0}],"next_seq":1}"#,
+        )
+        .unwrap();
+        assert!(old.accounts[0].notifications);
+    }
+
+    #[test]
+    fn notifications_switch_is_per_account_and_roundtrips() {
+        let mut f = AccountsFile::default();
+        let other = add(&mut f, "Work");
+        set_notifications(&mut f, &other.id, false).unwrap();
+        assert!(notifications_on(&f, "wa-default"));
+        assert!(!notifications_on(&f, &window_label(&other.id)));
+        assert!(notifications_on(&f, "wa-unknown"));
+        assert!(set_notifications(&mut f, "nope", false).is_err());
+        let back: AccountsFile = serde_json::from_str(&serde_json::to_string(&f).unwrap()).unwrap();
+        assert_eq!(back, f);
+    }
 
     #[test]
     fn reorder_requires_an_exact_permutation_without_changing_profiles() {

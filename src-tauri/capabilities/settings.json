@@ -19,6 +19,7 @@
     "allow-add-account",
     "allow-remove-account",
     "allow-rename-account",
+    "allow-set-account-notifications",
     "allow-open-account",
     "allow-set-default-account",
     "allow-get-lock-status",

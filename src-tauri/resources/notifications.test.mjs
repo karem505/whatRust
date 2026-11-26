@@ -71,7 +71,8 @@ test('a throwing privacy mask never drops the notification', () => {
 
 test('unread initialization, changes and clearing reach Rust without repeating unchanged titles', () => {
   const { document, calls, intervals } = harness();
-  const poll = intervals.find(timer => timer.delay === 2000).callback;
+  const polls = intervals.filter(timer => timer.delay === 500).map(timer => timer.callback);
+  const poll = () => polls.forEach(callback => { try { callback(); } catch {} });
   poll();
   document.title = '(4) WhatsApp'; poll();
   document.title = 'WhatsApp'; poll(); poll();

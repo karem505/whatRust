@@ -37,6 +37,9 @@ webkit2gtk = "=2.0.2"
 # recovery bar (GtkBox child packing). Same 0.18 line wry uses.
 gtk = "0.18"
 zbus = "5"
+# Already in the tree through tauri-plugin-notification (same default features);
+# named directly so Linux notifications can carry the desktop-entry hint (#119).
+notify-rust = "4.11"
 zbus_polkit = "5.0.0"
 
 [target.'cfg(windows)'.dependencies]

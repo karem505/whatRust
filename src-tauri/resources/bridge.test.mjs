@@ -196,7 +196,8 @@ function makeHarness(options = {}) {
       return [];
     },
     querySelector(sel) {
-      if (sel === "title") return null;
+      if (sel === "title") return options.titleEl || null;
+      if (sel === "#pane-side") return options.paneEl || null;
       if (options.lazyInputs) {
         if (sel === '[data-icon="plus"]') return plusButton;
         const first = this.querySelectorAll(sel)[0];
@@ -251,7 +252,7 @@ function makeHarness(options = {}) {
         this.type = type;
       }
     },
-    MutationObserver: class {
+    MutationObserver: options.MutationObserver || class {
       observe() {}
     },
     atob: options.atob || ((s) => Buffer.from(s, "base64").toString("binary")),
@@ -264,7 +265,7 @@ function makeHarness(options = {}) {
       return t;
     },
     clearTimeout,
-    setInterval: () => 0,
+    setInterval: options.setInterval || (() => 0),
   };
   // Evaluate bridge.js with our stubs shadowing the real globals.
   const params = Object.keys(sandboxGlobals);
@@ -751,6 +752,34 @@ async function testUnreadReportsSayWhenThePageHasSettled() {
   assert(first && first.args.settled === false, "the first report after load is not settled");
 }
 
+async function testUnreadFollowsTitleAndChatListImmediately() {
+  console.log("unread follows WhatsApp's title and chat-list changes at once (#98)");
+  const observers = [];
+  class Obs {
+    constructor(cb) { this.cb = cb; }
+    observe(target) { observers.push({ target, cb: this.cb }); }
+  }
+  const titleEl = { name: "title" };
+  const paneEl = { name: "pane" };
+  const { document, invocations } = makeHarness({ MutationObserver: Obs, titleEl, paneEl });
+  const sent = () => invocations.filter((x) => x.cmd === "set_unread").map((x) => x.args.title);
+  assert(observers.some((o) => o.target === titleEl), "the <title> node is watched");
+  assert(observers.some((o) => o.target === document.head), "<head> is watched, so a replaced <title> is seen");
+  assert(observers.some((o) => o.target === paneEl), "the chat list is watched");
+  document.title = "(3) WhatsApp";
+  observers.find((o) => o.target === titleEl).cb();
+  assert(sent().includes("(3) WhatsApp"), "a title change is reported without waiting for a poll");
+  // 'Mark all as read': the title loses its count and the chat list mutates.
+  document.title = "WhatsApp";
+  observers.find((o) => o.target === paneEl).cb();
+  await sleep(250);
+  assert(sent().at(-1) === "WhatsApp", "a chat-list change re-reads the title and clears the count");
+  const before = sent().length;
+  observers.find((o) => o.target === paneEl).cb();
+  await sleep(250);
+  assert(sent().length === before, "an unchanged title is not reported again");
+}
+
 async function testWindowsNativePreferenceAndFallback() {
   let nativeCalls=0;
   const healthy=makeHarness({windows:true,preferNative:true,nativeNotification:class {static permission="granted";constructor(){nativeCalls++;}}});
@@ -1050,6 +1079,7 @@ const tests = [
   testDownloadToastOffersOpenAndShowInFolder,
   testRiskyDownloadsAndFailures,
   testChromeShimsOnlyForAChromeUserAgent,
+  testUnreadFollowsTitleAndChatListImmediately,
   testNotificationsReachTheNativeNotifyCommand,
   testNotificationPictureIsForwardedAsPng,
   testNotificationSoundMutesAlertTones,
