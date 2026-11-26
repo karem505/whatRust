@@ -160,6 +160,12 @@ macro_rules! account_webview {
             ))
             .initialization_script(include_str!("../resources/integration.js"))
             .initialization_script(BRIDGE_JS)
+            // Opt-in: block only automatic page chimes, not native OS notifications.
+            .initialization_script(if crate::settings::load($app).suppress_web_notification_sounds {
+                include_str!("../resources/suppress-web-notification-sounds.js")
+            } else {
+                ""
+            })
             .initialization_script(MEDIA_JS)
             .initialization_script(include_str!("../resources/privacy.js"))
             .initialization_script(if crate::settings::load($app).hide_app_banner {

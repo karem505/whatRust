@@ -63,6 +63,7 @@ node --test src-tauri/resources/upsell.test.mjs
 node src-tauri/resources/media.test.mjs
 node --test src-tauri/resources/media-audio.test.mjs
 node settings-ui/notes.test.mjs
+node --test tests/suppress-web-notification-sounds.test.js
 ```
 
 Things that often fail only on the other operating systems:

@@ -12,7 +12,7 @@
   border-radius: 12px; box-shadow: 0 14px 44px #0007;
   background: var(--card,#fff); color: var(--fg,#0a0a0a);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  font-size: 14px; text-align: left;
+  font-size: 14px; text-align: start;
 }
 @media (prefers-color-scheme: dark) {
   .dlg { background: var(--card,#232626); color: var(--fg,#fafafa); }

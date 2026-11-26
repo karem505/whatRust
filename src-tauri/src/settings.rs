@@ -21,6 +21,8 @@ pub struct Settings {
     pub notify_when_focused: bool,
     pub notify_active_chat: bool,
     pub respect_muted: bool,
+    /// Opt-in: suppress auto-played WhatsApp Web notification chimes.
+    pub suppress_web_notification_sounds: bool,
     /// macOS only: the app lives in the menu bar, no Dock icon and no
     /// standard window. Every account stays connected in the background and
     /// opens as a panel from the tray. Off by default. Ignored on other platforms.
@@ -39,8 +41,8 @@ pub struct Settings {
     /// Dock icon brings a hidden window back. Windows and Linux always show the
     /// tray icon, since there it is the only way back to a hidden window.
     pub menu_bar_icon: bool,
-    /// Interface language: `en` or `pt-BR`. Defaults to the OS language
-    /// (Portuguese for a Portuguese system, English otherwise).
+    /// Interface language: `en`, `pt-BR`, `es`, `ar` or `id`. Defaults to the OS language
+    /// (Portuguese, Spanish, Arabic or Indonesian for such a system, English otherwise).
     pub language: String,
     /// Folder downloads are saved to (issue #40). `None` keeps the OS Downloads
     /// folder. Checked when saved and again before each download; a folder that
@@ -65,6 +67,9 @@ pub struct Settings {
     /// fallback buttons do nothing useful; `show` / `hide` force it.
     /// Ignored on macOS and Windows. See `decorations`.
     pub title_bar: String,
+    /// Theme: `system` (default, follows WhatsApp and the OS), `light` or
+    /// `dark`. Applies immediately. See `theme`.
+    pub theme: String,
     /// Linux: `auto` uses the GPU, except on GPUs too old for WebKit's GPU
     /// compositor; `software` always renders in software (issue #87). Read at
     /// startup, so a change applies after a restart. See `gpu`.
@@ -103,6 +108,7 @@ impl Default for Settings {
             notify_when_focused: true,
             notify_active_chat: true,
             respect_muted: true,
+            suppress_web_notification_sounds: false,
             menubar_only: false,
             single_window: false,
             hide_dock_icon: false,
@@ -117,6 +123,7 @@ impl Default for Settings {
             auto_update_check: true,
             auto_update_install: true,
             title_bar: crate::decorations::AUTO.to_string(),
+            theme: crate::theme::SYSTEM.to_string(),
             rendering: RENDERING_AUTO.to_string(),
             hide_app_banner: true,
             page_overlays: true,
@@ -279,6 +286,7 @@ impl Settings {
         self.language = crate::i18n::sanitize_code(&self.language);
         self.download_dir = self.download_dir.filter(|d| !d.trim().is_empty());
         self.title_bar = crate::decorations::sanitize(&self.title_bar);
+        self.theme = crate::theme::sanitize(&self.theme);
         self.rendering = sanitize_rendering(&self.rendering);
         self.sleep_idle_hours = self.sleep_idle_hours.min(24 * 7);
         if parse_hhmm(&self.quiet_start).is_none() {
@@ -396,6 +404,7 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
     crate::window::apply_notification_sound(app, s.notification_sound);
     crate::appicon::apply(app, s.custom_icon, false);
     crate::decorations::apply_all(app, &s.title_bar);
+    crate::theme::apply(app, &s.theme);
 
     // Menu-bar mode is only available where a hidden WKWebView keeps running
     // (macOS 14+); elsewhere the setting is ignored rather than dropping every
@@ -556,6 +565,7 @@ mod tests {
         assert!(!s.notifications);
         assert!(s.notification_sound);
         assert!(s.notify_when_focused && s.notify_active_chat && s.respect_muted);
+        assert!(!s.suppress_web_notification_sounds);
     }
 
     #[cfg(target_os = "linux")]

@@ -33,6 +33,7 @@ mod sessions;
 mod settings;
 #[cfg(all(windows, debug_assertions))]
 mod smoke;
+mod theme;
 mod tray;
 mod ui_health;
 mod unread;

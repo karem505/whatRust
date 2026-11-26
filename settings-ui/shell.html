@@ -8,9 +8,9 @@
 header{height:48px;min-height:48px;flex:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 12px;border-bottom:1px solid var(--line)}
 svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .account-picker{position:relative;min-width:0;max-width:min(320px,65vw);height:40px;display:flex;align-items:center;border-radius:20px}.account-picker:hover,button:hover{background:var(--hover)}
-.account-picker>svg{position:absolute;left:8px;pointer-events:none}.account-picker>.chevron{left:auto;right:8px;width:16px;height:16px}
-select,button{font:inherit;border:0;background:transparent;color:inherit;cursor:pointer}select{position:absolute;inset:0;width:100%;appearance:none;min-width:0;max-width:100%;height:40px;padding:8px 32px 8px 40px;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;border-radius:20px}option{background:var(--bg);color:var(--fg)}
-.selected-size{font:inherit;visibility:hidden;white-space:pre;max-width:100%;overflow:hidden;height:40px;padding:8px 32px 8px 40px;pointer-events:none}
+.account-picker>svg{position:absolute;inset-inline-start:8px;pointer-events:none}.account-picker>.chevron{inset-inline-start:auto;inset-inline-end:8px;width:16px;height:16px}
+select,button{font:inherit;border:0;background:transparent;color:inherit;cursor:pointer}select{position:absolute;inset:0;width:100%;appearance:none;min-width:0;max-width:100%;height:40px;padding:8px;padding-inline:40px 32px;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;border-radius:20px}option{background:var(--bg);color:var(--fg)}
+.selected-size{font:inherit;visibility:hidden;white-space:pre;max-width:100%;overflow:hidden;height:40px;padding:8px;padding-inline:40px 32px;pointer-events:none}
 button{display:inline-flex;align-items:center;justify-content:center;gap:10px;flex:none;height:40px;min-width:40px;padding:8px 12px;border-radius:20px}
 button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 main{flex:1;min-height:0;display:grid;place-content:center;text-align:center;padding:24px}main>svg{width:64px;height:64px;margin:0 auto 24px;color:var(--dim);stroke-width:1}
