@@ -21,8 +21,8 @@ mod jsonfile;
 mod keys;
 mod links;
 mod lock;
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod memory;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod menubar;
 mod native_icon;
 mod notif_icon;
