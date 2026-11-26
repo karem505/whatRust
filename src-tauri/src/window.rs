@@ -299,7 +299,7 @@ macro_rules! account_webview {
                             });
                             return true;
                         }
-                        finish_download(webview, &url, success, path.clone(), false);
+                        finish_download(&webview, &url, success, path.clone(), false);
                     }
                     _ => {}
                 }
