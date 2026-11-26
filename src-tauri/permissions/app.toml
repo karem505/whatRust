@@ -12,7 +12,7 @@ description = "Manage settings and accounts from the bundled settings window."
 commands.allow = [
   "get_settings", "set_settings", "open_settings", "pick_download_dir", "choose_app_icon",
   "reset_app_icon", "set_account_photo", "remove_account_photo", "open_contributor", "list_accounts",
-  "add_account", "remove_account", "rename_account", "set_account_notifications", "open_account", "set_default_account",
+  "add_account", "remove_account", "rename_account", "open_account", "set_default_account",
   "get_lock_status", "set_app_lock_password", "change_app_lock_password",
   "disable_app_lock", "set_app_lock_options", "set_biometric_enabled", "lock_app",
   "get_update_status", "check_for_updates", "install_update", "restart_to_update", "open_release_page"
