@@ -1,4 +1,5 @@
-// Linux only (WebKitGTK): make attaching a video work.
+// Linux only (WebKitGTK): make attaching a video work, and keep WhatsApp's
+// sounds to one audio stream (sections 5 and 6).
 //
 // whatRust presents itself to WhatsApp Web as Chrome on Linux, so WhatsApp runs
 // its Chromium code paths on WebKitGTK, where three engine behaviours differ.
@@ -200,98 +201,195 @@
     note("not installed: " + e);
   }
 
-  // -- 5. give back the sound stream of an <audio> left paused -------------
+  // -- 5. one sound stream: give back the stream of an <audio> not playing --
   // WebKitGTK keeps one PulseAudio/PipeWire stream open for every <audio> that
   // was played and then paused, for as long as the page holds the element.
-  // WhatsApp keeps its UI sounds around paused, so the system volume mixer
-  // fills with dozens of idle «whatrust» entries (reproduced in a bare WebKitGTK
-  // 2.54 WebView: 5 paused elements = 5 streams). After the element has been
-  // paused for a while, drop its media (that closes the stream) and put the
-  // source back, at the same position, on the next play(). Only <audio> with
-  // a network or data URL: never blob: media (voice notes, which the page may
-  // revoke), never srcObject (calls), never <video>. The page keeps seeing its
-  // own src. (A shared audio mixer, WEBKIT_GST_ENABLE_AUDIO_MIXER, also fixes
-  // the stream count but crashed the web process when a voice note played.)
+  // WhatsApp keeps its UI sounds and every voice message it played around
+  // paused, so the system volume mixer filled with «whatrust» entries
+  // (reproduced in a bare WebKitGTK 2.54 WebView: 6 sounds played and paused =
+  // 5 open streams; one that ends by itself frees its own). Shortly after an
+  // element stops, drop its media (that closes the stream) and put the source
+  // back, at the same position, on the next play(). So a stream only exists
+  // while something is actually sounding.
+  // Voice messages are `blob:` URLs that the page may revoke while the element
+  // is parked: keep the Blob itself and reload it from a fresh URL of ours.
+  // Never srcObject (calls), never <video>. The page keeps seeing its own src,
+  // position and duration, and the reload's own events never reach it.
+  // (A shared audio mixer, WEBKIT_GST_ENABLE_AUDIO_MIXER, also gives one stream
+  // but crashed the web process when a voice note played. Routing the elements
+  // through one AudioContext does not help either: WebKit still opens a stream
+  // per element.)
   try {
     var AP = HTMLMediaElement.prototype;
     var asrc = Object.getOwnPropertyDescriptor(AP, "src");
     var nativePause = AP.pause, nativePlay = AP.play, nativeLoad = AP.load;
     var removeAttr = Element.prototype.removeAttribute;
-    if (!asrc || !asrc.get || !asrc.set || !nativePause || !nativePlay || !nativeLoad) {
+    if (typeof HTMLAudioElement !== "function" || !asrc || !asrc.get || !asrc.set || !nativePause || !nativePlay || !nativeLoad) {
       note("idle audio release: unsupported engine");
     } else {
-      var IDLE_MS = window.__whatrustIdleAudioMs || 20000;
-      var parked = new WeakMap(); // element -> { src, time }
+      var IDLE_MS = window.__whatrustIdleAudioMs || 1500;
+      var parked = new WeakMap(); // element -> { src, time, duration, blob }
+      var alias = new WeakMap();  // element playing from our own URL -> { pageSrc, own, blob }
       var timers = new WeakMap();
+      var quiet = new WeakMap();  // element -> { until, types } of our own reload
+      var hooked = new WeakSet();
+      var audioBlobs = new Map(), MAX_BLOBS = 256; // page blob: URL -> Blob
+      var createURL5 = URL.createObjectURL, revokeURL5 = URL.revokeObjectURL;
+      var released = 0;
+      URL.createObjectURL = function (blob) {
+        var url = createURL5.apply(this, arguments);
+        try {
+          if (blob && /^audio\//i.test(blob.type || "")) {
+            if (audioBlobs.size >= MAX_BLOBS) audioBlobs.delete(audioBlobs.keys().next().value);
+            audioBlobs.set(url, blob);
+          }
+        } catch (e) {}
+        return url;
+      };
+      URL.revokeObjectURL = function (url) {
+        try { audioBlobs.delete(url); } catch (e) {}
+        return revokeURL5.apply(this, arguments);
+      };
+      // Events of our own unload/reload. The page asked for neither.
+      var ON_RELEASE = ["emptied", "abort", "loadstart", "error", "suspend", "stalled", "durationchange", "timeupdate"];
+      var ON_RESTORE = ["emptied", "abort", "loadstart", "suspend", "stalled", "durationchange", "loadedmetadata", "loadeddata", "canplay", "canplaythrough", "seeking", "seeked"];
+      var ALL = ON_RELEASE.concat(ON_RESTORE).filter(function (t, i, a) { return a.indexOf(t) === i; });
+      var hook = function (el) {
+        if (hooked.has(el)) return;
+        hooked.add(el);
+        // At the target, capture listeners run before the page's own ones.
+        ALL.forEach(function (type) {
+          el.addEventListener(type, function (e) {
+            var q = quiet.get(el);
+            if (q && q.until > Date.now() && q.types.indexOf(e.type) >= 0) e.stopImmediatePropagation();
+          }, true);
+        });
+        // A sound that plays to its end (and is kept for later) is released too.
+        el.addEventListener("ended", function () { schedule(el); });
+      };
+      var hush = function (el, types, ms) { quiet.set(el, { until: Date.now() + ms, types: types }); };
+      var pageSrc = function (el) { var a = alias.get(el); return a ? a.pageSrc : asrc.get.call(el); };
+      var blobOf = function (el) { var a = alias.get(el); return a ? a.blob : audioBlobs.get(asrc.get.call(el)) || null; };
       var releasable = function (el) {
         if (!(el instanceof HTMLAudioElement) || !el.paused || el.srcObject) return false;
-        var u = asrc.get.call(el);
-        return typeof u === "string" && /^(https?|data):/i.test(u);
+        var u = pageSrc(el);
+        if (typeof u !== "string") return false;
+        if (/^(https?|data):/i.test(u)) return true;
+        return u.slice(0, 5) === "blob:" && !!blobOf(el);
       };
       var cancel = function (el) {
         var t = timers.get(el);
         if (t) { clearTimeout(t); timers.delete(el); }
       };
+      var unalias = function (el) {
+        var a = alias.get(el);
+        if (!a) return;
+        alias.delete(el);
+        try { revokeURL5.call(URL, a.own); } catch (e) {}
+      };
       var release = function (el) {
         timers.delete(el);
         if (parked.has(el) || !releasable(el)) return;
-        parked.set(el, { src: asrc.get.call(el), time: el.currentTime || 0 });
+        parked.set(el, { src: pageSrc(el), time: ct.get.call(el) || 0, duration: dur ? dur.get.call(el) : NaN, blob: blobOf(el) });
+        unalias(el);
+        hook(el);
+        hush(el, ON_RELEASE, 2000);
         removeAttr.call(el, "src");
         nativeLoad.call(el);
-        note("released an idle audio stream");
+        released++;
+        if (released === 1 || released % 50 === 0) note("released idle audio streams: " + released);
+      };
+      var schedule = function (el) {
+        if (!(el instanceof HTMLAudioElement) || parked.has(el)) return;
+        cancel(el);
+        timers.set(el, setTimeout(function () { release(el); }, IDLE_MS));
       };
       var restore = function (el) {
         var p = parked.get(el);
-        if (!p) return;
+        if (!p) return false;
         parked.delete(el);
-        asrc.set.call(el, p.src);
-        if (p.time > 0) { try { el.currentTime = p.time; } catch (e) {} }
+        var target = p.src;
+        if (p.blob && !audioBlobs.has(p.src)) {
+          // The page revoked its URL while the element was parked.
+          target = createURL5.call(URL, p.blob);
+          alias.set(el, { pageSrc: p.src, own: target, blob: p.blob });
+        }
+        asrc.set.call(el, target);
+        if (p.time > 0) { try { ct.set.call(el, p.time); } catch (e) {} }
+        return true;
       };
+      var forget = function (el) {
+        cancel(el);
+        parked.delete(el);
+        quiet.delete(el);
+        unalias(el);
+      };
+      var ct = Object.getOwnPropertyDescriptor(AP, "currentTime");
+      var dur = Object.getOwnPropertyDescriptor(AP, "duration");
+      if (!ct || !ct.get || !ct.set) throw new Error("no currentTime");
       AP.pause = function () {
         var r = nativePause.apply(this, arguments);
-        try {
-          if (this instanceof HTMLAudioElement && !parked.has(this)) {
-            cancel(this);
-            var el = this;
-            timers.set(el, setTimeout(function () { release(el); }, IDLE_MS));
-          }
-        } catch (e) {}
+        try { schedule(this); } catch (e) {}
         return r;
       };
       AP.play = function () {
-        try { cancel(this); restore(this); } catch (e) {}
+        try {
+          if (this instanceof HTMLAudioElement) {
+            hook(this);
+            cancel(this);
+            if (restore(this)) hush(this, ON_RESTORE, 1500);
+          }
+        } catch (e) {}
         return nativePlay.apply(this, arguments);
       };
       AP.load = function () {
-        try { cancel(this); restore(this); } catch (e) {}
+        try { cancel(this); restore(this); quiet.delete(this); } catch (e) {}
         return nativeLoad.apply(this, arguments);
       };
       Object.defineProperty(AP, "src", {
         configurable: true, enumerable: asrc.enumerable,
-        get: function () { var p = parked.get(this); return p ? p.src : asrc.get.call(this); },
+        get: function () { var p = parked.get(this); return p ? p.src : pageSrc(this); },
         set: function (v) {
-          try { cancel(this); parked.delete(this); } catch (e) {}
+          try { forget(this); } catch (e) {}
           return asrc.set.call(this, v);
         },
       });
+      Object.defineProperty(AP, "currentSrc", (function () {
+        var cs = Object.getOwnPropertyDescriptor(AP, "currentSrc");
+        return {
+          configurable: true, enumerable: cs ? cs.enumerable : true,
+          get: function () { var p = parked.get(this); if (p) return p.src; var a = alias.get(this); return a ? a.pageSrc : cs && cs.get ? cs.get.call(this) : ""; },
+        };
+      })());
       // While parked the element has no media: keep the page's position writes
       // (WhatsApp rewinds a sound to 0 before replaying it) for restore().
-      var ct = Object.getOwnPropertyDescriptor(AP, "currentTime");
-      if (ct && ct.get && ct.set) {
-        Object.defineProperty(AP, "currentTime", {
-          configurable: true, enumerable: ct.enumerable,
-          get: function () { var p = parked.get(this); return p ? p.time : ct.get.call(this); },
-          set: function (v) {
-            var p = parked.get(this);
-            if (p) { var n = Number(v); p.time = isFinite(n) && n > 0 ? n : 0; return; }
-            return ct.set.call(this, v);
-          },
+      Object.defineProperty(AP, "currentTime", {
+        configurable: true, enumerable: ct.enumerable,
+        get: function () { var p = parked.get(this); return p ? p.time : ct.get.call(this); },
+        set: function (v) {
+          var p = parked.get(this);
+          if (p) { var n = Number(v); p.time = isFinite(n) && n > 0 ? n : 0; return; }
+          return ct.set.call(this, v);
+        },
+      });
+      // A parked voice message still shows its length and counts as loaded.
+      if (dur && dur.get) {
+        Object.defineProperty(AP, "duration", {
+          configurable: true, enumerable: dur.enumerable,
+          get: function () { var p = parked.get(this); return p && isFinite(p.duration) ? p.duration : dur.get.call(this); },
+        });
+      }
+      var rs5 = Object.getOwnPropertyDescriptor(AP, "readyState");
+      if (rs5 && rs5.get) {
+        Object.defineProperty(AP, "readyState", {
+          configurable: true, enumerable: rs5.enumerable,
+          get: function () { return parked.has(this) ? 4 : rs5.get.call(this); },
         });
       }
       var setAttr5 = Element.prototype.setAttribute;
       Element.prototype.setAttribute = function (name, value) {
         try {
-          if (this instanceof HTMLMediaElement && String(name).toLowerCase() === "src") { cancel(this); parked.delete(this); }
+          if (this instanceof HTMLMediaElement && String(name).toLowerCase() === "src") forget(this);
         } catch (e) {}
         return setAttr5.call(this, name, value);
       };
@@ -299,5 +397,92 @@
     }
   } catch (e) {
     note("idle audio release not installed: " + e);
+  }
+
+  // -- 6. one AudioContext ------------------------------------------------
+  // Every live AudioContext is one more open stream in WebKitGTK, silent or
+  // not (bare WebKitGTK 2.54: 3 contexts = 3 «playing» streams until close()).
+  // WhatsApp makes several (call tones, voice recording, ...). Hand every
+  // `new AudioContext()` that does not ask for its own sample rate the same
+  // engine context, behind a handle that keeps its own close/suspend state.
+  // The engine context closes when the last handle does.
+  try {
+    var NativeAC = window.AudioContext || window.webkitAudioContext;
+    if (typeof NativeAC !== "function" || typeof Proxy !== "function") {
+      note("shared audio context: unsupported engine");
+    } else {
+      var shared = null, handles = new Set(), realOf = new WeakMap(), contexts = 0;
+      var unwrap = function (c) { return (c && realOf.get(c)) || c; };
+      var settle = function () {
+        if (!shared) return Promise.resolve();
+        var open = 0, running = 0;
+        handles.forEach(function (h) { if (!h.closed) { open++; if (!h.suspended) running++; } });
+        var real = shared;
+        if (open === 0) { shared = null; return real.close(); }
+        if (running === 0) return real.suspend();
+        return real.state === "suspended" ? real.resume() : Promise.resolve();
+      };
+      var makeHandle = function (real) {
+        var h = { closed: false, suspended: false };
+        var bound = new Map();
+        var proxy = new Proxy(real, {
+          get: function (t, prop) {
+            if (prop === "state") return h.closed ? "closed" : h.suspended ? "suspended" : t.state;
+            if (prop === "close") return function () {
+              if (h.closed) return Promise.resolve();
+              h.closed = true; handles.delete(h);
+              return settle().then(function () {});
+            };
+            if (prop === "suspend") return function () { if (h.closed) return Promise.reject(new DOMException("closed", "InvalidStateError")); h.suspended = true; return settle().then(function () {}); };
+            if (prop === "resume") return function () { if (h.closed) return Promise.reject(new DOMException("closed", "InvalidStateError")); h.suspended = false; return settle().then(function () {}); };
+            var v = Reflect.get(t, prop);
+            if (typeof v === "function") {
+              if (!bound.has(prop)) bound.set(prop, v.bind(t));
+              return bound.get(prop);
+            }
+            return v;
+          },
+          set: function (t, prop, value) { return Reflect.set(t, prop, value); },
+        });
+        handles.add(h);
+        realOf.set(proxy, real);
+        return proxy;
+      };
+      var SharedAC = function AudioContext(options) {
+        if (!new.target) throw new TypeError("Constructor AudioContext requires 'new'");
+        var own = options && options.sampleRate != null;
+        if (own || new.target !== SharedAC) return Reflect.construct(NativeAC, arguments, new.target === SharedAC ? NativeAC : new.target);
+        if (!shared || shared.state === "closed") {
+          shared = new NativeAC(options);
+          contexts++;
+          if (contexts === 1 || contexts % 20 === 0) note("shared audio context opened: " + contexts);
+        }
+        return makeHandle(shared);
+      };
+      SharedAC.prototype = NativeAC.prototype;
+      Object.setPrototypeOf(SharedAC, NativeAC);
+      window.AudioContext = SharedAC;
+      if (window.webkitAudioContext) window.webkitAudioContext = SharedAC;
+      // Node constructors (new GainNode(ctx), ...) need the engine context.
+      ["AnalyserNode", "AudioBufferSourceNode", "AudioWorkletNode", "BiquadFilterNode", "ChannelMergerNode", "ChannelSplitterNode",
+        "ConstantSourceNode", "ConvolverNode", "DelayNode", "DynamicsCompressorNode", "GainNode", "IIRFilterNode",
+        "MediaElementAudioSourceNode", "MediaStreamAudioDestinationNode", "MediaStreamAudioSourceNode", "OscillatorNode",
+        "PannerNode", "StereoPannerNode", "WaveShaperNode"].forEach(function (name) {
+        var Orig = window[name];
+        if (typeof Orig !== "function") return;
+        var Wrapped = function () {
+          var args = Array.prototype.slice.call(arguments);
+          args[0] = unwrap(args[0]);
+          return Reflect.construct(Orig, args, !new.target || new.target === Wrapped ? Orig : new.target);
+        };
+        Wrapped.prototype = Orig.prototype;
+        Object.setPrototypeOf(Wrapped, Orig);
+        try { Object.defineProperty(Wrapped, "name", { value: name }); } catch (e) {}
+        window[name] = Wrapped;
+      });
+      note("shared audio context installed");
+    }
+  } catch (e) {
+    note("shared audio context not installed: " + e);
   }
 })();
