@@ -65,6 +65,14 @@ It is an **unofficial, open-source WhatsApp client** and a practical **WhatsApp 
 
 **whatRust's native app shell is small — typically around 90 MB** — because it reuses the webview that already ships with your OS instead of bundling its own browser engine the way Electron apps do. That gives it a much lighter baseline than the official Electron-based WhatsApp Desktop, which ships an entire Chromium runtime on top of the same WhatsApp Web page.
 
+**Measured by a user on Windows 11** (Task Manager, same chats, [#91](https://github.com/karem505/whatRust/issues/91), thanks @brianfauzanlukman):
+
+| | Memory |
+|---|---|
+| Official WhatsApp Desktop | ~861 MB (10 processes) |
+| whatRust 0.6.16 | ~649 MB |
+| **whatRust 0.7.0** | **~483 MB** (about 44% less than the official app) |
+
 The official WhatsApp Desktop app is built on Electron, which packs an entire Chromium browser inside every app. whatRust instead renders WhatsApp Web through the OS-native webview — **WebKitGTK** on Linux, **WebView2** on Windows, and **WKWebView** on macOS — via [Tauri v2](https://tauri.app). The result is a fast, native WhatsApp desktop app with a small footprint of its own.
 
 > **A fair caveat on total memory:** your overall RAM use is dominated by **WhatsApp Web itself** and grows with how many chats, groups, and media you keep open — commonly a few hundred MB up to ~1 GB for busy accounts. That cost is roughly the same in any browser-based client (whatRust, the official app, or a plain Chrome tab); whatRust's advantage is the lean native shell, not lighter web content.
@@ -134,6 +142,7 @@ OS supports it — before showing your chats. Enable it under **Settings → Sec
 |---|---|---|
 | App-shell memory overhead | Lean native shell (~90 MB), no bundled browser | Heavier — bundles a full Chromium + Node runtime |
 | Total RAM (with WhatsApp Web loaded) | Dominated by WhatsApp Web (similar across clients) | Dominated by WhatsApp Web **+** Electron runtime |
+| Measured on Windows 11 ([#91](https://github.com/karem505/whatRust/issues/91)) | **~483 MB** (0.7.0) | ~861 MB |
 | Rendering engine | OS-native webview (WebKitGTK / WebView2 / WKWebView) | Bundled Chromium (Electron) |
 | Built with | Rust + Tauri v2 | Electron (Chromium + Node.js) |
 | Open source | ✅ Yes | ❌ No |
@@ -230,7 +239,7 @@ whatRust uses your OS's native webview instead of bundling a Chromium engine (as
 ### How much RAM does whatRust use?
 whatRust's own native shell is small — around 90 MB. Your **total** memory use is mostly WhatsApp Web's own footprint and scales with how many chats and how much media you keep open — commonly a few hundred MB up to ~1 GB for busy accounts, similar to WhatsApp Web in a browser tab.
 
-One user's side-by-side check on Windows (Task Manager, whatRust 0.6.16, [#91](https://github.com/karem505/whatRust/issues/91), thanks @brianfauzanlukman): about 649 MB for whatRust (642.7 MB of WebView2 plus 6 MB for the app itself) against 861 MB across 10 processes for the official WhatsApp app. It is a single measurement, not a benchmark; your numbers depend on your chats and media. With several accounts, **Settings → Sleep unused accounts** frees the memory of accounts you have not opened for a while.
+One user's side-by-side check on Windows (Task Manager, whatRust 0.6.16, [#91](https://github.com/karem505/whatRust/issues/91), thanks @brianfauzanlukman): about 649 MB for whatRust (642.7 MB of WebView2 plus 6 MB for the app itself) against 861 MB across 10 processes for the official WhatsApp app. The same user measured **about 483 MB on whatRust 0.7.0** with the same chats ([comment](https://github.com/karem505/whatRust/issues/91#issuecomment-7166875602)). These are single measurements, not a benchmark; your numbers depend on your chats and media. With several accounts, **Settings → Sleep unused accounts** frees the memory of accounts you have not opened for a while.
 
 ### Is whatRust lighter than the official WhatsApp Desktop app?
 Its native shell is lighter because it doesn't bundle a Chromium browser engine the way the Electron-based official app does, so it has less baseline overhead. The WhatsApp Web content itself uses a similar amount in either app.
