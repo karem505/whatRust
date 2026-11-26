@@ -610,7 +610,34 @@
     "Redefinir": "Restablecer",
     "Não foi possível redefinir o aplicativo. Tente novamente.": "No se pudo restablecer la aplicación. Inténtalo de nuevo.",
     "Cancelar": "Cancelar",
-    "Este campo não pode ficar vazio.": "Este campo no puede quedar vacío."
+    "Este campo não pode ficar vazio.": "Este campo no puede quedar vacío.",
+    // added in 0.7.1 (account cards, unread, relaunch, diagnostics, per-account notifications)
+    "Ativar notificações desta conta": "Activar las notificaciones de esta cuenta",
+    "Desativar notificações desta conta": "Desactivar las notificaciones de esta cuenta",
+    "Notificações desativadas para esta conta": "Notificaciones desactivadas para esta cuenta",
+    "Conta inicial": "Cuenta de inicio",
+    "Adicionar conta": "Añadir cuenta",
+    "conversas não lidas": "chats sin leer",
+    "Abrir o menu do whatRust": "Abrir el menú de whatRust",
+    "Toque em uma conta para abrir o WhatsApp dela.": "Elige una cuenta para abrir su WhatsApp.",
+    "Gerencie suas contas nas configurações.": "Gestiona tus cuentas en Ajustes.",
+    "Registrar atividade": "Registrar actividad",
+    "Desative para pausar: novos eventos não aparecem aqui. O registro volta a vazio ao reiniciar o whatRust.": "Desactívalo para pausar: los eventos nuevos no aparecen aquí. El registro vuelve a estar vacío al reiniciar whatRust.",
+    "Apagar o registro atual": "Borrar el registro actual",
+    "Limpar": "Borrar",
+    "Reiniciar o app": "Reiniciar la app",
+    "Fecha e abre o whatRust de novo": "Cierra y vuelve a abrir whatRust",
+    "Mostrar contagem de não lidas": "Mostrar el número de no leídos",
+    "Mostra o número de conversas não lidas no ícone da bandeja, no ícone do app, no título da janela e nas contas dentro do whatRust. Os avisos de mensagens não mudam.": "Muestra el número de chats sin leer en el icono de la bandeja, el icono de la app, el título de la ventana y en las cuentas dentro de whatRust. Las notificaciones de mensajes no cambian.",
+    "Mostrar a escolha de perfis ao iniciar": "Mostrar el selector de perfiles al iniciar",
+    "Com mais de uma conta, abre a tela com um cartão por conta em vez de abrir direto a conta inicial (janela única). Vale ao reiniciar o whatRust.": "Con más de una cuenta, abre una pantalla con una tarjeta por cuenta en lugar de abrir directamente la cuenta de inicio (ventana única). Se aplica al reiniciar whatRust.",
+    "Silenciar som interno do WhatsApp Web": "Silenciar el sonido interno de WhatsApp Web",
+    "Silencia o som interno das notificações do WhatsApp Web sem alterar os sons nativos de notificação do sistema. Requer reiniciar o whatRust.": "Silencia el sonido interno de las notificaciones de WhatsApp Web sin cambiar los sonidos nativos de notificación del sistema. Requiere reiniciar whatRust.",
+    "Tema": "Tema",
+    "O WhatsApp segue esta opção quando o tema dele está em \"Padrão do sistema\".": "WhatsApp sigue esta opción cuando su tema está en \"Predeterminado del sistema\".",
+    "Sistema": "Sistema",
+    "Claro": "Claro",
+    "Escuro": "Oscuro",
   };
 
   // Arabic and Indonesian; a key missing here falls back to English.
@@ -897,7 +924,27 @@
     "Redefinir": "إعادة تعيين",
     "Não foi possível redefinir o aplicativo. Tente novamente.": "تعذّرت إعادة تعيين التطبيق. حاول مرة أخرى.",
     "Cancelar": "إلغاء",
-    "Este campo não pode ficar vazio.": "لا يمكن ترك هذا الحقل فارغًا."
+    "Este campo não pode ficar vazio.": "لا يمكن ترك هذا الحقل فارغًا.",
+    // added in 0.7.1 (account cards, unread, relaunch, diagnostics, per-account notifications)
+    "Ativar notificações desta conta": "تشغيل الإشعارات لهذا الحساب",
+    "Desativar notificações desta conta": "إيقاف الإشعارات لهذا الحساب",
+    "Notificações desativadas para esta conta": "الإشعارات متوقفة لهذا الحساب",
+    "Conta inicial": "حساب البدء",
+    "Adicionar conta": "إضافة حساب",
+    "conversas não lidas": "محادثات غير مقروءة",
+    "Abrir o menu do whatRust": "فتح قائمة whatRust",
+    "Toque em uma conta para abrir o WhatsApp dela.": "اختر حسابًا لفتح واتساب الخاص به.",
+    "Gerencie suas contas nas configurações.": "أدِر حساباتك من الإعدادات.",
+    "Registrar atividade": "تسجيل النشاط",
+    "Desative para pausar: novos eventos não aparecem aqui. O registro volta a vazio ao reiniciar o whatRust.": "أوقفه للإيقاف المؤقت: لن تظهر الأحداث الجديدة هنا. يبدأ السجل فارغًا من جديد عند إعادة تشغيل whatRust.",
+    "Apagar o registro atual": "مسح السجل الحالي",
+    "Limpar": "مسح",
+    "Reiniciar o app": "إعادة تشغيل التطبيق",
+    "Fecha e abre o whatRust de novo": "يغلق whatRust ويفتحه من جديد",
+    "Mostrar contagem de não lidas": "إظهار عدد غير المقروء",
+    "Mostra o número de conversas não lidas no ícone da bandeja, no ícone do app, no título da janela e nas contas dentro do whatRust. Os avisos de mensagens não mudam.": "يعرض عدد المحادثات غير المقروءة على أيقونة شريط النظام وأيقونة التطبيق وعنوان النافذة وعلى الحسابات داخل whatRust. لا تتغير إشعارات الرسائل.",
+    "Mostrar a escolha de perfis ao iniciar": "إظهار اختيار الحساب عند البدء",
+    "Com mais de uma conta, abre a tela com um cartão por conta em vez de abrir direto a conta inicial (janela única). Vale ao reiniciar o whatRust.": "عند وجود أكثر من حساب، تُفتح شاشة فيها بطاقة لكل حساب بدل فتح حساب البدء مباشرة (نافذة واحدة). يسري بعد إعادة تشغيل whatRust.",
   };
 
   var ID = {
@@ -1183,7 +1230,27 @@
     "Redefinir": "Setel ulang",
     "Não foi possível redefinir o aplicativo. Tente novamente.": "Tidak dapat menyetel ulang aplikasi. Coba lagi.",
     "Cancelar": "Batal",
-    "Este campo não pode ficar vazio.": "Kolom ini tidak boleh kosong."
+    "Este campo não pode ficar vazio.": "Kolom ini tidak boleh kosong.",
+    // added in 0.7.1 (account cards, unread, relaunch, diagnostics, per-account notifications)
+    "Ativar notificações desta conta": "Aktifkan notifikasi untuk akun ini",
+    "Desativar notificações desta conta": "Matikan notifikasi untuk akun ini",
+    "Notificações desativadas para esta conta": "Notifikasi untuk akun ini dimatikan",
+    "Conta inicial": "Akun saat memulai",
+    "Adicionar conta": "Tambah akun",
+    "conversas não lidas": "obrolan belum dibaca",
+    "Abrir o menu do whatRust": "Buka menu whatRust",
+    "Toque em uma conta para abrir o WhatsApp dela.": "Pilih akun untuk membuka WhatsApp-nya.",
+    "Gerencie suas contas nas configurações.": "Kelola akun Anda di Pengaturan.",
+    "Registrar atividade": "Catat aktivitas",
+    "Desative para pausar: novos eventos não aparecem aqui. O registro volta a vazio ao reiniciar o whatRust.": "Matikan untuk menjeda: peristiwa baru tidak muncul di sini. Log kembali kosong saat whatRust dimulai ulang.",
+    "Apagar o registro atual": "Hapus log saat ini",
+    "Limpar": "Hapus",
+    "Reiniciar o app": "Mulai ulang aplikasi",
+    "Fecha e abre o whatRust de novo": "Menutup lalu membuka whatRust lagi",
+    "Mostrar contagem de não lidas": "Tampilkan jumlah belum dibaca",
+    "Mostra o número de conversas não lidas no ícone da bandeja, no ícone do app, no título da janela e nas contas dentro do whatRust. Os avisos de mensagens não mudam.": "Menampilkan jumlah obrolan belum dibaca di ikon baki sistem, ikon aplikasi, judul jendela, dan pada akun di dalam whatRust. Notifikasi pesan tidak berubah.",
+    "Mostrar a escolha de perfis ao iniciar": "Tampilkan pemilih profil saat memulai",
+    "Com mais de uma conta, abre a tela com um cartão por conta em vez de abrir direto a conta inicial (janela única). Vale ao reiniciar o whatRust.": "Jika ada lebih dari satu akun, membuka layar dengan satu kartu per akun alih-alih langsung membuka akun awal (jendela tunggal). Berlaku setelah whatRust dimulai ulang.",
   };
 
   var TABLES = { en: EN, es: ES, ar: AR, id: ID };
