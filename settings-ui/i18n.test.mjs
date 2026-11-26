@@ -16,7 +16,7 @@ function check(name, fn) {
 }
 
 // Text that is the same in both languages, or a proper name.
-const SAME = new Set(["whatRust", "WhatsApp", "OK", "Português (Brasil)", "English", "⇄", "⋮", "⚙",
+const SAME = new Set(["whatRust", "WhatsApp", "OK", "Português (Brasil)", "English", "Español", "⇄", "⋮", "⚙",
   "CmdOrCtrl+Shift+W", "CmdOrCtrl+Shift+B", "Cmd/Ctrl+Shift+W", "Cmd/Ctrl+Shift+B", "whatrust --toggle", "Esc", "SOCKS5", "HTTP", "127.0.0.1", "1080"]);
 
 function visibleTexts(html) {
@@ -82,10 +82,24 @@ check("strings assigned to the page by the scripts have an English entry", () =>
   assert.deepEqual(missing, []);
 });
 
-check("both language options are offered", () => {
+check("every language option is offered", () => {
   const html = read("index.html");
   assert.match(html, /<option value="pt-BR">/);
   assert.match(html, /<option value="en">/);
+  assert.match(html, /<option value="es">/);
+});
+
+check("Spanish has an entry for every English key, with the same placeholders", () => {
+  const { ES } = I18n;
+  const missing = Object.keys(EN).filter((k) => !(k in ES));
+  const extra = Object.keys(ES).filter((k) => !(k in EN));
+  assert.deepEqual(missing, [], "no Spanish entry");
+  assert.deepEqual(extra, [], "Spanish entry with no English one");
+  for (const [pt, es] of Object.entries(ES)) {
+    for (let i = 0; i < 4; i++) {
+      assert.equal(pt.includes(`{${i}}`), es.includes(`{${i}}`), `placeholder {${i}} in "${pt}"`);
+    }
+  }
 });
 
 if (failures) { console.log(`\n${failures} i18n test(s) failed`); process.exit(1); }

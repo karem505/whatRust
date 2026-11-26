@@ -312,10 +312,303 @@
     "Este campo não pode ficar vazio.": "This field cannot be empty."
   };
 
-  var lang = root.__WR_LANG === "en" ? "en" : "pt-BR";
+
+  // Spanish text for each Portuguese source string, same keys as EN. A key
+  // missing here falls back to English (i18n.test.mjs checks none is).
+  var ES = {
+    "whatRust — Configurações": "whatRust — Configuración",
+    "whatRust — Bloqueado": "whatRust — Bloqueado",
+    "Configurações": "Configuración",
+    "Voltar ao WhatsApp": "Volver a WhatsApp",
+    "Contas": "Cuentas",
+    "Notificações": "Notificaciones",
+    "Aparência": "Apariencia",
+    "Segurança": "Seguridad",
+    "Inicialização": "Inicio",
+    "Atalhos": "Atajos",
+    "Rede": "Red",
+    "Proxy": "Proxy",
+    "Encaminha todo o tráfego das contas do WhatsApp por um proxy.": "Envía todo el tráfico de las cuentas de WhatsApp a través de un proxy.",
+    "Desativado": "Desactivado",
+    "Servidor": "Servidor",
+    "Porta": "Puerto",
+    "Proxy com usuário e senha não é suportado: os navegadores embutidos não aceitam credenciais por esse caminho. A alteração vale após reiniciar o whatRust.": "No se admiten proxies con usuario y contraseña: los navegadores integrados no aceptan credenciales por esta vía. El cambio se aplica al reiniciar whatRust.",
+    "Reinicie o whatRust para aplicar o proxy.": "Reinicia whatRust para aplicar el proxy.",
+    "Reiniciar agora": "Reiniciar ahora",
+    "Diagnóstico": "Diagnóstico",
+    "Conta ao iniciar": "Cuenta al iniciar",
+    "Nome da nova conta": "Nombre de la nueva cuenta",
+    "Adicionar": "Agregar",
+    "Múltiplas contas exigem macOS 14 ou superior.": "Las cuentas múltiples requieren macOS 14 o posterior.",
+    "Mostrar todas as contas em uma janela": "Mostrar todas las cuentas en una ventana",
+    "Uma janela com um seletor de contas; as contas ocultas continuam conectadas. Requer reiniciar o whatRust.": "Una ventana con un selector de cuentas; las cuentas ocultas siguen conectadas. Requiere reiniciar whatRust.",
+    "Reinicie o whatRust para aplicar a mudança.": "Reinicia whatRust para aplicar el cambio.",
+    "Reinicie o whatRust para aplicar. O modo somente barra de menus tem prioridade sobre esta opção.": "Reinicia whatRust para aplicarlo. El modo solo barra de menús tiene prioridad sobre esta opción.",
+    "Aguarde…": "Espera…",
+    "Ações de {0}": "Acciones de {0}",
+    "Abrir conta": "Abrir cuenta",
+    "Reintegrar à janela": "Volver a la ventana principal",
+    "Abrir em janela separada": "Abrir en una ventana aparte",
+    "Usar ao iniciar": "Usar al iniciar",
+    "Renomear": "Renombrar",
+    "Renomear conta": "Renombrar cuenta",
+    "Informe um nome.": "Escribe un nombre.",
+    "Mover para cima": "Subir",
+    "Mover para baixo": "Bajar",
+    "Remover conta": "Eliminar cuenta",
+    "A sessão local desta conta será apagada. Para usá-la novamente, você precisará ler o QR code.": "Se borrará la sesión local de esta cuenta. Para volver a usarla, tendrás que escanear el código QR.",
+    "Remover \"{0}\"?": "¿Eliminar \"{0}\"?",
+    "Remover": "Eliminar",
+    "Abrir {0}": "Abrir {0}",
+    "Em janela separada": "En una ventana aparte",
+    "{0} conversas não lidas": "{0} chats sin leer",
+    "Opções de {0}": "Opciones de {0}",
+    "Não foi possível carregar as contas: {0}": "No se pudieron cargar las cuentas: {0}",
+    "Atualizações": "Actualizaciones",
+    "Sobre o whatRust": "Acerca de whatRust",
+    "Contribuidores": "Colaboradores",
+    "Obrigado a todas as pessoas que contribuíram com código para o whatRust.": "Gracias a todas las personas que han aportado código a whatRust.",
+    "Alterar foto": "Cambiar foto",
+    "Remover foto": "Quitar foto",
+    "A imagem tem mais de 5 MB.": "La imagen pesa más de 5 MB.",
+    "Não foi possível ler a imagem.": "No se pudo leer la imagen.",
+    "Verificar atualizações automaticamente": "Buscar actualizaciones automáticamente",
+    "Consulta o GitHub (api.github.com) um minuto após iniciar e a cada 6 horas. Só pergunta qual é a versão mais recente.": "Consulta GitHub (api.github.com) un minuto después de iniciar y cada 6 horas. Solo pregunta cuál es la versión más reciente.",
+    "Instalar atualizações automaticamente": "Instalar actualizaciones automáticamente",
+    "Só age quando não é preciso senha.": "Solo actúa cuando no hace falta contraseña.",
+    "Versão instalada": "Versión instalada",
+    "Verificar agora": "Buscar ahora",
+    "Tipo de instalação": "Tipo de instalación",
+    "Última verificação": "Última búsqueda",
+    "Baixar e instalar": "Descargar e instalar",
+    "Reiniciar e instalar": "Reiniciar e instalar",
+    "Ver no GitHub": "Ver en GitHub",
+    "Copiar": "Copiar",
+    "Novidades": "Novedades",
+    "Versões 0.6.10 e anteriores não atualizam sozinhas: instale esta versão manualmente uma vez. Cada arquivo baixado é conferido com a soma de verificação (SHA-256) publicada na versão antes de ser instalado.": "Las versiones 0.6.10 y anteriores no se actualizan solas: instala esta versión a mano una vez. Cada archivo descargado se comprueba con la suma de verificación (SHA-256) publicada en la versión antes de instalarse.",
+    "Nunca": "Nunca",
+    "Baixa, confere e substitui o aplicativo em segundo plano. A nova versão começa na próxima vez que você abrir o whatRust.": "Descarga, comprueba y reemplaza la aplicación en segundo plano. La nueva versión se usa la próxima vez que abras whatRust.",
+    "Baixa e confere em segundo plano. O instalador roda quando você clica em Reiniciar e instalar, porque ele reinicia o whatRust.": "Descarga y comprueba en segundo plano. El instalador se ejecuta cuando haces clic en Reiniciar e instalar, porque reinicia whatRust.",
+    "Não se aplica a este tipo de instalação: ela precisa de senha ou é atualizada por outra ferramenta. Você instala com um clique.": "No se aplica a este tipo de instalación: necesita contraseña o la actualiza otra herramienta. La instalas con un clic.",
+    "Procurando atualizações…": "Buscando actualizaciones…",
+    "Você está na versão mais recente": "Tienes la versión más reciente",
+    "A versão {0} está disponível": "La versión {0} está disponible",
+    "Não foi possível procurar atualizações": "No se pudieron buscar actualizaciones",
+    "Esta versão não tem um arquivo para o seu tipo de instalação.": "Esta versión no tiene un archivo para tu tipo de instalación.",
+    "Baixando a versão {0}…": "Descargando la versión {0}…",
+    "{0} MB de {1} MB": "{0} MB de {1} MB",
+    "{0} MB": "{0} MB",
+    "Instalando a versão {0}…": "Instalando la versión {0}…",
+    "Digite sua senha de administrador quando o sistema pedir.": "Escribe tu contraseña de administrador cuando el sistema la pida.",
+    "A versão {0} está pronta para instalar": "La versión {0} está lista para instalar",
+    "O instalador já foi baixado e conferido. O whatRust vai fechar e abrir de novo ao instalar.": "El instalador ya se descargó y comprobó. whatRust se cerrará y volverá a abrirse al instalar.",
+    "A versão {0} foi instalada": "Se instaló la versión {0}",
+    "Reinicie o whatRust para usar a nova versão.": "Reinicia whatRust para usar la nueva versión.",
+    "O instalador assumiu. O whatRust vai fechar e abrir de novo sozinho.": "El instalador tomó el control. whatRust se cerrará y volverá a abrirse solo.",
+    "Arquivo baixado e conferido": "Archivo descargado y comprobado",
+    "O pacote foi aberto na central de programas do sistema; confirme a instalação lá. Se nada abrir, execute o comando abaixo.": "El paquete se abrió en el centro de software del sistema; confirma la instalación allí. Si no se abre nada, ejecuta el comando de abajo.",
+    "O arquivo foi aberto. Termine a instalação por lá.": "El archivo se abrió. Termina la instalación allí.",
+    "Pede sua senha de administrador ao instalar.": "Pide tu contraseña de administrador al instalar.",
+    "Baixar e abrir": "Descargar y abrir",
+    "Copiado ✓": "Copiado ✓",
+    "Selecione e copie": "Selecciona y copia",
+    "Receber notificações": "Recibir notificaciones",
+    "Ativa os avisos de mensagens do whatRust.": "Activa los avisos de mensajes de whatRust.",
+    "Som de notificação": "Sonido de notificación",
+    "Silencia os avisos sonoros de mensagens do WhatsApp. O toque de chamadas continua.": "Silencia los avisos sonoros de mensajes de WhatsApp. El tono de las llamadas sigue sonando.",
+    "Avisar com o aplicativo aberto": "Avisar con la aplicación abierta",
+    "Receber avisos mesmo com a janela em primeiro plano.": "Recibir avisos aunque la ventana esté en primer plano.",
+    "Avisar na conversa que estou lendo": "Avisar en el chat que estoy leyendo",
+    "Também avisar mensagens novas na conversa aberta.": "Avisar también de mensajes nuevos en el chat abierto.",
+    "Respeitar conversas silenciadas": "Respetar chats silenciados",
+    "Suspender contas sem uso": "Suspender cuentas sin uso",
+    "Libera memória de contas em segundo plano. Uma conta suspensa não recebe avisos até ser aberta de novo.": "Libera la memoria de las cuentas en segundo plano. Una cuenta suspendida no recibe avisos hasta que la vuelvas a abrir.",
+    "Após 1 hora": "Después de 1 hora",
+    "Após 4 horas": "Después de 4 horas",
+    "Após 8 horas": "Después de 8 horas",
+    "Após 24 horas": "Después de 24 horas",
+    "Não perturbe": "No molestar",
+    "Sem avisos do whatRust neste horário. As mensagens continuam chegando.": "Sin avisos de whatRust en este horario. Los mensajes siguen llegando.",
+    "Horário do não perturbe": "Horario de No molestar",
+    "Pode passar da meia-noite, por exemplo 22:00 até 08:00.": "Puede pasar de la medianoche, por ejemplo de 22:00 a 08:00.",
+    "Início do não perturbe": "Inicio de No molestar",
+    "Fim do não perturbe": "Fin de No molestar",
+    "Backup das configurações": "Copia de seguridad de la configuración",
+    "Salva as preferências e a lista de contas. Não inclui logins, conversas nem a senha de bloqueio.": "Guarda las preferencias y la lista de cuentas. No incluye inicios de sesión, chats ni la contraseña de bloqueo.",
+    "Salvar backup…": "Guardar copia…",
+    "Restaurar backup…": "Restaurar copia…",
+    "Backup salvo ✓": "Copia guardada ✓",
+    "Backup restaurado ✓": "Copia restaurada ✓",
+    "Backup restaurado. {0} conta(s) nova(s) abrem após reiniciar e pedem o QR code.": "Copia restaurada. {0} cuenta(s) nueva(s) se abren al reiniciar y piden el código QR.",
+    "Reiniciar agora?": "¿Reiniciar ahora?",
+    "Reiniciar": "Reiniciar",
+    "Quando o silenciamento não puder ser confirmado, o detector adicional permanece silencioso.": "Cuando no se puede confirmar el silencio, el detector adicional no avisa.",
+    "O detector adicional só usa mensagens novas identificáveis. Conversas silenciadas, histórico e estados desconhecidos não geram avisos adicionais.": "El detector adicional solo usa mensajes nuevos identificables. Los chats silenciados, el historial y los estados desconocidos no generan avisos adicionales.",
+    "Comportamento": "Comportamiento",
+    "Continuar em segundo plano ao fechar": "Seguir en segundo plano al cerrar",
+    "Mantém suas contas conectadas ao fechar a janela": "Mantiene tus cuentas conectadas al cerrar la ventana",
+    "Iniciar minimizado": "Iniciar minimizado",
+    "Iniciar sem abrir a janela principal": "Iniciar sin abrir la ventana principal",
+    "Iniciar com o sistema": "Iniciar con el sistema",
+    "Mostrar ícone na barra de menus": "Mostrar icono en la barra de menús",
+    "Quando desativado, clique no ícone do Dock para abrir o whatRust": "Si está desactivado, haz clic en el icono del Dock para abrir whatRust",
+    "Iniciar minimizado com o Windows": "Iniciar minimizado con Windows",
+    "Vale apenas ao entrar no Windows. Ao abrir pelo atalho, a janela sempre aparece.": "Solo se aplica al iniciar sesión en Windows. Si lo abres desde un acceso directo, la ventana siempre aparece.",
+    "Ícone do aplicativo": "Icono de la aplicación",
+    "Personalizado": "Personalizado",
+    "Escolher PNG…": "Elegir PNG…",
+    "Restaurar padrão": "Restaurar predeterminado",
+    "Imagem PNG quadrada, de 32 a 1024 px e até 5 MB. Vale para o aplicativo todo; a bandeja não muda. No Linux com Wayland, o ícone da janela vem do arquivo .desktop e não muda.": "Imagen PNG cuadrada, de 32 a 1024 px y hasta 5 MB. Se aplica a toda la aplicación; el icono de la bandeja no cambia. En Linux con Wayland, el icono de la ventana viene del archivo .desktop y no cambia.",
+    "Pasta de downloads": "Carpeta de descargas",
+    "Pasta Downloads do sistema": "Carpeta Descargas del sistema",
+    "Escolher pasta…": "Elegir carpeta…",
+    "Restaurar Downloads": "Restaurar Descargas",
+    "Tamanho da interface": "Tamaño de la interfaz",
+    "Barra de título": "Barra de título",
+    "Gerenciadores de janelas lado a lado, como o Hyprland, não usam barra de título.": "Los gestores de ventanas en mosaico, como Hyprland, no usan barra de título.",
+    "Renderização": "Renderizado",
+    "Ocultar anúncios do app do WhatsApp": "Ocultar anuncios de la app de WhatsApp",
+    "Controles do whatRust no cabeçalho do WhatsApp": "Controles de whatRust en el encabezado de WhatsApp",
+    "Mostra o seletor de contas e a engrenagem dentro do cabeçalho do WhatsApp (Windows e janela única). Desative para não alterar a página. Vale ao reiniciar o whatRust.": "Muestra el selector de cuentas y el engranaje dentro del encabezado de WhatsApp (Windows y ventana única). Desactívalo para no modificar la página. Se aplica al reiniciar whatRust.",
+    "Esconde os convites para baixar o WhatsApp para Windows ou Mac. Vale ao reiniciar o whatRust.": "Oculta las invitaciones a descargar WhatsApp para Windows o Mac. Se aplica al reiniciar whatRust.",
+    "Use o modo compatível se a janela ficar em branco em placas de vídeo antigas. Vale ao reiniciar o whatRust.": "Usa el modo compatible si la ventana queda en blanco con tarjetas gráficas antiguas. Se aplica al reiniciar whatRust.",
+    "Compatível (sem GPU)": "Compatible (sin GPU)",
+    "Placa de vídeo antiga detectada: o modo automático já renderiza sem GPU.": "Tarjeta gráfica antigua detectada: el modo automático ya renderiza sin GPU.",
+    "Detectado: {0}. No modo automático a barra fica oculta.": "Detectado: {0}. En modo automático la barra queda oculta.",
+    "Automático": "Automático",
+    "Mostrar": "Mostrar",
+    "Ocultar": "Ocultar",
+    "Ajusta o tamanho do WhatsApp sem alterar as outras contas.": "Ajusta el tamaño de WhatsApp sin cambiar las demás cuentas.",
+    "Muito pequeno": "Muy pequeño",
+    "Pequeno": "Pequeño",
+    "Padrão": "Predeterminado",
+    "Grande": "Grande",
+    "Somente na barra de menus": "Solo en la barra de menús",
+    "Sem ícone no Dock nem janela principal — todas as contas continuam conectadas para notificações e cada uma abre como painel pela bandeja": "Sin icono en el Dock ni ventana principal — todas las cuentas siguen conectadas para las notificaciones y cada una se abre como panel desde la bandeja",
+    "O ícone da bandeja é o único ponto de entrada no modo somente barra de menus, por isso permanece visível": "El icono de la bandeja es el único punto de entrada en el modo solo barra de menús, por eso sigue visible",
+    "Requer macOS 14 (Sonoma) ou superior — este Mac não consegue manter um painel oculto conectado": "Requiere macOS 14 (Sonoma) o posterior — este Mac no puede mantener conectado un panel oculto",
+    "Ocultar ícone do Dock": "Ocultar icono del Dock",
+    "Mantém a janela principal; o ícone da barra de menus passa a ser a forma de reabrir o whatRust": "Mantiene la ventana principal; el icono de la barra de menús pasa a ser la forma de volver a abrir whatRust",
+    "Idioma": "Idioma",
+    "Idioma da interface do whatRust.": "Idioma de la interfaz de whatRust.",
+    "Atalho para mostrar ou ocultar": "Atajo para mostrar u ocultar",
+    "Uma combinação de teclas para mostrar ou ocultar o aplicativo": "Una combinación de teclas para mostrar u ocultar la aplicación",
+    "Atalho": "Atajo",
+    "Gravar": "Grabar",
+    "Atalho para desfocar": "Atajo para desenfocar",
+    "Liga ou desliga o desfoque de privacidade em todas as contas. Para escolher o que é desfocado, pressione Ctrl+Shift+P (⌘+Shift+P no Mac) numa janela do WhatsApp.": "Activa o desactiva el desenfoque de privacidad en todas las cuentas. Para elegir qué se desenfoca, pulsa Ctrl+Shift+P (⌘+Shift+P en Mac) en una ventana de WhatsApp.",
+    "No Linux/Wayland, configure": "En Linux/Wayland, configura",
+    "nos atalhos do sistema.": "en los atajos del sistema.",
+    "Pressione as teclas… (Esc cancela)": "Pulsa las teclas… (Esc cancela)",
+    "Tecla não suportada. Tente outra.": "Tecla no admitida. Prueba otra.",
+    "Inclua Ctrl, Alt ou Shift.": "Incluye Ctrl, Alt o Shift.",
+    "Senha": "Contraseña",
+    "Pelo menos 6 caracteres": "Al menos 6 caracteres",
+    "Pelo menos 6 caracteres.": "Al menos 6 caracteres.",
+    "Confirmar": "Confirmar",
+    "Ativar bloqueio": "Activar bloqueo",
+    "Usar biometria": "Usar biometría",
+    "Usar {0}": "Usar {0}",
+    "Bloquear ao iniciar": "Bloquear al iniciar",
+    "Bloquear ao ocultar": "Bloquear al ocultar",
+    "Bloquear por inatividade": "Bloquear por inactividad",
+    "Minutos; 0 desativa": "Minutos; 0 lo desactiva",
+    "Bloquear agora": "Bloquear ahora",
+    "Alterar senha…": "Cambiar contraseña…",
+    "Desativar…": "Desactivar…",
+    "O bloqueio protege o acesso às janelas do whatRust. Ele": "El bloqueo protege el acceso a las ventanas de whatRust.",
+    "não": "No",
+    "criptografa os dados no disco.": "cifra los datos en el disco.",
+    "Não foi possível ativar o bloqueio": "No se pudo activar el bloqueo",
+    "Não foi possível bloquear": "No se pudo bloquear",
+    "Senha atual": "Contraseña actual",
+    "Continuar": "Continuar",
+    "Informe sua senha atual.": "Escribe tu contraseña actual.",
+    "Nova senha": "Nueva contraseña",
+    "Alterar": "Cambiar",
+    "Informe uma nova senha.": "Escribe una nueva contraseña.",
+    "Sua senha de bloqueio foi alterada.": "Se cambió tu contraseña de bloqueo.",
+    "Senha alterada": "Contraseña cambiada",
+    "Não foi possível alterar a senha": "No se pudo cambiar la contraseña",
+    "Informe sua senha atual para desativar o bloqueio.": "Escribe tu contraseña actual para desactivar el bloqueo.",
+    "Desativar bloqueio": "Desactivar bloqueo",
+    "Desativar": "Desactivar",
+    "Não foi possível desativar o bloqueio": "No se pudo desactivar el bloqueo",
+    "Não foi possível alterar a biometria": "No se pudo cambiar la biometría",
+    "Não foi possível salvar": "No se pudo guardar",
+    "Diagnóstico de notificações": "Diagnóstico de notificaciones",
+    "Verificar avisos do Windows": "Comprobar avisos de Windows",
+    "O teste confirma o envio; confira se o Windows exibe o banner.": "La prueba confirma el envío; revisa que Windows muestre el banner.",
+    "Testar": "Probar",
+    "Permissões e Não perturbe": "Permisos y No molestar",
+    "Abrir no Windows": "Abrir en Windows",
+    "Atividade desta sessão": "Actividad de esta sesión",
+    "Somente horário, conta e resultado. Não armazena o texto das mensagens.": "Solo hora, cuenta y resultado. No guarda el texto de los mensajes.",
+    "Aguardando envio": "Esperando envío",
+    "Enviada ao Windows; exibição não confirmada": "Enviada a Windows; no se confirmó que se mostrara",
+    "Falha no envio": "Error al enviar",
+    "Não enviada": "No enviada",
+    "Aviso aberto": "Aviso abierto",
+    "Aviso encerrado": "Aviso descartado",
+    "Aplicativo bloqueado": "Aplicación bloqueada",
+    "Notificações desativadas": "Notificaciones desactivadas",
+    "Avisos em primeiro plano desativados": "Avisos en primer plano desactivados",
+    "Conversa ativa": "Chat activo",
+    "Conversa silenciada": "Chat silenciado",
+    "Silenciamento não confirmado": "Silencio no confirmado",
+    "Windows recusou o envio": "Windows rechazó el envío",
+    "Captura nativa ativa": "Captura nativa activa",
+    "Captura nativa indisponível; ponte alternativa": "Captura nativa no disponible; puente alternativo",
+    "Controles integrados": "Controles integrados",
+    "Acesso pelo menu da janela": "Acceso desde el menú de la ventana",
+    "Detector adicional disponível quando houver sinais confiáveis": "Detector adicional disponible cuando haya señales confiables",
+    "Aguardando conversa compatível": "Esperando un chat compatible",
+    "Nenhum aviso registrado": "No hay avisos registrados",
+    "Os próximos eventos aparecerão aqui durante esta execução.": "Los próximos eventos aparecerán aquí durante esta ejecución.",
+    "Salvar": "Guardar",
+    "Alterações salvas ✓": "Cambios guardados ✓",
+    "Alterações salvas": "Cambios guardados",
+    "Salvo com observação: {0}": "Guardado con una observación: {0}",
+    "Voltar sem salvar?": "¿Volver sin guardar?",
+    "As alterações ainda não foram salvas.": "Los cambios todavía no se han guardado.",
+    "Voltar": "Volver",
+    "Controles do whatRust": "Controles de whatRust",
+    "Configurações do whatRust": "Configuración de whatRust",
+    "Trocar conta do WhatsApp": "Cambiar de cuenta de WhatsApp",
+    "Escolha uma conta para continuar": "Elige una cuenta para continuar",
+    "Use o seletor acima para abrir um WhatsApp ou as configurações para gerenciar suas contas.": "Usa el selector de arriba para abrir un WhatsApp, o la configuración para administrar tus cuentas.",
+    "Digite sua senha para acessar suas contas do WhatsApp.": "Escribe tu contraseña para acceder a tus cuentas de WhatsApp.",
+    "Digite sua senha": "Escribe tu contraseña",
+    "Digite sua senha.": "Escribe tu contraseña.",
+    "Desbloquear": "Desbloquear",
+    "Esqueceu a senha? Redefinir…": "¿Olvidaste la contraseña? Restablecer…",
+    "Senha incorreta. Tente novamente.": "Contraseña incorrecta. Inténtalo de nuevo.",
+    "Não foi possível desbloquear. Tente novamente.": "No se pudo desbloquear. Inténtalo de nuevo.",
+    "Não foi possível confirmar a biometria. Digite sua senha.": "No se pudo confirmar la biometría. Escribe tu contraseña.",
+    "Muitas tentativas. Tente de novo em {0}s.": "Demasiados intentos. Vuelve a intentarlo en {0} s.",
+    "Isso desconecta todas as contas deste aplicativo e remove o bloqueio. Você precisará vincular o WhatsApp novamente pelo QR Code. Suas conversas continuam no celular.": "Esto cierra la sesión de todas las cuentas de esta aplicación y quita el bloqueo. Tendrás que vincular WhatsApp otra vez con el código QR. Tus chats siguen en el teléfono.",
+    "Redefinir o whatRust?": "¿Restablecer whatRust?",
+    "Redefinir": "Restablecer",
+    "Não foi possível redefinir o aplicativo. Tente novamente.": "No se pudo restablecer la aplicación. Inténtalo de nuevo.",
+    "Cancelar": "Cancelar",
+    "Este campo não pode ficar vazio.": "Este campo no puede quedar vacío."
+  };
+
+  var TABLES = { en: EN, es: ES };
+  var LOCALES = { "pt-BR": "pt-BR", en: "en-US", es: "es" };
+  function code(c) { return c === "en" || c === "es" ? c : "pt-BR"; }
+  var lang = code(root.__WR_LANG);
 
   function norm(s) { return String(s).replace(/\s+/g, " ").trim(); }
-  function has(k) { return Object.prototype.hasOwnProperty.call(EN, k); }
+  function own(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+  // Text for a normalised key in the current language, or undefined to keep
+  // the Portuguese source. Spanish falls back to English, then Portuguese.
+  function lookup(k) {
+    var table = TABLES[lang];
+    if (!table) return undefined;
+    if (own(table, k)) return table[k];
+    return own(EN, k) ? EN[k] : undefined;
+  }
   function fill(text, args) {
     if (!args) return text;
     for (var i = 0; i < args.length; i++) text = text.split("{" + i + "}").join(String(args[i]));
@@ -324,16 +617,18 @@
   // Translate a source string (exact key) and fill {0}, {1}...
   function t(s, args) {
     var key = norm(s);
-    var out = lang === "en" && has(key) ? EN[key] : s;
+    var tr = lookup(key);
+    var out = tr === undefined ? s : tr;
     return fill(out, args);
   }
 
   var api = {
     EN: EN,
+    ES: ES,
     norm: norm,
     t: t,
     lang: function () { return lang; },
-    locale: function () { return lang === "en" ? "en-US" : "pt-BR"; },
+    locale: function () { return LOCALES[lang]; },
     setLang: function () {},
   };
   root.I18n = api;
@@ -351,9 +646,10 @@
     var rec = text.get(node);
     if (!rec || node.nodeValue !== rec.out) rec = { src: node.nodeValue, out: node.nodeValue };
     var key = norm(rec.src), out = rec.src;
-    if (lang === "en" && has(key)) {
+    var tr = lookup(key);
+    if (tr !== undefined) {
       var m = /^(\s*)[\s\S]*?(\s*)$/.exec(rec.src);
-      out = m[1] + EN[key] + m[2];
+      out = m[1] + tr + m[2];
     }
     rec.out = out;
     text.set(node, rec);
@@ -366,7 +662,7 @@
       if (!el.hasAttribute || !el.hasAttribute(name)) return;
       var value = el.getAttribute(name), rec = recs[name];
       if (!rec || value !== rec.out) rec = { src: value, out: value };
-      var key = norm(rec.src), out = lang === "en" && has(key) ? EN[key] : rec.src;
+      var key = norm(rec.src), tr = lookup(key), out = tr === undefined ? rec.src : tr;
       rec.out = out;
       recs[name] = rec;
       if (value !== out) el.setAttribute(name, out);
@@ -407,7 +703,7 @@
   }
 
   api.setLang = function (next) {
-    lang = next === "en" ? "en" : "pt-BR";
+    lang = code(next);
     root.__WR_LANG = lang;
     document.documentElement.lang = lang;
     translateAll();
