@@ -46,6 +46,7 @@ fn main() {
             "add_account",
             "remove_account",
             "rename_account",
+            "set_account_notifications",
             "open_account",
             "set_default_account",
             "set_app_lock_password",

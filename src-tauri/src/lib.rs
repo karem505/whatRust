@@ -247,6 +247,7 @@ pub fn run() {
             commands::add_account,
             commands::remove_account,
             commands::rename_account,
+            commands::set_account_notifications,
             commands::open_account,
             commands::set_default_account,
             commands::get_lock_status,

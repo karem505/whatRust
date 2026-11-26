@@ -313,6 +313,7 @@ function accountMenu(a, accounts, anchor) {
     ["Abrir conta", () => accountAction(() => invoke("open_account", {id:a.id}))],
     ...( /Win/.test(navigator.platform || navigator.userAgent) ? [[a.detached ? "Reintegrar à janela" : "Abrir em janela separada", () => accountAction(() => invoke(a.detached?"attach_account":"detach_account",{id:a.id}))]] : []),
     ["Usar ao iniciar",()=>accountAction(()=>invoke("set_default_account",{id:a.id}))],
+    [a.notifications===false?"Ativar notificações desta conta":"Desativar notificações desta conta",()=>accountAction(()=>invoke("set_account_notifications",{id:a.id,on:a.notifications===false}))],
     ["Alterar foto",()=>pickAccountPhoto(a.id)],
     ...(a.photo?[["Remover foto",()=>accountAction(()=>invoke("remove_account_photo",{id:a.id}))]]:[]),
     ["Renomear",async()=>{const name=await Dlg.prompt("",{title:"Renomear conta",value:a.name,okLabel:"Renomear",requiredMessage:"Informe um nome."});if(name!==null&&name!==a.name)await accountAction(()=>invoke("rename_account",{id:a.id,name}));}],
@@ -397,6 +398,7 @@ function renderAccounts(accounts) {
     const info=document.createElement("span");info.className="acct-subtitle";info.textContent=a.detached?"Em janela separada":a.is_default?"Conta ao iniciar":"WhatsApp";open.append(name,info);open.onclick=()=>accountAction(()=>invoke("open_account",{id:a.id}));
     row.append(avatar,open);
     if(a.unread){const badge=document.createElement("span");badge.className="acct-unread";badge.textContent=a.unread;badge.title=t("{0} conversas não lidas",[a.unread]);row.appendChild(badge);}
+    if(a.notifications===false){const off=document.createElement("span");off.className="acct-muted";off.textContent="🔕";off.title=t("Notificações desativadas para esta conta");off.setAttribute("role","img");off.setAttribute("aria-label",off.title);row.appendChild(off);}
     const more=document.createElement("button");more.type="button";more.className="account-more";more.textContent="⋮";more.setAttribute("aria-label",t("Opções de {0}",[a.name]));more.setAttribute("aria-haspopup","menu");more.onclick=()=>accountMenu(a,accounts,more);row.appendChild(more);list.appendChild(row);
   }
 }
