@@ -156,7 +156,7 @@ macro_rules! account_webview {
             // the page's sound modules create their Audio elements.
             .initialization_script(format!(
                 "window.__whatrustSound={};",
-                sound_on($app, $label)
+                sound_on($app, &$label)
             ))
             .initialization_script(include_str!("../resources/integration.js"))
             .initialization_script(BRIDGE_JS)
