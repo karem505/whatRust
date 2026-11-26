@@ -62,6 +62,12 @@
   </screenshots>
 
   <releases>
+    <release type="stable" version="0.7.1" date="2026-11-26">
+      <url type="details">https://github.com/karem505/whatRust/releases/tag/v0.7.1</url>
+      <description>
+        <p>WhatsApp's sounds use one audio stream on Linux, so the volume mixer no longer fills with whatRust entries. New interface languages (Arabic, Indonesian, Spanish), a System, Light or Dark theme, account cards, notifications on or off per account, an option to hide unread counts, and a Relaunch button. The unread count updates at once, GNOME shows notification banners, and Windows downloads always open the Save dialog.</p>
+      </description>
+    </release>
     <release type="stable" version="0.7.0" date="2026-11-25">
       <url type="details">https://github.com/karem505/whatRust/releases/tag/v0.7.0</url>
       <description>
