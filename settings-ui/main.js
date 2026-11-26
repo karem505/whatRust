@@ -133,6 +133,7 @@ async function load() {
   const s = await invoke("get_settings");
   setMacRows(s.platform === "macos");
   // Title bar (Linux): auto hides it on tiling window managers like Hyprland.
+  document.getElementById("theme").value = ["light", "dark"].includes(s.theme) ? s.theme : "system";
   document.getElementById("title_bar_row").hidden = s.platform !== "linux";
   document.getElementById("title_bar").value = ["show", "hide"].includes(s.title_bar) ? s.title_bar : "auto";
   document.getElementById("title_bar_subtitle").textContent = s.tiling_wm
@@ -244,6 +245,7 @@ async function save() {
   s.hotkey = hk || "CmdOrCtrl+Shift+W";
   s.blur_hotkey = window.HotkeyFmt.fromDisplay(document.getElementById("blur_hotkey").value.trim()) || "CmdOrCtrl+Shift+B";
   s.zoom = parseFloat(document.getElementById("zoom").value) || ZOOM_DEFAULT;
+  s.theme = document.getElementById("theme").value || "system";
   s.title_bar = document.getElementById("title_bar").value || "auto";
   s.rendering = document.getElementById("rendering").value || "auto";
   s.language = document.getElementById("language").value;
@@ -479,6 +481,7 @@ window.addEventListener("DOMContentLoaded", () => {
   // Zoom saves on change rather than on Save: picking a size you cannot see the
   // effect of is guesswork, and the webview applies it immediately.
   document.getElementById("zoom").addEventListener("change", save);
+  document.getElementById("theme").addEventListener("change", save);
   document.getElementById("title_bar").addEventListener("change", save);
   document.getElementById("rendering").addEventListener("change", save);
   document.getElementById("quiet_hours").addEventListener("change", syncQuietRow);
