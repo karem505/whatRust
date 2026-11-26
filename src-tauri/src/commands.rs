@@ -666,7 +666,7 @@ fn account_views(app: &tauri::AppHandle) -> Vec<AccountView> {
             id: a.id.clone(),
             name: a.name.clone(),
             order: a.order,
-            unread: map.get(&a.id).copied().unwrap_or(0),
+            unread: crate::unread::visible(map.get(&a.id).copied().unwrap_or(0)),
             open: app.get_webview(&accounts::window_label(&a.id)).is_some(),
             detached: cfg!(windows)
                 && app

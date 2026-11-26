@@ -94,3 +94,6 @@ jobs:
 
       - name: notification-chime suppression tests
         run: node --test tests/suppress-web-notification-sounds.test.js
+
+      - name: Profile picker helper tests
+        run: node settings-ui/profiles.test.mjs

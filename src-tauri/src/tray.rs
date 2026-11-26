@@ -157,7 +157,7 @@ pub fn rebuild_menu(app: &AppHandle) {
 
     let mut builder = MenuBuilder::new(app);
     for a in &accts {
-        let unread = counts.get(&a.id).copied().unwrap_or(0);
+        let unread = crate::unread::visible(counts.get(&a.id).copied().unwrap_or(0));
         let label = if unread > 0 {
             format!("{} ({})", a.name, unread)
         } else {
@@ -225,6 +225,7 @@ pub fn apply_visibility(app: &AppHandle, visible: bool) {
 
 /// Update the tray to reflect the current (aggregate) unread count.
 pub fn update_badge(app: &AppHandle, count: u32) {
+    let count = crate::unread::visible(count);
     crate::badge::set(app, count);
     let Some(tray) = app.tray_by_id("main-tray") else {
         return;

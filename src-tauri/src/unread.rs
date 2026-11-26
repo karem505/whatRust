@@ -1,3 +1,25 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Settings → "Show unread counts" (issue #100). Display code goes through
+/// [`visible`], so with the setting off no count reaches the tray, the dock or
+/// taskbar badge, the window title or the app's own account lists. The counts
+/// themselves are still tracked; notifications do not depend on this flag.
+static SHOW: AtomicBool = AtomicBool::new(true);
+
+/// Store the setting. Returns true when the value changed.
+pub fn set_show(show: bool) -> bool {
+    SHOW.swap(show, Ordering::Relaxed) != show
+}
+
+/// The count to display for `count` unread chats: zero while counts are hidden.
+pub fn visible(count: u32) -> u32 {
+    if SHOW.load(Ordering::Relaxed) {
+        count
+    } else {
+        0
+    }
+}
+
 /// Parse the unread count from a WhatsApp Web document title like "(3) WhatsApp".
 /// Returns 0 when there is no leading "(n)" group.
 pub fn parse_unread(title: &str) -> u32 {
@@ -11,7 +33,17 @@ pub fn parse_unread(title: &str) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_unread;
+    use super::{parse_unread, set_show, visible};
+
+    #[test]
+    fn hidden_counts_display_as_zero() {
+        // One test owns the global flag, so parallel tests cannot race on it.
+        set_show(false);
+        assert_eq!(visible(7), 0);
+        assert!(set_show(true), "turning it back on is a change");
+        assert_eq!(visible(7), 7);
+        assert!(!set_show(true), "no change the second time");
+    }
 
     #[test]
     fn no_parentheses_is_zero() {

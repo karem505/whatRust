@@ -18,6 +18,8 @@ fn main() {
             "reorder_accounts",
             "notification_diagnostics",
             "test_notification",
+            "set_activity_recording",
+            "clear_activity_log",
             "open_notification_settings",
             "notify",
             "notification_icon",

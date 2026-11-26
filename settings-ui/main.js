@@ -1,6 +1,6 @@
 const invoke = window.__TAURI__.core.invoke;
 const LANGS = ["pt-BR", "en", "es", "ar", "id"];
-const BOOLS = ["close_to_tray", "start_minimized", "autostart", "notifications", "notification_sound", "suppress_web_notification_sounds", "hotkey_enabled", "blur_hotkey_enabled", "menu_bar_icon", "menubar_only", "hide_dock_icon", "notify_when_focused", "notify_active_chat", "respect_muted", "quiet_hours", "single_window", "auto_update_check", "auto_update_install", "hide_app_banner", "page_overlays"];
+const BOOLS = ["close_to_tray", "start_minimized", "autostart", "notifications", "notification_sound", "suppress_web_notification_sounds", "hotkey_enabled", "blur_hotkey_enabled", "menu_bar_icon", "menubar_only", "hide_dock_icon", "notify_when_focused", "notify_active_chat", "respect_muted", "quiet_hours", "single_window", "auto_update_check", "auto_update_install", "hide_app_banner", "page_overlays", "show_unread_counts", "show_profile_picker"];
 const ZOOM_DEFAULT = 1;
 const SINGLE_WINDOW_SUBTITLE = "Uma janela com um seletor de contas; as contas ocultas continuam conectadas. Requer reiniciar o whatRust.";
 
@@ -452,6 +452,9 @@ window.addEventListener("DOMContentLoaded", () => {
   loadLock();
   wireLock();
   document.getElementById("save").addEventListener("click", save);
+  document.getElementById("relaunch").addEventListener("click", async () => {
+    try { await invoke("restart_app"); } catch (e) { flash(String(e), 6000); }
+  });
   // The update switches apply at once, like zoom and language.
   for (const id of ["auto_update_check", "auto_update_install"]) {
     document.getElementById(id).addEventListener("change", save);

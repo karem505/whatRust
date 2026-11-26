@@ -3,7 +3,7 @@
   const invoke=window.__TAURI__.core.invoke, isWindows=/Win/.test(navigator.platform||navigator.userAgent);
   const back=document.getElementById("back-to-chat");const single=isWindows||!!window.__WHATRUST_SINGLE__;back.hidden=!single;
   let dirty=false, diagnosticsBusy=false, timer;
-  document.querySelector(".prefs").addEventListener("input",e=>{if(e.target.id!=="new_account_name")dirty=true;});
+  document.querySelector(".prefs").addEventListener("input",e=>{if(e.target.id!=="new_account_name"&&e.target.id!=="activity-recording")dirty=true;});
   document.getElementById("save").addEventListener("click",()=>{setTimeout(()=>{if(/^(Alterações salvas|Changes saved)/.test(document.getElementById("note").textContent))dirty=false;},400);});
   async function close(){if(dirty && !await Dlg.confirm("As alterações ainda não foram salvas.",{title:"Voltar sem salvar?",okLabel:"Voltar"}))return;await invoke("close_app_panel");}
   back.onclick=close;
@@ -19,9 +19,12 @@
       for(const a of d.accounts){const adapter=d.adapters["wa-"+a.id];routes.appendChild(row(a.name,t(d.native[a.id]?"Captura nativa ativa":"Captura nativa indisponível; ponte alternativa")+" · "+t(adapter?.mounted?"Controles integrados":"Acesso pelo menu da janela")+" · "+t(adapter?.detector?"Detector adicional disponível quando houver sinais confiáveis":"Aguardando conversa compatível")));}
       for(const n of d.recent.slice(0,20)){const account=d.accounts.find(a=>a.id===n.account_id)?.name||"whatRust";history.appendChild(row(new Date(n.time*1000).toLocaleTimeString(I18n.locale())+" · "+account,t(names[n.status]||n.status)+(n.reason?" — "+t(reasons[n.reason]||n.reason):"")));}
       if(!d.recent.length)history.appendChild(row("Nenhum aviso registrado","Os próximos eventos aparecerão aqui durante esta execução."));
+      const rec=document.getElementById("activity-recording");if(rec&&document.activeElement!==rec)rec.checked=d.recording!==false;
       document.documentElement.dataset.version=d.version;
     }catch(e){document.getElementById("diagnostic-note").textContent=String(e);}finally{diagnosticsBusy=false;}
   }
+  document.getElementById("activity-recording").addEventListener("change",async e=>{try{await invoke("set_activity_recording",{enabled:e.target.checked});}catch(err){document.getElementById("diagnostic-note").textContent=String(err);}await diagnostics();});
+  document.getElementById("clear-activity").onclick=async()=>{try{await invoke("clear_activity_log");}catch(err){document.getElementById("diagnostic-note").textContent=String(err);}await diagnostics();};
   document.getElementById("test-notification").onclick=async()=>{try{document.getElementById("diagnostic-note").textContent=await invoke("test_notification");await diagnostics();}catch(e){document.getElementById("diagnostic-note").textContent=String(e);}};
   document.getElementById("windows-notifications").onclick=()=>invoke("open_notification_settings").catch(e=>{document.getElementById("diagnostic-note").textContent=String(e);});
   if(!isWindows){document.getElementById("windows-notifications").hidden=true;}

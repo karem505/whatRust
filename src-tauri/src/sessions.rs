@@ -19,6 +19,28 @@ use tauri::{AppHandle, Manager, WebviewBuilder, WebviewUrl, Window, WindowBuilde
 /// converted between the two models.
 static ENABLED: AtomicBool = AtomicBool::new(cfg!(windows));
 
+/// Set at startup when the in-page controls are switched off (`page_overlays`
+/// false). Their page script is baked into each view at creation, so the value
+/// cannot change during a run.
+static NO_OVERLAYS: AtomicBool = AtomicBool::new(false);
+
+/// Start on the profile picker (the shell page's account cards) instead of
+/// opening the startup account (issue #102). Consumed by the first
+/// `open_account` call of the run.
+static PICKER_PENDING: AtomicBool = AtomicBool::new(false);
+
+pub fn request_startup_picker(on: bool) {
+    PICKER_PENDING.store(on, Ordering::Relaxed);
+}
+
+/// True when the window's own top bar must be shown for this account view. With
+/// the in-page controls off nothing else can offer the account switcher and
+/// Settings, so the bar is there from the start instead of waiting for a
+/// controls report that settles seconds after the chat list loads (#129).
+fn needs_top_bar(app: &AppHandle, label: &str) -> bool {
+    NO_OVERLAYS.load(Ordering::Relaxed) || crate::lock::guard(&state(app).fallback).contains(label)
+}
+
 /// Windows always uses the single window. Elsewhere it is the value chosen by
 /// [`init_mode`] at startup, `false` until then.
 pub fn enabled() -> bool {
@@ -29,6 +51,7 @@ pub fn enabled() -> bool {
 /// mode (macOS) wins over single-window; macOS older than 14 cannot isolate
 /// accounts, so it keeps the one-account-per-window path.
 pub fn init_mode(s: &crate::settings::Settings) {
+    NO_OVERLAYS.store(!s.page_overlays, Ordering::Relaxed);
     if cfg!(windows) {
         return;
     }
@@ -381,10 +404,17 @@ pub fn selected(app: &AppHandle, parent: &str) -> Option<String> {
 pub fn open_account(app: &AppHandle, account: &Account, hidden: bool) -> tauri::Result<()> {
     let parent = initialize(app, hidden)?;
     let label = accounts::window_label(&account.id);
+    // The first account of a run stays built (it keeps connecting in the
+    // background) but is not selected, so the picker shows.
+    let picker = PICKER_PENDING.swap(false, Ordering::Relaxed);
     if app.get_webview(&label).is_none() {
         let view = crate::window::build_account_view(app, &parent, account)?;
         set_view_visible(app, &view, false);
         crate::lock::guard(&state(app).last_seen).insert(label.clone(), std::time::Instant::now());
+    }
+    if picker {
+        layout(app, "main");
+        return Ok(());
     }
     if crate::lock::guard(&state(app).main_active).is_none() {
         *crate::lock::guard(&state(app).main_active) = Some(label.clone());
@@ -491,7 +521,11 @@ pub fn window_title(app: &AppHandle, label: &str) -> String {
     others.sort_by_key(|a| a.order);
     let mut title = format!("whatRust — {name}");
     for a in others {
-        if let Some(n) = unread.get(&a.id).filter(|n| **n > 0) {
+        if let Some(n) = unread
+            .get(&a.id)
+            .map(|n| crate::unread::visible(*n))
+            .filter(|n| *n > 0)
+        {
             title.push_str(&format!(" · {} ({n})", a.name));
         }
     }
@@ -559,11 +593,7 @@ fn layout_on_main(app: &AppHandle, parent: &str) {
     }
     let Ok(size) = w.inner_size() else { return };
     let scale = w.scale_factor().unwrap_or(1.0);
-    let top = if parent == "main"
-        && active
-            .as_ref()
-            .is_some_and(|l| crate::lock::guard(&state(app).fallback).contains(l))
-    {
+    let top = if parent == "main" && active.as_ref().is_some_and(|l| needs_top_bar(app, l)) {
         48.
     } else {
         0.
@@ -627,8 +657,7 @@ fn sync_menu(app: &AppHandle, parent: &str) {
     // Shown only when the chat list loaded but the in-page controls could not
     // attach. Before the first report, and with no account selected (the shell
     // page has its own controls), the window keeps a single title bar.
-    let hidden = selected(app, parent)
-        .is_none_or(|label| !crate::lock::guard(&state(app).fallback).contains(&label));
+    let hidden = selected(app, parent).is_none_or(|label| !needs_top_bar(app, &label));
     let changed = {
         let s = state(app);
         let mut menus = crate::lock::guard(&s.menus_hidden);

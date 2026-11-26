@@ -122,6 +122,8 @@ select option { background: var(--bg); color: var(--fg); }
 .hotkey-hint { font-size: 13px; color: var(--warn); }
 .footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 24px; border-top: 1px solid var(--border); }
 .footer button { padding: 10px 24px; margin-inline-start: auto; }
+.footer #relaunch { margin-inline-start: 0; }
+.footer .note { flex: 1; min-width: 0; }
 .note { font-size: 13px; color: var(--green); }
 .prefs h3 { font-size: 14px; margin: 24px 0 6px; }
 @media(max-width:900px) { .settings-nav { flex-basis: 220px; } .settings-nav a { padding: 16px 20px; gap: 18px; } .prefs { padding: 26px 24px; } }

@@ -113,6 +113,16 @@
               <span class="row-subtitle">Mostra o seletor de contas e a engrenagem dentro do cabeçalho do WhatsApp (Windows e janela única). Desative para não alterar a página. Vale ao reiniciar o whatRust.</span></span>
             <input type="checkbox" class="switch" id="page_overlays" />
           </label>
+          <label class="row">
+            <span class="row-text"><span class="row-title">Mostrar contagem de não lidas</span>
+              <span class="row-subtitle">Mostra o número de conversas não lidas no ícone da bandeja, no ícone do app, no título da janela e nas contas dentro do whatRust. Os avisos de mensagens não mudam.</span></span>
+            <input type="checkbox" class="switch" id="show_unread_counts" />
+          </label>
+          <label class="row">
+            <span class="row-text"><span class="row-title">Mostrar a escolha de perfis ao iniciar</span>
+              <span class="row-subtitle">Com mais de uma conta, abre a tela com um cartão por conta em vez de abrir direto a conta inicial (janela única). Vale ao reiniciar o whatRust.</span></span>
+            <input type="checkbox" class="switch" id="show_profile_picker" />
+          </label>
           <label class="row linux-only" id="title_bar_row" hidden>
             <span class="row-text"><span class="row-title">Barra de título</span>
               <span class="row-subtitle" id="title_bar_subtitle">Gerenciadores de janelas lado a lado, como o Hyprland, não usam barra de título.</span></span>
@@ -289,7 +299,8 @@
       <section class="group" id="sec-diagnostico"><h2 class="group-title">Diagnóstico de notificações</h2>
       <div class="boxed-list"><div class="row"><span class="row-text"><span class="row-title">Verificar avisos do Windows</span><span class="row-subtitle">O teste confirma o envio; confira se o Windows exibe o banner.</span></span><button id="test-notification" type="button">Testar</button></div><div class="row"><span class="row-text">Permissões e Não perturbe</span><button id="windows-notifications" class="secondary" type="button">Abrir no Windows</button></div></div>
       <p id="diagnostic-note" class="group-note" role="status"></p><div id="route-status" class="boxed-list"></div>
-      <h3>Atividade desta sessão</h3><p class="group-note">Somente horário, conta e resultado. Não armazena o texto das mensagens.</p><div id="notification-history" class="boxed-list"></div>
+      <h3>Atividade desta sessão</h3><p class="group-note">Somente horário, conta e resultado. Não armazena o texto das mensagens.</p>
+      <div class="boxed-list"><label class="row"><span class="row-text"><span class="row-title">Registrar atividade</span><span class="row-subtitle">Desative para pausar: novos eventos não aparecem aqui. O registro volta a vazio ao reiniciar o whatRust.</span></span><input type="checkbox" class="switch" id="activity-recording" checked></label><div class="row"><span class="row-text">Apagar o registro atual</span><button id="clear-activity" class="secondary" type="button">Limpar</button></div></div><div id="notification-history" class="boxed-list"></div>
       </section>
       <section class="group" id="sec-atualizacoes">
         <h2 class="group-title">Sobre o whatRust</h2>
@@ -349,6 +360,7 @@
     </main></div>
 
     <footer class="footer">
+      <button id="relaunch" type="button" class="secondary" title="Fecha e abre o whatRust de novo">Reiniciar o app</button>
       <span id="note" class="note" role="status" aria-live="polite"></span>
       <button id="save">Salvar</button>
     </footer>
