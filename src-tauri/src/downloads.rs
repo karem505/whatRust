@@ -318,7 +318,7 @@ pub fn fix_alias_extension(destination: &mut PathBuf) {
 /// A finished download saved without any extension (a `blob:` download) gets
 /// the one its content implies. Anything unrecognised, or any rename that
 /// would overwrite a file, leaves the path alone.
-fn add_sniffed_extension(path: PathBuf) -> PathBuf {
+pub fn add_sniffed_extension(path: PathBuf) -> PathBuf {
     use std::io::Read;
     if path.extension().is_some() {
         return path;
@@ -338,6 +338,65 @@ fn add_sniffed_extension(path: PathBuf) -> PathBuf {
         return path;
     }
     renamed
+}
+
+/// Windows (issue #122): the Save As dialog used to run inside WebView2's
+/// download-starting callback, and from the second download of a session on it
+/// never produced a file. Downloads now land in a private staging folder first
+/// and the dialog runs afterwards, off that callback, when the file is complete.
+#[cfg(any(windows, test))]
+pub fn staging_dir() -> PathBuf {
+    std::env::temp_dir().join("whatrust-downloads")
+}
+
+/// A fresh, empty folder under [`staging_dir`] for one download, with the
+/// suggested file name inside it.
+#[cfg(any(windows, test))]
+pub fn stage_destination(name: &str) -> PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let dir = staging_dir().join(format!("{}-{nanos}-{n}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    // Keep only the final component of a name that came from the page.
+    let name = Path::new(name)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .filter(|n| !n.is_empty())
+        .unwrap_or("download");
+    dir.join(name)
+}
+
+#[cfg(any(windows, test))]
+pub fn is_staged(path: &Path) -> bool {
+    path.starts_with(staging_dir())
+}
+
+/// Move a finished file to where the user chose (rename, or copy + delete across
+/// drives), then drop its staging folder.
+#[cfg(any(windows, test))]
+pub fn move_staged(from: &Path, to: &Path) -> std::io::Result<()> {
+    if std::fs::rename(from, to).is_err() {
+        std::fs::copy(from, to)?;
+        let _ = std::fs::remove_file(from);
+    }
+    discard_staged(from);
+    Ok(())
+}
+
+/// Delete a staged file and its (now empty) staging folder.
+#[cfg(any(windows, test))]
+pub fn discard_staged(path: &Path) {
+    let _ = std::fs::remove_file(path);
+    if let Some(dir) = path.parent() {
+        if dir != staging_dir() && is_staged(dir) {
+            let _ = std::fs::remove_dir(dir);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -584,5 +643,29 @@ mod tests {
         std::fs::write(&named, b"GIF89a").unwrap();
         assert_eq!(add_sniffed_extension(named.clone()), named);
         std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn staged_downloads_are_unique_and_move_out() {
+        let a = stage_destination("report.pdf");
+        let b = stage_destination("report.pdf");
+        assert_ne!(a, b, "two downloads never share a staging folder");
+        assert!(is_staged(&a));
+        assert_eq!(a.file_name().unwrap(), "report.pdf");
+        // A name from the page cannot climb out of the staging folder.
+        let c = stage_destination("../../evil.txt");
+        assert!(is_staged(&c));
+        assert_eq!(c.file_name().unwrap(), "evil.txt");
+
+        std::fs::write(&a, b"%PDF-1").unwrap();
+        let d = scratch("move");
+        let target = d.join("saved.pdf");
+        move_staged(&a, &target).unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"%PDF-1");
+        assert!(!a.exists());
+        assert!(!a.parent().unwrap().exists(), "staging folder is removed");
+        discard_staged(&b);
+        discard_staged(&c);
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

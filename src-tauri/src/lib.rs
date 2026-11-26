@@ -21,6 +21,7 @@ mod jsonfile;
 mod keys;
 mod links;
 mod lock;
+mod memory;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod menubar;
 mod native_icon;
@@ -407,6 +408,7 @@ pub fn run() {
             ui_health::start(handle);
             tray::setup(handle)?;
             update_service::start(handle);
+            memory::start(handle);
             // Let setup return before accessing tray/window APIs again. This
             // avoids waiting on the Windows UI loop while it is being created.
             let startup_handle = handle.clone();

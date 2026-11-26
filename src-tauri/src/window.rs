@@ -225,11 +225,6 @@ macro_rules! account_webview {
                 let downloads = app.state::<crate::downloads::Downloads>();
                 match event {
                     tauri::webview::DownloadEvent::Requested { url, destination } => {
-                        // A custom folder (issue #40), if it is still usable; otherwise
-                        // the OS Downloads folder, as before.
-                        let custom_dir = crate::downloads::configured_dir(
-                            crate::settings::load(app).download_dir.as_deref(),
-                        );
                         #[cfg(windows)]
                         {
                             let suggested = destination
@@ -238,21 +233,18 @@ macro_rules! account_webview {
                                 .unwrap_or("download");
                             // Issue #123: `photo.jpg.jpeg` -> `photo.jpg`.
                             let suggested = crate::downloads::drop_alias_extension(suggested);
-                            let Some(path) = choose_download_destination(
-                                suggested,
-                                custom_dir
-                                    .clone()
-                                    .or_else(|| app.path().download_dir().ok())
-                                    .as_deref(),
-                                webview.window().hwnd().ok(),
-                            ) else {
-                                crate::dlog::log("download: save dialog cancelled");
-                                return false;
-                            };
-                            *destination = path;
+                            // Issue #122: no dialog inside this callback (from the second
+                            // download on it produced no file). Download into a staging
+                            // folder; the Save As dialog runs once it has finished.
+                            *destination = crate::downloads::stage_destination(suggested);
                         }
                         #[cfg(not(windows))]
                         {
+                            // A custom folder (issue #40), if it is still usable; otherwise
+                            // the OS Downloads folder, as before.
+                            let custom_dir = crate::downloads::configured_dir(
+                                crate::settings::load(app).download_dir.as_deref(),
+                            );
                             let base = app.path().download_dir().ok();
                             ensure_download_destination(destination, base.clone());
                             // Issue #92: WebKitGTK gives blob: downloads no name.
@@ -285,60 +277,136 @@ macro_rules! account_webview {
                             "download: finished success={success} path_known={}",
                             path.is_some()
                         ));
-                        // Issue #21: confirm in the window itself, with Open / Show in
-                        // folder, like a browser. macOS reports no path; the
-                        // destination recorded at request time stands in for it.
-                        let done = if success {
-                            downloads.finished(url.as_str(), path)
-                        } else {
-                            downloads.failed(url.as_str());
-                            None
-                        };
-                        let shown = webview
-                            .eval(crate::downloads::toast_js(
-                                done.as_ref().map(|(id, p)| (*id, p.as_path())),
-                            ))
-                            .is_ok();
-                        // Nobody is looking at the window (hidden to the tray, or in
-                        // the background): say it with a system notification too.
                         #[cfg(windows)]
-                        let focused = crate::sessions::account_focused(app, webview.label());
-                        #[cfg(not(windows))]
-                        let focused = if crate::sessions::enabled() {
-                            crate::sessions::account_focused(app, webview.label())
-                        } else {
-                            webview.window().is_focused().unwrap_or(false)
-                        };
-                        if !shown || !focused {
-                            if success {
-                                let body = match done.as_ref().and_then(|(_, p)| p.file_name()) {
-                                    Some(n) => trf(
-                                        "{0} — salvo no local escolhido.",
-                                        &[&n.to_string_lossy()],
-                                    ),
-                                    None => tr("Arquivo salvo no local escolhido.").into_owned(),
-                                };
-                                crate::notify::show_for_account(
-                                    app,
-                                    webview.label(),
-                                    tr("Download concluído").as_ref(),
-                                    &body,
-                                );
-                            } else {
-                                crate::notify::show_for_account(
-                                    app,
-                                    webview.label(),
-                                    tr("Falha no download").as_ref(),
-                                    tr("Não foi possível baixar o arquivo. Tente novamente.").as_ref(),
-                                );
-                            }
+                        if let (true, Some(staged)) = (
+                            success,
+                            path.clone().filter(|p| crate::downloads::is_staged(p)),
+                        ) {
+                            // Issue #122: ask where to save only now, off the engine's callback.
+                            let (webview, url, owner) = (
+                                webview.clone(),
+                                url.clone(),
+                                webview.window().hwnd().ok().map(|h| h.0 as isize),
+                            );
+                            std::thread::spawn(move || {
+                                let app = webview.app_handle().clone();
+                                let staged = crate::downloads::add_sniffed_extension(staged);
+                                let chosen = save_staged_download(&app, &staged, owner);
+                                if chosen.is_none() {
+                                    crate::dlog::log("download: save dialog cancelled");
+                                    crate::downloads::discard_staged(&staged);
+                                }
+                                match chosen {
+                                    Some(path) => {
+                                        finish_download(&webview, &url, true, Some(path), false)
+                                    }
+                                    None => finish_download(&webview, &url, false, None, true),
+                                }
+                            });
+                            return true;
                         }
+                        finish_download(&webview, &url, success, path.clone(), false);
                     }
                     _ => {}
                 }
                 true
             })
     };
+}
+
+/// Toast + system notification after a download ends. `quiet` (the user
+/// cancelled the Save As dialog) records the request as failed without telling
+/// anyone.
+fn finish_download(
+    webview: &tauri::Webview,
+    url: &tauri::Url,
+    success: bool,
+    path: Option<std::path::PathBuf>,
+    quiet: bool,
+) {
+    let app = webview.app_handle();
+    let downloads = app.state::<crate::downloads::Downloads>();
+    if quiet {
+        downloads.failed(url.as_str());
+        return;
+    }
+    // Issue #21: confirm in the window itself, with Open / Show in
+    // folder, like a browser. macOS reports no path; the
+    // destination recorded at request time stands in for it.
+    let done = if success {
+        downloads.finished(url.as_str(), path)
+    } else {
+        downloads.failed(url.as_str());
+        None
+    };
+    let shown = webview
+        .eval(crate::downloads::toast_js(
+            done.as_ref().map(|(id, p)| (*id, p.as_path())),
+        ))
+        .is_ok();
+    // Nobody is looking at the window (hidden to the tray, or in
+    // the background): say it with a system notification too.
+    #[cfg(windows)]
+    let focused = crate::sessions::account_focused(app, webview.label());
+    #[cfg(not(windows))]
+    let focused = if crate::sessions::enabled() {
+        crate::sessions::account_focused(app, webview.label())
+    } else {
+        webview.window().is_focused().unwrap_or(false)
+    };
+    if !shown || !focused {
+        if success {
+            let body = match done.as_ref().and_then(|(_, p)| p.file_name()) {
+                Some(n) => trf("{0} — salvo no local escolhido.", &[&n.to_string_lossy()]),
+                None => tr("Arquivo salvo no local escolhido.").into_owned(),
+            };
+            crate::notify::show_for_account(
+                app,
+                webview.label(),
+                tr("Download concluído").as_ref(),
+                &body,
+            );
+        } else {
+            crate::notify::show_for_account(
+                app,
+                webview.label(),
+                tr("Falha no download").as_ref(),
+                tr("Não foi possível baixar o arquivo. Tente novamente.").as_ref(),
+            );
+        }
+    }
+}
+
+/// Windows (issue #122): Save As for a download that finished in the staging
+/// folder, then move it there. `None` when the user cancelled (the staged file
+/// is the caller's to delete). If the move fails the file stays staged and is
+/// returned, so it can still be opened.
+#[cfg(windows)]
+fn save_staged_download(
+    app: &AppHandle,
+    staged: &std::path::Path,
+    owner: Option<isize>,
+) -> Option<std::path::PathBuf> {
+    let suggested = staged
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("download");
+    let custom_dir =
+        crate::downloads::configured_dir(crate::settings::load(app).download_dir.as_deref());
+    let chosen = choose_download_destination(
+        suggested,
+        custom_dir
+            .or_else(|| app.path().download_dir().ok())
+            .as_deref(),
+        owner.map(|h| windows::Win32::Foundation::HWND(h as *mut core::ffi::c_void)),
+    )?;
+    match crate::downloads::move_staged(staged, &chosen) {
+        Ok(()) => Some(chosen),
+        Err(e) => {
+            crate::dlog::log(&format!("download: move from staging failed: {e}"));
+            Some(staged.to_path_buf())
+        }
+    }
 }
 
 /// Open (or focus, if it already exists) the window for `account`. The label is
