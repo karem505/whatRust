@@ -136,6 +136,14 @@ OS supports it — before showing your chats. Enable it under **Settings → Sec
 > software running as your user, locked or not (the same posture as Signal Desktop). For
 > at-rest protection, use full-disk encryption (FileVault / BitLocker / LUKS).
 
+## What users say
+
+> "This is a great replacement for the bulky and bloated app provided by WhatsApp/Meta." — [@jumpingjackflash5](https://github.com/karem505/whatRust/issues/27)
+
+> "A great alternative to the heavy and overloaded official WhatsApp app. Everything feels much lighter and simpler." — [@94bash](https://github.com/karem505/whatRust/issues/29)
+
+> "With the same number of chats, version 0.7.0 is more RAM efficient." — [@brianfauzanlukman](https://github.com/karem505/whatRust/issues/91#issuecomment-7166875602)
+
 ## whatRust vs the official WhatsApp Desktop (Electron)
 
 | Feature | whatRust | Official WhatsApp Desktop (Electron) |
