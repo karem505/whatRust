@@ -88,3 +88,5 @@ jobs:
 
       - name: release-notes renderer tests (HTML in a release body stays text)
         run: node settings-ui/notes.test.mjs
+      - name: Profile picker helper tests
+        run: node settings-ui/profiles.test.mjs

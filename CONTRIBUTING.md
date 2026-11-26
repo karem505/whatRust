@@ -62,6 +62,7 @@ node --test src-tauri/resources/privacy.test.mjs
 node --test src-tauri/resources/upsell.test.mjs
 node src-tauri/resources/media.test.mjs
 node settings-ui/notes.test.mjs
+node settings-ui/profiles.test.mjs
 ```
 
 Things that often fail only on the other operating systems:

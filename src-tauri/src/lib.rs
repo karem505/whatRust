@@ -223,6 +223,8 @@ pub fn run() {
             integration::reorder_accounts,
             integration::notification_diagnostics,
             integration::test_notification,
+            integration::set_activity_recording,
+            integration::clear_activity_log,
             integration::open_notification_settings,
             commands::notify,
             commands::notification_icon,
@@ -306,6 +308,7 @@ pub fn run() {
             }
             // Window model for this run (Linux/macOS opt-in; Windows always single).
             sessions::init_mode(&s);
+            unread::set_show(s.show_unread_counts);
             let args: Vec<String> = std::env::args().collect();
             let start_hidden = settings::start_hidden(s.start_minimized, &args);
 
@@ -339,6 +342,12 @@ pub fn run() {
             handle.manage(lock::LockState::new(!lock_on_launch));
             let open_hidden = start_hidden || lock_on_launch;
 
+            // Several accounts: land on the profile picker instead of one chat
+            // (Settings → show_profile_picker). Not in the smoke test, which
+            // expects the startup account on screen.
+            sessions::request_startup_picker(
+                !smoke_mode && s.show_profile_picker && f.accounts.len() > 1,
+            );
             let startup_label =
                 accounts::startup_account(&f).map(|account| accounts::window_label(&account.id));
             if let Some(label) = &startup_label {

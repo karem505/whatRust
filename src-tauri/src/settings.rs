@@ -78,6 +78,14 @@ pub struct Settings {
     /// Read when an account page is created, so a change applies after a
     /// restart. On by default.
     pub page_overlays: bool,
+    /// Show unread counts: on the tray icon, the dock/taskbar badge, the window
+    /// title and in the app's own account lists (issue #100). Notifications are
+    /// unaffected. On by default.
+    pub show_unread_counts: bool,
+    /// With more than one account, start on the profile picker instead of
+    /// opening the startup account at once (issue #102). Single-window mode
+    /// only; read at startup. On by default, as the request asked.
+    pub show_profile_picker: bool,
     /// Unload an account page that has not been opened for this many hours
     /// (0 = never). It reloads when switched to; asleep, it gets no messages.
     pub sleep_idle_hours: u32,
@@ -120,6 +128,8 @@ impl Default for Settings {
             rendering: RENDERING_AUTO.to_string(),
             hide_app_banner: true,
             page_overlays: true,
+            show_unread_counts: true,
+            show_profile_picker: true,
             sleep_idle_hours: 0,
             quiet_hours: false,
             quiet_start: "22:00".to_string(),
@@ -381,6 +391,20 @@ pub fn save(app: &AppHandle, s: &Settings) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Redraw every place that shows an unread count after the setting flipped.
+fn refresh_unread_display(app: &AppHandle) {
+    let total = {
+        let state = app.state::<crate::accounts::UnreadMap>();
+        let map = crate::lock::guard(&state);
+        crate::accounts::aggregate_unread(&map)
+    };
+    crate::tray::update_badge(app, total);
+    crate::tray::rebuild_menu(app);
+    let ui = app.clone();
+    let _ = app.run_on_main_thread(move || crate::sessions::refresh_titles(&ui));
+    crate::integration::broadcast(app);
+}
+
 /// Apply side effects of settings (autostart + global shortcut + the macOS menu bar).
 /// Returns any non-fatal side-effect failures as one warning string;
 /// persisted settings and zoom changes are still applied.
@@ -393,6 +417,9 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
         crate::i18n::refresh(app);
     }
     crate::window::apply_zoom_all(app, s.zoom);
+    if crate::unread::set_show(s.show_unread_counts) {
+        refresh_unread_display(app);
+    }
     crate::window::apply_notification_sound(app, s.notification_sound);
     crate::appicon::apply(app, s.custom_icon, false);
     crate::decorations::apply_all(app, &s.title_bar);
@@ -539,6 +566,17 @@ mod tests {
             ..Settings::default()
         };
         assert_eq!(blank.sanitized().download_dir, None);
+    }
+
+    #[test]
+    fn unread_counts_and_picker_default_on_and_round_trip() {
+        let s: Settings = serde_json::from_str(r#"{"notifications":false}"#).unwrap();
+        assert!(s.show_unread_counts && s.show_profile_picker);
+        let off: Settings =
+            serde_json::from_str(r#"{"show_unread_counts":false,"show_profile_picker":false}"#)
+                .unwrap();
+        assert!(!off.sanitized().show_unread_counts);
+        assert!(!off.sanitized().show_profile_picker);
     }
 
     #[test]

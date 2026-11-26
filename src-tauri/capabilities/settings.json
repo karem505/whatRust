@@ -40,6 +40,8 @@
     "allow-reorder-accounts",
     "allow-notification-diagnostics",
     "allow-test-notification",
+    "allow-set-activity-recording",
+    "allow-clear-activity-log",
     "allow-open-notification-settings"
   ],
   "webviews": [

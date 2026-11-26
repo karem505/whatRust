@@ -4,7 +4,7 @@ use serde::Serialize;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     Mutex,
 };
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -29,11 +29,19 @@ pub struct Notice {
     pub time: u64,
     pub status: String,
     pub reason: Option<String>,
+    /// Logged while the activity log was paused (issue #99). The delivery logic
+    /// still needs the entry (see `finish`), but it is never shown or sent to
+    /// the UI.
+    #[serde(skip)]
+    hidden: bool,
 }
 #[derive(Default)]
 pub struct Recent {
     inner: Mutex<Inner>,
     generation: AtomicU64,
+    /// Diagnosis → "Activity this session" is paused (issue #99): new events
+    /// are not recorded. Default false, so recording is on.
+    paused: AtomicBool,
     #[cfg(windows)]
     delivery_gate: Mutex<()>,
     #[cfg(windows)]
@@ -109,6 +117,18 @@ impl Recent {
             i.native.remove(label);
         }
     }
+    pub fn recording(&self) -> bool {
+        !self.paused.load(Ordering::Relaxed)
+    }
+    pub fn set_recording(&self, on: bool) {
+        self.paused.store(!on, Ordering::Relaxed);
+    }
+    pub fn clear_records(&self) {
+        // Entries the delivery logic still depends on stay, but invisible.
+        for n in crate::lock::guard(&self.inner).records.iter_mut() {
+            n.hidden = true;
+        }
+    }
     pub fn records(&self) -> Vec<Notice> {
         self.inner
             .lock()
@@ -116,10 +136,12 @@ impl Recent {
             .records
             .iter()
             .rev()
+            .filter(|n| !n.hidden)
             .cloned()
             .collect()
     }
     fn record(&self, label: &str, id: &str, source: Source, status: &str, reason: Option<&str>) {
+        let hidden = !self.recording();
         let mut i = crate::lock::guard(&self.inner);
         i.records.push_back(Notice {
             id: id.into(),
@@ -131,6 +153,7 @@ impl Recent {
                 .as_secs(),
             status: status.into(),
             reason: reason.map(str::to_string),
+            hidden,
         });
         while i.records.len() > 100 {
             i.records.pop_front();
@@ -870,6 +893,22 @@ mod tests {
         r.record("wa-a", "visual", Source::Visual, "pending", None);
         r.finish("wa-a", "visual", "visual-2", true);
         assert!(!r.consume_coverage("wa-a", t));
+    }
+    #[test]
+    fn paused_log_hides_new_events_and_clear_hides_old_ones() {
+        let r = Recent::default();
+        r.record("wa-a", "one", Source::Page, "pending", None);
+        assert_eq!(r.records().len(), 1);
+        r.set_recording(false);
+        r.record("wa-a", "two", Source::Page, "pending", None);
+        assert_eq!(r.records().len(), 1, "nothing new while paused");
+        r.set_recording(true);
+        r.record("wa-a", "three", Source::Page, "pending", None);
+        assert_eq!(r.records().len(), 2);
+        r.clear_records();
+        assert!(r.records().is_empty());
+        r.record("wa-a", "four", Source::Page, "pending", None);
+        assert_eq!(r.records().len(), 1);
     }
     #[test]
     fn asynchronous_failure_removes_the_delivery_receipt() {

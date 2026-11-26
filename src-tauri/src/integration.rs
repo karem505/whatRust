@@ -67,7 +67,7 @@ pub fn display_accounts(app: &AppHandle) -> Vec<DisplayAccount> {
         .map(|a| DisplayAccount {
             id: a.id.clone(),
             name: a.name,
-            unread: counts.get(&a.id).copied().unwrap_or(0),
+            unread: crate::unread::visible(counts.get(&a.id).copied().unwrap_or(0)),
             detached: cfg!(windows)
                 && app
                     .get_webview(&accounts::window_label(&a.id))
@@ -283,6 +283,27 @@ pub struct Diagnostics {
     pub adapters: HashMap<String, Adapter>,
     pub native: HashMap<String, bool>,
     pub recent: Vec<notify::Notice>,
+    /// False while the activity log is paused.
+    pub recording: bool,
+}
+/// Pause or resume the "Activity this session" log (issue #99). Local settings
+/// window only; paused events are dropped, not queued.
+#[tauri::command]
+pub fn set_activity_recording(
+    window: Webview,
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    local(&window, &app)?;
+    app.state::<notify::Recent>().set_recording(enabled);
+    Ok(())
+}
+/// Forget the entries already in the "Activity this session" log.
+#[tauri::command]
+pub fn clear_activity_log(window: Webview, app: AppHandle) -> Result<(), String> {
+    local(&window, &app)?;
+    app.state::<notify::Recent>().clear_records();
+    Ok(())
 }
 #[tauri::command]
 pub fn notification_diagnostics(window: Webview, app: AppHandle) -> Result<Diagnostics, String> {
@@ -304,6 +325,7 @@ pub fn notification_diagnostics(window: Webview, app: AppHandle) -> Result<Diagn
         adapters: app.state::<Integration>().0.lock().unwrap().clone(),
         native,
         recent: app.state::<notify::Recent>().records(),
+        recording: app.state::<notify::Recent>().recording(),
     })
 }
 #[tauri::command]
