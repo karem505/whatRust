@@ -89,7 +89,8 @@ pub struct Settings {
     pub show_unread_counts: bool,
     /// With more than one account, start on the profile picker instead of
     /// opening the startup account at once (issue #102). Single-window mode
-    /// only; read at startup. On by default, as the request asked.
+    /// only; read at startup. Off by default, so an update does not change
+    /// what opens first; turn it on in Settings.
     pub show_profile_picker: bool,
     /// Unload an account page that has not been opened for this many hours
     /// (0 = never). It reloads when switched to; asleep, it gets no messages.
@@ -136,7 +137,7 @@ impl Default for Settings {
             hide_app_banner: true,
             page_overlays: true,
             show_unread_counts: true,
-            show_profile_picker: true,
+            show_profile_picker: false,
             sleep_idle_hours: 0,
             quiet_hours: false,
             quiet_start: "22:00".to_string(),
@@ -578,9 +579,9 @@ mod tests {
     }
 
     #[test]
-    fn unread_counts_and_picker_default_on_and_round_trip() {
+    fn unread_counts_default_on_picker_default_off_and_round_trip() {
         let s: Settings = serde_json::from_str(r#"{"notifications":false}"#).unwrap();
-        assert!(s.show_unread_counts && s.show_profile_picker);
+        assert!(s.show_unread_counts && !s.show_profile_picker);
         let off: Settings =
             serde_json::from_str(r#"{"show_unread_counts":false,"show_profile_picker":false}"#)
                 .unwrap();
