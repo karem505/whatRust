@@ -21,6 +21,8 @@
 
 > Also by the same author: [Rusty Inbox](https://aboelmakarem.pro/apps/rusty-inbox), a fast, open-source Rust email client for Linux, Windows and macOS.
 
+> How whatRust is built and released, step by step: [Ship a Cross-Platform Desktop App with Rust + Tauri](https://aboelmakarem.pro/playbooks/ship-desktop-app-tauri?utm_source=github&utm_medium=readme&utm_campaign=whatrust), a short playbook (English and Arabic) on CI for three systems, tag-driven releases, AppImage, Flatpak and AUR packaging, and code signing, drawn from 30 real whatRust releases.
+
 ## Contents
 
 - [What is whatRust?](#what-is-whatrust)
