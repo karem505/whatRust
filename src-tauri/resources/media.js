@@ -1,5 +1,6 @@
-// Linux only (WebKitGTK): make attaching a video work, and keep WhatsApp's
-// sounds to one audio stream (sections 5 and 6).
+// Linux only (WebKitGTK): make attaching a video work, keep WhatsApp's sounds
+// to one audio stream (sections 5 and 6), and keep its alert sounds from
+// leaving a media player in the desktop's media controls (section 7).
 //
 // whatRust presents itself to WhatsApp Web as Chrome on Linux, so WhatsApp runs
 // its Chromium code paths on WebKitGTK, where three engine behaviours differ.
@@ -484,5 +485,144 @@
     }
   } catch (e) {
     note("shared audio context not installed: " + e);
+  }
+
+  // -- 7. alert sounds leave no media player behind (#120) -------------------
+  // WebKitGTK registers a page's audio as an MPRIS media player (GNOME's media
+  // controls) and removes it only when the element's document goes away. Worse,
+  // once anything has played, an <audio> that merely LOADS registers a player
+  // too, and every player then reports "Playing" for good. WhatsApp makes its
+  // alert sounds at startup (`new Audio(url)`: the new-message .mp3, the 40 ms
+  // send_message .m4a) and keeps them, so a stuck "Playing" entry appeared even
+  // when nothing sounded. Reproduced on the real web.whatsapp.com in a bare
+  // WebKitGTK 2.52 view; pausing, muting, clearing `src`, or turning off the
+  // MediaSession feature does not remove the player.
+  // So the page's own alert elements never load: they keep their URL, the engine
+  // never gets it. Each play() sounds from a copy in a hidden iframe that is
+  // removed when the copy ends, errors or is paused, which destroys its player.
+  // The page's element gets play, playing, ended, pause and error as before.
+  // Alerts are https:/data: <audio> in the top page; voice messages (blob:) and
+  // calls (srcObject) keep the engine's own playback. Runs after section 5, so
+  // its idle release never sees an alert element with media.
+  try {
+    var AP7 = HTMLMediaElement.prototype;
+    var src7 = Object.getOwnPropertyDescriptor(AP7, "src");
+    var currentSrc7 = Object.getOwnPropertyDescriptor(AP7, "currentSrc");
+    var paused7 = Object.getOwnPropertyDescriptor(AP7, "paused");
+    var NativeAudio = window.Audio;
+    if (window.top !== window || typeof NativeAudio !== "function" || !src7 || !src7.set || !paused7 || !paused7.get) {
+      note("alert sounds: not installed here");
+    } else {
+      var isAlertUrl = function (u) { return /^(https?|data):/i.test(String(u)); };
+      var held = new WeakMap(); // page alert element -> the URL the engine never got
+      var copies = new WeakMap(); // page alert element -> { frame, audio } now sounding
+      var play7 = AP7.play, pause7 = AP7.pause, setAttr7 = Element.prototype.setAttribute;
+      var hold = function (el, url) {
+        if (el instanceof HTMLAudioElement && isAlertUrl(url)) { held.set(el, String(url)); return true; }
+        held.delete(el);
+        return false;
+      };
+      var stopCopy = function (el) {
+        var c = copies.get(el);
+        if (!c) return;
+        copies.delete(el);
+        try { c.audio.pause(); } catch (e) {}
+        if (c.frame.parentNode) c.frame.parentNode.removeChild(c.frame);
+      };
+      // `new Audio(url)` hands the URL to the engine without our setter: take it.
+      var Audio7 = function Audio(url) {
+        if (!new.target) throw new TypeError("Constructor Audio requires 'new'");
+        var el = new NativeAudio();
+        if (url !== undefined) el.src = url;
+        return el;
+      };
+      Audio7.prototype = NativeAudio.prototype;
+      window.Audio = Audio7;
+      Object.defineProperty(AP7, "src", {
+        configurable: true, enumerable: src7.enumerable,
+        get: function () { return held.has(this) ? held.get(this) : src7.get.call(this); },
+        set: function (v) {
+          stopCopy(this);
+          if (hold(this, v)) return;
+          return src7.set.call(this, v);
+        },
+      });
+      if (currentSrc7 && currentSrc7.get) {
+        Object.defineProperty(AP7, "currentSrc", {
+          configurable: true, enumerable: currentSrc7.enumerable,
+          get: function () { return held.has(this) ? held.get(this) : currentSrc7.get.call(this); },
+        });
+      }
+      Object.defineProperty(AP7, "paused", {
+        configurable: true, enumerable: paused7.enumerable,
+        get: function () { var c = copies.get(this); return c ? c.audio.paused : paused7.get.call(this); },
+      });
+      Element.prototype.setAttribute = function (name, value) {
+        if (this instanceof HTMLMediaElement && String(name).toLowerCase() === "src") {
+          stopCopy(this);
+          if (hold(this, value)) return;
+        }
+        return setAttr7.call(this, name, value);
+      };
+      AP7.play = function () {
+        var el = this, url = held.get(el);
+        if (url === undefined) return play7.apply(this, arguments);
+        var frame = null, copy;
+        try {
+          frame = document.createElement("iframe");
+          setAttr7.call(frame, "data-whatrust", "alert-sound");
+          setAttr7.call(frame, "aria-hidden", "true");
+          frame.style.cssText = "display:none";
+          (document.body || document.documentElement).appendChild(frame);
+          copy = new frame.contentWindow.Audio(url);
+        } catch (e) {
+          if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+          return fallback(el, e);
+        }
+        stopCopy(el); // a new alert restarts the sound, like replaying one element
+        copies.set(el, { frame: frame, audio: copy });
+        copy.loop = el.loop;
+        copy.volume = el.volume;
+        copy.muted = el.muted;
+        var finish = function (type) {
+          return function () {
+            var c = copies.get(el);
+            if (!c || c.audio !== copy) return; // superseded by a newer play()
+            stopCopy(el);
+            el.dispatchEvent(new Event(type));
+          };
+        };
+        copy.addEventListener("ended", finish("ended"));
+        copy.addEventListener("error", finish("error"));
+        return copy.play().then(function () {
+          el.dispatchEvent(new Event("play"));
+          el.dispatchEvent(new Event("playing"));
+        }, function (err) {
+          stopCopy(el);
+          return fallback(el, err);
+        });
+      };
+      // The copy was refused (autoplay rules, say): give the element its URL and
+      // play it natively. The leftover player comes back for it, but the sound
+      // is never lost.
+      var fallback = function (el, err) {
+        var url = held.get(el);
+        held.delete(el);
+        note("alert sound copy refused (" + (err && err.name) + "), playing natively");
+        if (url !== undefined) src7.set.call(el, url);
+        return play7.call(el);
+      };
+      AP7.pause = function () {
+        if (copies.has(this)) {
+          stopCopy(this);
+          this.dispatchEvent(new Event("pause"));
+          return;
+        }
+        return pause7.apply(this, arguments);
+      };
+      note("alert sounds play from throwaway frames");
+    }
+  } catch (e) {
+    note("alert sounds not installed: " + e);
   }
 })();
